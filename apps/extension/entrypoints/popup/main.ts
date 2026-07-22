@@ -1,5 +1,12 @@
 const button = document.querySelector<HTMLButtonElement>("#capture")!;
 const status = document.querySelector<HTMLOutputElement>("#status")!;
+const appUrlInput = document.querySelector<HTMLInputElement>("#app-url")!;
+const defaultAppUrl = "https://inspoatlas-beta.glad-morel-5947.chatgpt.site";
+
+chrome.storage.sync.get("appUrl").then(({ appUrl }) => { appUrlInput.value = appUrl ?? defaultAppUrl; });
+appUrlInput.addEventListener("change", () => {
+  void chrome.storage.sync.set({ appUrl: appUrlInput.value.trim().replace(/\/$/, "") || defaultAppUrl });
+});
 
 button.addEventListener("click", async () => {
   status.value = "正在读取当前页面…";
@@ -22,12 +29,13 @@ button.addEventListener("click", async () => {
   }
   await chrome.scripting.executeScript({ target: { tabId: tab.id }, func: (scrollY: number) => window.scrollTo({ top: scrollY, behavior: "instant" }), args: [originalY] });
 
-  const baseUrl = (await chrome.storage.sync.get("appUrl")).appUrl ?? "http://localhost:3000";
+  const baseUrl = ((await chrome.storage.sync.get("appUrl")).appUrl ?? defaultAppUrl).replace(/\/$/, "");
   const response = await fetch(`${baseUrl}/api/clips`, {
     method: "POST", headers: { "content-type": "application/json" },
+    credentials: "include",
     body: JSON.stringify({ url: result.url, title: result.title, readableText: result.readableText, styles: result.styles, screenshotParts }),
   });
-  status.value = response.ok ? `已保存完整网页（${screenshotParts.length} 段）` : "保存失败，请先登录 Web 端";
+  status.value = response.ok ? `已保存完整网页（${screenshotParts.length} 段）` : response.status === 401 ? "请先打开并登录 Web 端" : "保存失败，请检查接收地址";
 });
 
 function collectPage() {

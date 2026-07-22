@@ -219,6 +219,67 @@ kbd { padding: 1px 5px; border: 1px solid #d8d2dd; border-radius: 4px; backgroun
 @keyframes fade { from { opacity: 0; } }
 @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.98); } }
 
+/* Readability baseline: no essential desktop text is smaller than 10px. */
+body { font-size: 14px; }
+.brand strong { font-size: 17px; }
+.brand small { font-size: 12px; }
+.board-title { font-size: 15px; }
+.board-title small { font-size: 12px; }
+.search-box input, .button, .avatar { font-size: 13px; }
+.rail-action { font-size: 13px; }
+.left-rail nav > p, .smart-filters > p { font-size: 11px; }
+.nav-item, .smart-filters > button { font-size: 13px; }
+.quota-card > div, .quota-card button { font-size: 12px; }
+.quota-card strong { font-size: 13px; }
+.canvas-toolbar button small { font-size: 10px; }
+.canvas-tip { font-size: 11px; }
+kbd { font-size: 10px; }
+.card-kind, .source-chip { font-size: 10px; }
+.card-content h3 { font-size: 15px; line-height: 1.42; }
+.card-content p { font-size: 12.5px; line-height: 1.7; }
+.card-content a { font-size: 11px; }
+.tag-row > span { font-size: 10px; }
+.tag-row.large > span { font-size: 11px; }
+.analysis-origin {
+  overflow: hidden;
+  margin: -2px 0 8px;
+  padding: 6px 8px;
+  border: 1px solid rgba(129,115,180,.12);
+  border-radius: 9px;
+  color: #716580;
+  background: rgba(255,255,255,.5);
+  font-size: 10.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-label > span { font-size: 10px; }
+.group-label strong { font-size: 15px; }
+.group-label small, .analysis-progress { font-size: 11px; }
+.react-flow__edge-text { font-size: 10px; }
+.inspector-tabs button { font-size: 12px; }
+.inspect-title small { font-size: 11px; }
+.inspect-title h2 { font-size: 15px; }
+.analyze-button { font-size: 12.5px; }
+.analyze-button small { font-size: 10px; }
+.inspect-block h3 { font-size: 13px; }
+.block-heading button, .block-heading small { font-size: 11px; }
+.palette-list span, .palette-list code { font-size: 11px; }
+.region-preview { font-size: 10px; }
+.region-list strong { font-size: 12px; }
+.region-list small { font-size: 10px; }
+.region-list button, .source-row { font-size: 11px; }
+.ai-answer p, .chat-input textarea { font-size: 12px; }
+.empty-inspector { font-size: 13px; }
+.modal-kicker { font-size: 11px; }
+.modal h2 { font-size: 24px; }
+.modal > p { font-size: 13.5px; }
+.import-drop strong { font-size: 13px; }
+.import-drop small, .privacy-note, .organize-preview small { font-size: 11px; }
+.url-entry input, .url-entry button { font-size: 13px; }
+.proposal-list > span { font-size: 11px; }
+.toast { font-size: 12px; }
+
 @media (max-width: 1050px) {
   .workspace-shell { grid-template-columns: 208px minmax(0, 1fr) 285px; }
   .topbar { grid-template-columns: 190px minmax(190px, 1fr) minmax(180px, 300px) auto; gap: 9px; }

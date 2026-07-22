@@ -32,18 +32,20 @@ type CardData = Record<string, unknown> & {
   tags?: string[];
   colors?: string[];
   status?: string;
+  sourceAssetId?: string;
+  sourceTitle?: string;
   regions?: Array<{ id: string; label: string; type: string; confirmed?: boolean }>;
 };
 
 const photoA = "https://images.unsplash.com/photo-1560807707-8cc77767d783?auto=format&fit=crop&w=900&q=85";
 
 const seedNodes: Node<CardData>[] = [
-  { id: "group-1", type: "inspo", position: { x: -60, y: -70 }, data: { kind: "group", title: "产品主视觉", body: "高饱和主体 · 通透质感 · 克制排版" }, style: { width: 840, height: 510 }, selectable: true },
+  { id: "group-1", type: "inspo", position: { x: -60, y: -70 }, data: { kind: "group", title: "产品主视觉", body: "参考 → 分析 → 可借鉴方向" }, style: { width: 1100, height: 820 }, selectable: true },
   { id: "asset-apple", type: "inspo", position: { x: 20, y: 40 }, data: { kind: "image", title: "水润产品主视觉.jpg", imageUrl: photoA, tags: ["水润质感", "高饱和", "自然清新"], colors: ["#E94444", "#F5C25B", "#F7F3EE"] }, style: { width: 286 } },
-  { id: "asset-web", type: "inspo", position: { x: 385, y: 30 }, data: { kind: "web", title: "Aura — Fresh product landing", sourceUrl: "https://example.com/product", body: "大面积留白配合居中产品特写，信息层级克制。", tags: ["Landing Page", "Fresh UI"], colors: ["#F8F4F2", "#D9DEFF", "#E96767"] }, style: { width: 300 } },
-  { id: "analysis-1", type: "inspo", position: { x: 30, y: 345 }, data: { kind: "analysis", title: "AI 分析 · 水润产品视觉", body: "红色苹果居中近景，表面有清晰水珠与水圈；整体强调清透、脆爽、洁净的产品感。", tags: ["高饱和红", "微距构图", "高光反射"], colors: ["#E94A45", "#F7F1E9", "#B8C7F2"], status: "ready", regions: [{ id: "hero", label: "产品主视觉", type: "image" }, { id: "cta", label: "胶囊操作按钮", type: "button" }] }, style: { width: 324 } },
-  { id: "note-1", type: "inspo", position: { x: 430, y: 342 }, data: { kind: "text", title: "可借鉴方向", body: "不是复刻苹果本身，而是复用“单一高饱和主体 + 液体折射 + 柔和冷色环境光”的视觉公式。", tags: ["设计意图"] }, style: { width: 288 } },
-  { id: "element-1", type: "inspo", position: { x: 835, y: 42 }, data: { kind: "element", title: "胶囊按钮", body: "28px 圆角 · 12/18 内边距", colors: ["#25232A", "#FFFFFF"], tags: ["已确认元素"] }, style: { width: 230 } },
+  { id: "asset-web", type: "inspo", position: { x: 20, y: 440 }, data: { kind: "web", title: "Aura — Fresh product landing", sourceUrl: "https://example.com/product", body: "大面积留白配合居中产品特写，信息层级克制。", tags: ["Landing Page", "Fresh UI"], colors: ["#F8F4F2", "#D9DEFF", "#E96767"] }, style: { width: 300 } },
+  { id: "analysis-1", type: "inspo", position: { x: 354, y: 40 }, data: { kind: "analysis", title: "AI 分析 · 水润产品视觉", body: "红色苹果居中近景，表面有清晰水珠与水圈；整体强调清透、脆爽、洁净的产品感。", tags: ["高饱和红", "微距构图", "高光反射"], colors: ["#E94A45", "#F7F1E9", "#B8C7F2"], status: "ready", sourceAssetId: "asset-apple", sourceTitle: "水润产品主视觉.jpg", regions: [{ id: "hero", label: "产品主视觉", type: "image" }, { id: "cta", label: "胶囊操作按钮", type: "button" }] }, style: { width: 324 } },
+  { id: "note-1", type: "inspo", position: { x: 730, y: 40 }, data: { kind: "text", title: "可借鉴方向", body: "不是复刻苹果本身，而是复用“单一高饱和主体 + 液体折射 + 柔和冷色环境光”的视觉公式。", tags: ["设计意图"] }, style: { width: 288 } },
+  { id: "element-1", type: "inspo", position: { x: 370, y: 440 }, data: { kind: "element", title: "胶囊按钮", body: "28px 圆角 · 12/18 内边距", colors: ["#25232A", "#FFFFFF"], tags: ["已确认元素"] }, style: { width: 230 } },
 ];
 
 const seedEdges: Edge[] = [
@@ -64,6 +66,7 @@ function CardNode({ id, data, selected }: NodeProps<Node<CardData>>) {
           <header className="card-head"><span className="card-kind">{kindLabel[data.kind]}</span><button aria-label="更多操作">•••</button></header>
           {data.imageUrl && <div className="card-image" style={{ backgroundImage: `url(${data.imageUrl})` }}><span className="source-chip">原始素材</span></div>}
           <div className="card-content">
+            {data.kind === "analysis" && data.sourceTitle && <div className="analysis-origin">↳ 跟随参考 · {data.sourceTitle}</div>}
             <h3>{data.title}</h3>
             {data.sourceUrl && <a href={data.sourceUrl} target="_blank" rel="noreferrer">{new URL(data.sourceUrl).hostname} ↗</a>}
             {data.body && <p>{data.body}</p>}
@@ -162,15 +165,19 @@ function WorkspaceCanvas() {
   function analyzeSelected() {
     if (!selectedNode || selectedNode.data.kind === "group") return;
     if (quota <= 0) { notify("平台额度已用完，请在设置中添加自己的模型 Key"); return; }
+    const sourceNode = selectedNode;
+    const sourceId = selectedNode.id;
+    const sourceWidth = typeof selectedNode.style?.width === "number" ? selectedNode.style.width : 286;
+    const siblingCount = nodes.filter((node) => node.data.kind === "analysis" && node.data.sourceAssetId === sourceId).length;
     remember(); setQuota((value) => value - 1);
-    setNodes((current) => current.map((node) => node.id === selectedId ? { ...node, data: { ...node.data, status: "processing" } } : node));
+    setNodes((current) => current.map((node) => node.id === sourceId ? { ...node, data: { ...node.data, status: "processing" } } : node));
     window.setTimeout(() => {
       const analysisId = `analysis-${crypto.randomUUID()}`;
       setNodes((current) => [
-        ...current.map((node) => node.id === selectedId ? { ...node, data: { ...node.data, status: "ready", tags: [...new Set([...(node.data.tags ?? []), "已分析"])], regions: [{ id: "hero", label: "核心主视觉", type: "image" }, { id: "button", label: "主操作按钮", type: "button" }] } } : node),
-        { id: analysisId, type: "inspo", position: { x: selectedNode.position.x + 360, y: selectedNode.position.y + 230 }, data: { kind: "analysis", title: `AI 分析 · ${selectedNode.data.title}`, body: "该素材通过单一视觉焦点、柔和环境光和清晰的操作层级建立高级感。建议复用色彩比例与间距节奏，不直接复制内容。", tags: ["视觉焦点", "层级克制", "可追溯"], colors: selectedNode.data.colors ?? ["#F7F3F0", "#D7DDF7", "#242329"], status: "ready", regions: [{ id: "hero", label: "核心主视觉", type: "image" }, { id: "button", label: "主操作按钮", type: "button" }] }, style: { width: 324 } },
+        ...current.map((node) => node.id === sourceId ? { ...node, data: { ...node.data, status: "ready", tags: [...new Set([...(node.data.tags ?? []), "已分析"])], regions: [{ id: "hero", label: "核心主视觉", type: "image" }, { id: "button", label: "主操作按钮", type: "button" }] } } : node),
+        { id: analysisId, type: "inspo", position: { x: sourceNode.position.x + sourceWidth + 44, y: sourceNode.position.y + siblingCount * 250 }, data: { kind: "analysis", title: `AI 分析 · ${sourceNode.data.title}`, body: "该素材通过单一视觉焦点、柔和环境光和清晰的操作层级建立高级感。建议复用色彩比例与间距节奏，不直接复制内容。", tags: ["视觉焦点", "层级克制", "可追溯"], colors: sourceNode.data.colors ?? ["#F7F3F0", "#D7DDF7", "#242329"], status: "ready", sourceAssetId: sourceId, sourceTitle: sourceNode.data.title, regions: [{ id: "hero", label: "核心主视觉", type: "image" }, { id: "button", label: "主操作按钮", type: "button" }] }, style: { width: 324 } },
       ]);
-      setEdges((current) => [...current, { id: crypto.randomUUID(), source: selectedId, target: analysisId, label: "AI 分析", animated: true }]);
+      setEdges((current) => [...current, { id: crypto.randomUUID(), source: sourceId, target: analysisId, label: "AI 分析", animated: true }]);
       setSelectedId(analysisId); notify("分析完成，已生成可追溯分析卡");
     }, 1100);
   }
@@ -190,13 +197,37 @@ function WorkspaceCanvas() {
   function applyOrganize() {
     remember();
     const movable = nodes.filter((node) => node.data.kind !== "group");
-    const order: CardKind[] = ["image", "web", "analysis", "text", "element", "group"];
-    const sorted = [...movable].sort((a, b) => order.indexOf(a.data.kind) - order.indexOf(b.data.kind));
+    const positions = new Map<string, { x: number; y: number }>();
+    const placed = new Set<string>();
+    const references = movable.filter((node) => !["analysis", "element"].includes(node.data.kind));
+    let rowY = 30;
+
+    for (const reference of references) {
+      positions.set(reference.id, { x: 40, y: rowY });
+      placed.add(reference.id);
+      const analyses = movable.filter((node) => node.data.kind === "analysis" && (
+        node.data.sourceAssetId === reference.id || edges.some((edge) => edge.source === reference.id && edge.target === node.id)
+      ));
+      analyses.forEach((analysis, index) => {
+        positions.set(analysis.id, { x: 390, y: rowY + index * 270 });
+        placed.add(analysis.id);
+      });
+      const relationSources = new Set([reference.id, ...analyses.map((node) => node.id)]);
+      const elements = movable.filter((node) => node.data.kind === "element" && edges.some((edge) => relationSources.has(edge.source) && edge.target === node.id));
+      elements.forEach((element, index) => {
+        positions.set(element.id, { x: 765, y: rowY + index * 210 });
+        placed.add(element.id);
+      });
+      rowY += Math.max(350, analyses.length * 270 + 60, elements.length * 210 + 60);
+    }
+
+    movable.filter((node) => !placed.has(node.id)).forEach((node, index) => {
+      positions.set(node.id, { x: 40 + (index % 3) * 360, y: rowY + Math.floor(index / 3) * 330 });
+    });
     setNodes((current) => current.map((node) => {
-      const index = sorted.findIndex((item) => item.id === node.id);
-      if (index < 0) return node;
-      const col = index % 3; const row = Math.floor(index / 3);
-      return { ...node, position: { x: 40 + col * 360, y: 30 + row * 340 } };
+      if (node.data.kind === "group") return { ...node, position: { x: 0, y: -45 }, style: { ...node.style, width: 1080, height: Math.max(560, rowY + 280) } };
+      const position = positions.get(node.id);
+      return position ? { ...node, position } : node;
     }));
     setOrganizeOpen(false); window.setTimeout(() => fitView({ padding: 0.16, duration: 500 }), 30); notify("整理方案已应用，可一步撤销");
   }
