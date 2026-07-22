@@ -40,6 +40,17 @@ type CardData = Record<string, unknown> & {
   regions?: Array<{ id: string; label: string; type: string; confirmed?: boolean }>;
 };
 
+type ClipInboxAsset = {
+  id: string;
+  kind: "web";
+  title: string;
+  sourceUrl: string | null;
+  extractedText: string | null;
+  metadata: { viewportCaptures?: number; captureSource?: string } | null;
+  status: string;
+  createdAt: string;
+};
+
 const photoA = "https://images.unsplash.com/photo-1560807707-8cc77767d783?auto=format&fit=crop&w=900&q=85";
 
 const seedNodes: Node<CardData>[] = [
@@ -104,6 +115,8 @@ function WorkspaceCanvas() {
   const [chatAnswer, setChatAnswer] = useState("我会基于当前画布的素材回答，并在结论后标注来源卡片。");
   const history = useRef<Array<{ nodes: Node<CardData>[]; edges: Edge[] }>>([]);
   const redoHistory = useRef<Array<{ nodes: Node<CardData>[]; edges: Edge[] }>>([]);
+  const syncedClipIds = useRef(new Set<string>());
+  const hasCompletedInitialClipSync = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const { fitView } = useReactFlow();
 
@@ -132,6 +145,68 @@ function WorkspaceCanvas() {
     }, 900);
     return () => window.clearTimeout(timer);
   }, [nodes, edges]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function syncClipInbox() {
+      try {
+        const response = await fetch("/api/clips", { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = await response.json() as { assets?: ClipInboxAsset[] };
+        if (!active || !Array.isArray(payload.assets)) return;
+
+        const fresh = payload.assets
+          .filter((asset) => !syncedClipIds.current.has(asset.id))
+          .reverse();
+        payload.assets.forEach((asset) => syncedClipIds.current.add(asset.id));
+
+        if (fresh.length) {
+          const latestId = fresh[fresh.length - 1].id;
+          setNodes((current) => {
+            const existingIds = new Set(current.map((node) => node.id));
+            const incoming = fresh.filter((asset) => !existingIds.has(asset.id));
+            if (!incoming.length) return current;
+            const maxY = Math.max(440, ...current.filter((node) => node.data.kind !== "group").map((node) => node.position.y));
+            return [
+              ...current,
+              ...incoming.map((asset, index): Node<CardData> => ({
+                id: asset.id,
+                type: "inspo",
+                position: { x: 40 + (index % 2) * 340, y: maxY + 330 + Math.floor(index / 2) * 280 },
+                data: {
+                  kind: "web",
+                  title: asset.title,
+                  sourceUrl: asset.sourceUrl ?? undefined,
+                  body: asset.extractedText?.replace(/\s+/g, " ").trim().slice(0, 240) || "网页已由浏览器插件采集，等待 AI 分析。",
+                  tags: ["插件采集", "待分析"],
+                  status: asset.status,
+                  captureParts: asset.metadata?.viewportCaptures ?? 0,
+                  capturedAt: asset.createdAt,
+                },
+                style: { width: 300 },
+              })),
+            ];
+          });
+          setSelectedId(latestId);
+          if (hasCompletedInitialClipSync.current) notify(`插件采集已到达：${fresh[fresh.length - 1].title}`);
+          window.setTimeout(() => fitView({ nodes: [{ id: latestId }], padding: 0.7, duration: 450 }), 80);
+        }
+        hasCompletedInitialClipSync.current = true;
+      } catch {
+        // A temporary network error should not interrupt editing; the next poll retries.
+      }
+    }
+
+    void syncClipInbox();
+    const timer = window.setInterval(syncClipInbox, 2500);
+    window.addEventListener("focus", syncClipInbox);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", syncClipInbox);
+    };
+  }, [fitView, setNodes]);
 
   useEffect(() => {
     const paste = (event: ClipboardEvent) => {

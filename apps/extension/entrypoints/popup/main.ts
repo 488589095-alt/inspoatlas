@@ -35,7 +35,13 @@ button.addEventListener("click", async () => {
     credentials: "include",
     body: JSON.stringify({ url: result.url, title: result.title, readableText: result.readableText, styles: result.styles, screenshotParts }),
   });
-  status.value = response.ok ? `已保存完整网页（${screenshotParts.length} 段）` : response.status === 401 ? "请先打开并登录 Web 端" : "保存失败，请检查接收地址";
+  if (response.ok) {
+    const payload = await response.json() as { asset?: { id?: string } };
+    status.value = `已加入网页采集收件箱（${screenshotParts.length} 段），画布会自动同步${payload.asset?.id ? ` · ${payload.asset.id.slice(-6)}` : ""}`;
+  } else {
+    const payload = await response.json().catch(() => null) as { error?: string } | null;
+    status.value = response.status === 401 ? "请先打开并登录 Web 端" : `保存失败：${payload?.error ?? "请检查接收地址"}`;
+  }
 });
 
 function collectPage() {
