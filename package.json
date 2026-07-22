@@ -1,0 +1,50 @@
+{
+  "name": "inspoatlas",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "engines": { "node": ">=22.13.0" },
+  "workspaces": ["apps/*", "packages/*"],
+  "scripts": {
+    "dev": "vinext dev",
+    "build": "vinext build",
+    "start": "vinext start",
+    "test": "tsx --test tests/*.test.ts",
+    "test:build": "pnpm build && pnpm test",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
+    "db:generate": "drizzle-kit generate",
+    "extension:dev": "pnpm --filter @inspoatlas/extension dev",
+    "extension:build": "pnpm --filter @inspoatlas/extension build",
+    "worker:dev": "pnpm --filter @inspoatlas/worker dev"
+  },
+  "dependencies": {
+    "@xyflow/react": "^12.9.2",
+    "drizzle-orm": "0.45.2",
+    "fflate": "^0.8.2",
+    "next": "16.2.6",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "1.37.1",
+    "@tailwindcss/postcss": "4.2.1",
+    "@types/node": "22.19.19",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "@vitejs/plugin-rsc": "0.5.26",
+    "drizzle-kit": "0.31.10",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.2.6",
+    "react-server-dom-webpack": "19.2.6",
+    "tailwindcss": "4.2.1",
+    "tsx": "^4.20.5",
+    "typescript": "5.9.3",
+    "vinext": "0.0.50",
+    "vite": "8.0.13",
+    "wrangler": "4.92.0"
+  },
+  "type": "module"
+}
+

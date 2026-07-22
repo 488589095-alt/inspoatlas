@@ -1,0 +1,15 @@
+{
+  "name": "@inspoatlas/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "tsx src/index.ts", "start": "tsx src/index.ts" },
+  "dependencies": {
+    "@inspoatlas/ai": "workspace:*",
+    "@inspoatlas/domain": "workspace:*",
+    "pg-boss": "^12.11.1",
+    "sharp": "^0.34.3",
+    "tsx": "^4.20.5"
+  }
+}
+
