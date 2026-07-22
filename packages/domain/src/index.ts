@@ -8,11 +8,13 @@ export const PLATFORM_ANALYSIS_QUOTA = 30;
 export const assetKinds = ["image", "web", "text"] as const;
 export const canvasItemTypes = ["image", "web", "text", "analysis", "element", "group"] as const;
 export const relationTypes = ["similar-style", "same-component", "same-project", "supports", "contrasts", "derived-from"] as const;
+export const exportPurposes = ["web-rebuild", "visual-remix", "campaign-system", "figma-bridge"] as const;
 
 export type AssetKind = (typeof assetKinds)[number];
 export type CanvasItemType = (typeof canvasItemTypes)[number];
 export type RelationType = (typeof relationTypes)[number];
 export type JobStatus = "queued" | "processing" | "ready" | "failed";
+export type ExportPurpose = (typeof exportPurposes)[number];
 
 export const rectSchema = z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1), width: z.number().positive().max(1), height: z.number().positive().max(1) });
 export const componentRegionSchema = z.object({
@@ -52,6 +54,14 @@ export interface CanvasCardData { title: string; body?: string; sourceUrl?: stri
 export interface CanvasItem { id: string; type: CanvasItemType; x: number; y: number; width: number; height: number; data: CanvasCardData; }
 export interface Relation { id: string; sourceId: string; targetId: string; type: RelationType; origin: "human" | "ai"; score?: number; }
 export interface OrganizeProposal { id: string; boardId: string; baseVersion: number; groups: Array<{ id: string; title: string; memberIds: string[] }>; positions: Record<string, { x: number; y: number }>; suggestedRelations: Relation[]; }
+export const exportRequestSchema = z.object({ boardId: z.string().min(1), purpose: z.enum(exportPurposes) });
+export const exportFilesByPurpose: Record<ExportPurpose, string[]> = {
+  "web-rebuild": ["DESIGN.md", "REBUILD_PROMPT.md", "STRUCTURE.md", "tokens/tokens.json", "tokens/variables.css", "components.md", "QA_CHECKLIST.md", "sources.json"],
+  "visual-remix": ["IMAGE_PROMPT.md", "PROMPT_VARIANTS.md", "NEGATIVE_PROMPT.md", "palette.json", "composition.md", "sources.json"],
+  "campaign-system": ["DESIGN.md", "CAMPAIGN_SYSTEM.md", "PAGE_BRIEF_TEMPLATE.md", "content-schema.json", "components.md", "QA_CHECKLIST.md", "tokens/tokens.json", "tokens/variables.css", "sources.json"],
+  "figma-bridge": ["DESIGN.md", "figma-import.json", "FIGMA_IMPORT.md", "tokens.json", "sources.json", "elements/README.md"],
+};
+export interface DesignPackage { id: string; boardId: string; purpose: ExportPurpose; files: string[]; sourceAssetIds: string[]; generatedAt: string; }
 
 export function isSafePublicUrl(value: string): boolean {
   try {
@@ -78,4 +88,3 @@ export function dedupeRelations(relations: Relation[]): Relation[] {
 export function assertProposalVersion(proposal: OrganizeProposal, currentVersion: number): void {
   if (proposal.baseVersion !== currentVersion) throw new Error("画布已发生变化，请重新生成整理预览");
 }
-

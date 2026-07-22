@@ -1,0 +1,17 @@
+.export-modal { width: min(780px, calc(100vw - 30px)); }
+.export-purpose-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 18px 0 14px; }
+.export-purpose-grid > button { display: grid; grid-template-columns: 40px 1fr 20px; align-items: start; gap: 11px; min-height: 132px; padding: 14px; border: 1px solid rgba(75,67,91,.12); border-radius: 16px; color: #4f4955; background: rgba(255,255,255,.6); cursor: pointer; text-align: left; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }
+.export-purpose-grid > button:hover { transform: translateY(-1px); border-color: rgba(129,115,180,.34); }
+.export-purpose-grid > button.is-active { border-color: #9585c7; background: linear-gradient(145deg, rgba(244,240,253,.96), rgba(251,244,247,.9)); box-shadow: 0 10px 24px rgba(87,70,119,.12), 0 0 0 3px rgba(149,133,199,.09); }
+.export-purpose-grid > button > span { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 13px; color: #5e526e; background: linear-gradient(145deg, #e6e0f6, #f7e7ed); font-size: 19px; }
+.export-purpose-grid strong { display: block; color: #302c35; font-size: 14px; }
+.export-purpose-grid p { margin: 5px 0 9px; color: #6f6874; font-size: 12px; line-height: 1.55; }
+.export-purpose-grid small { color: #8b8192; font-size: 10.5px; }
+.export-purpose-grid i { color: #7561a0; font-size: 14px; font-style: normal; }
+.export-note { margin-bottom: 18px; padding: 10px 12px; border-radius: 12px; color: #716978; background: rgba(238,234,247,.72); font-size: 12px; }
+.export-note span { margin-right: 7px; color: #5f4e78; font-weight: 700; }
+
+@media (max-width: 640px) {
+  .export-purpose-grid { grid-template-columns: 1fr; }
+  .export-purpose-grid > button { min-height: auto; }
+}

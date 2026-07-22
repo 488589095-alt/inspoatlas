@@ -1,0 +1,6 @@
+{
+  "name": "@inspoatlas/figma-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Imports InspoAtlas task kits into the active Figma file."
+}

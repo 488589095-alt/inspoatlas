@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; color: var(--figma-color-text); background: var(--figma-color-bg); font: 13px/1.55 Inter, "Microsoft YaHei", sans-serif; }
+      main { padding: 24px; }
+      .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+      .mark { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 13px; color: white; background: #2b2830; font-size: 18px; }
+      h1 { margin: 0; font-size: 16px; }
+      .brand small { display: block; color: var(--figma-color-text-secondary); }
+      .drop { display: grid; place-items: center; min-height: 178px; padding: 18px; border: 1px dashed var(--figma-color-border); border-radius: 14px; background: var(--figma-color-bg-secondary); text-align: center; }
+      .drop strong, .drop span { display: block; }
+      .drop span { margin-top: 7px; color: var(--figma-color-text-secondary); font-size: 11px; }
+      input { max-width: 100%; margin-top: 16px; }
+      .note { margin: 15px 0; color: var(--figma-color-text-secondary); font-size: 11px; }
+      .actions { display: flex; justify-content: flex-end; gap: 8px; }
+      button { min-height: 34px; padding: 0 14px; border: 1px solid var(--figma-color-border); border-radius: 8px; color: var(--figma-color-text); background: var(--figma-color-bg); cursor: pointer; }
+      button.primary { border-color: #2b2830; color: white; background: #2b2830; }
+      button:disabled { opacity: .45; cursor: default; }
+      output { display: block; min-height: 20px; margin-top: 13px; color: var(--figma-color-text-secondary); text-align: center; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <div class="brand"><span class="mark">◇</span><div><h1>InspoAtlas Figma Bridge</h1><small>把已确认规范写入当前文件</small></div></div>
+      <label class="drop"><div><strong>选择 figma-import.json</strong><span>将创建本地颜色变量和可编辑组件草稿</span><input id="file" type="file" accept="application/json,.json" /></div></label>
+      <p class="note">插件不联网，也不会覆盖现有组件。字体、隐藏状态和图像细节仍需根据来源人工确认。</p>
+      <div class="actions"><button id="cancel">取消</button><button id="import" class="primary" disabled>导入当前文件</button></div>
+      <output id="status">等待选择文件</output>
+    </main>
+    <script>
+      let payload = null;
+      const file = document.getElementById("file");
+      const importButton = document.getElementById("import");
+      const status = document.getElementById("status");
+      file.addEventListener("change", async () => {
+        try {
+          payload = JSON.parse(await file.files[0].text());
+          importButton.disabled = false;
+          status.value = `已读取：${payload.name || "未命名任务包"}`;
+        } catch (error) {
+          payload = null;
+          importButton.disabled = true;
+          status.value = "文件无法解析，请重新导出";
+        }
+      });
+      importButton.addEventListener("click", () => { status.value = "正在创建变量与组件…"; parent.postMessage({ pluginMessage: { type: "import", payload } }, "*"); });
+      document.getElementById("cancel").addEventListener("click", () => parent.postMessage({ pluginMessage: { type: "cancel" } }, "*"));
+      onmessage = (event) => {
+        const message = event.data.pluginMessage;
+        if (message?.type === "complete") status.value = `完成：${message.colors} 个颜色，${message.components} 个组件`;
+        if (message?.type === "error") status.value = `失败：${message.message}`;
+      };
+    </script>
+  </body>
+</html>

@@ -2,9 +2,9 @@
 
 ## 1. 产品定义
 
-InspoAtlas 是面向 UI/产品设计师的中文 AI 灵感工作台。它通过桌面 Web 与浏览器插件收集图片、网页和文字，在无限画布中建立空间关系，并将素材转成可直接用于设计和前端协作的标准资产包。
+InspoAtlas 是面向 UI、产品与视觉设计师的中文 AI 灵感生产工作台。它通过桌面 Web 与浏览器插件收集图片、网页和文字，在无限画布中建立空间关系，并将素材翻译成可直接交给 AI、代码项目或 Figma 使用的可追溯生产上下文。
 
-工作名为 **InspoAtlas / 灵感图谱**。产品承诺不是替用户做设计，而是让混乱的参考变得清楚、可验证、可复用。
+工作名为 **InspoAtlas / 灵感图谱**。产品承诺不是替用户做设计，而是让混乱的参考变得清楚，并根据“AI 复刻网页、图片/品牌延展、批量活动页系统、Figma 可编辑导入”四类目标生成不同任务包。
 
 ## 2. 用户与任务
 
@@ -16,7 +16,7 @@ InspoAtlas 是面向 UI/产品设计师的中文 AI 灵感工作台。它通过�
 
 ### 核心 JTBD
 
-当我为新项目寻找视觉方向时，我希望先快速收集而无需当场分类，再让系统帮我理解相似点、拆出可用元素并保留来源，这样我能更快将参考转成设计规范，而不是重新翻找和手工抄录。
+当我为新项目寻找视觉方向时，我希望先快速收集而无需当场分类，再让系统理解相似点、拆出可用元素并保留来源；当我确定下一步要复刻网页、延展视觉、批量生产或进入 Figma 时，系统应生成与任务匹配的规范、提示词和可编辑交接物，而不是让我从一个杂项 ZIP 中重新组装上下文。
 
 ## 3. 信息架构
 
@@ -69,22 +69,26 @@ AI 在素材上叠加候选区域。用户可以移动、缩放、删除候选�
 ### 4.7 输出与分享
 
 - 单项可复制色值、CSS 变量、文字、标签和已确认切图。
-- ZIP 固定包含 `design.md`、`tokens.json`、`variables.css`、`components.md`、`copy.md`、`sources.json`、`elements/`。
+- 输出前必须选择生产目标：AI 复刻网页/UI、图片/品牌延展、批量活动页系统或 Figma 可编辑导入。
+- 网页复刻包包含规范化 `DESIGN.md`、分阶段复刻提示词、结构拆解、Tokens、组件和双层 QA。
+- 视觉延展包只包含反推提示词、构图/材质、变体、负面约束、色板和来源。
+- 批量活动页包包含母版 `DESIGN.md`、固定层/可变层、页面 Brief、内容 Schema、组件矩阵和 QA。
+- Figma 包包含 `figma-import.json`、Tokens、组件与来源，由配套插件使用 Figma Plugin API 写入当前文件；不直接声称生成原生 `.fig` 文件。
 - 只读分享使用高熵令牌，可随时撤销；访问者不能看到所有者邮箱、AI Key 或私有画布导航。
 
 ## 5. 功能优先级
 
 ### P0
 
-账号/邀请、画布 CRUD、六类卡片、图片/网页/文字采集、自动保存、撤销/重做、单素材分析、元素确认、搜索、关系、整理预览、资产包、只读分享、额度/BYOK。
+账号/邀请、画布 CRUD、六类卡片、图片/网页/文字采集、自动保存、撤销/重做、单素材分析、元素确认、搜索、关系、整理预览、四类任务包、只读分享、额度/BYOK。
 
 ### P1
 
-手动画布快照、分析质量反馈、批量分析、更多组织布局、浏览器插件商店发布。
+手动画布快照、分析质量反馈、批量分析、更多组织布局、浏览器插件商店发布、Figma Bridge 商店发布与导入回执。
 
 ### P2
 
-PDF/视频、Figma、异步评论、团队空间、移动端、订阅与正式大陆运营。
+PDF/视频、Figma 原生文件双向同步、异步评论、团队空间、移动端、订阅与正式大陆运营。
 
 ## 6. 埋点
 
@@ -98,6 +102,9 @@ PDF/视频、Figma、异步评论、团队空间、移动端、订阅与正式�
 | `organize_previewed` | boardId, groupCount, itemCount |
 | `organize_applied` | boardId, changedItems |
 | `asset_copied` | assetId, valueType |
+| `export_purpose_selected` | boardId, purpose |
+| `task_kit_downloaded` | boardId, purpose, fileCount |
+| `figma_kit_imported` | boardId, variableCount, componentCount |
 | `package_downloaded` | boardId, fileCount |
 | `share_created/revoked` | boardId |
 | `reuse_loop_completed` | boardId, elapsedFromSignup |

@@ -20,9 +20,12 @@ import {
   useReactFlow,
 } from "@xyflow/react";
 import { strToU8, zipSync } from "fflate";
+import { exportPurposeOptions } from "./exportOptions";
 import "@xyflow/react/dist/style.css";
+import "./export.css";
 
 type CardKind = "image" | "web" | "text" | "analysis" | "element" | "group";
+type ExportPurpose = "web-rebuild" | "visual-remix" | "campaign-system" | "figma-bridge";
 type CardData = Record<string, unknown> & {
   kind: CardKind;
   title: string;
@@ -92,6 +95,8 @@ function WorkspaceCanvas() {
   const [quota, setQuota] = useState(27);
   const [savedAt, setSavedAt] = useState("刚刚");
   const [organizeOpen, setOrganizeOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [exportPurpose, setExportPurpose] = useState<ExportPurpose>("web-rebuild");
   const [importOpen, setImportOpen] = useState(false);
   const [urlValue, setUrlValue] = useState("");
   const [toast, setToast] = useState("");
@@ -244,18 +249,130 @@ function WorkspaceCanvas() {
 
   function exportPackage() {
     const colors = [...new Set(nodes.flatMap((node) => node.data.colors ?? []))];
-    const sources = nodes.filter((node) => node.data.sourceUrl || node.data.imageUrl).map((node) => ({ id: node.id, title: node.data.title, sourceUrl: node.data.sourceUrl ?? "uploaded", confidence: node.data.status === "ready" ? 0.88 : null }));
-    const files = {
-      "design.md": strToU8(`# InspoAtlas 设计资产包\n\n## 设计方向\n${nodes.filter((n) => n.data.kind === "analysis").map((n) => `- ${n.data.body}`).join("\n")}\n\n## 色板\n${colors.join(" · ")}\n`),
-      "tokens.json": strToU8(JSON.stringify({ color: Object.fromEntries(colors.map((color, index) => [`color${index + 1}`, { value: color }])) }, null, 2)),
-      "variables.css": strToU8(`:root {\n${colors.map((color, index) => `  --color-${index + 1}: ${color};`).join("\n")}\n  --radius-card: 24px;\n  --space-base: 8px;\n}`),
-      "components.md": strToU8(`# 已确认组件\n\n${nodes.filter((n) => n.data.kind === "element").map((n) => `- **${n.data.title}**：${n.data.body}`).join("\n")}`),
-      "copy.md": strToU8(`# 文案\n\n${nodes.filter((n) => n.data.kind === "text").map((n) => `## ${n.data.title}\n${n.data.body}`).join("\n\n")}`),
-      "sources.json": strToU8(JSON.stringify(sources, null, 2)),
-      "elements/README.md": strToU8("已确认的元素切图将在生产环境由后台任务写入此目录。"),
+    const analyses = nodes.filter((node) => node.data.kind === "analysis");
+    const elements = nodes.filter((node) => node.data.kind === "element");
+    const references = nodes.filter((node) => ["image", "web", "text"].includes(node.data.kind));
+    const primary = colors[0] ?? "#25232A";
+    const secondary = colors[1] ?? "#8173B4";
+    const surface = colors[2] ?? "#F7F3EE";
+    const sources = references.map((node) => ({
+      assetId: node.id,
+      title: node.data.title,
+      sourceUrl: node.data.sourceUrl ?? "uploaded",
+      analysisTime: new Date().toISOString(),
+      confidence: node.data.status === "ready" ? 0.88 : null,
+      inferenceNotice: "字体、不可见状态与遮挡区域为视觉推断，使用前需人工确认",
+    }));
+    const direction = analyses.map((node) => node.data.body).filter(Boolean).join(" ") || "以单一视觉焦点、清晰层级与一致组件节奏建立统一体验。";
+    const componentLines = elements.length ? elements.map((node) => `- **${node.data.title}**：${node.data.body ?? "尺寸与状态需确认"}`).join("\n") : "- 暂无已确认组件；不要根据低置信度候选创建生产组件。";
+    const designMd = `---
+version: alpha
+name: Water Fresh Product System
+description: 从 InspoAtlas 已确认参考中提炼的可追溯设计系统
+colors:
+  primary: "${primary}"
+  secondary: "${secondary}"
+  surface: "${surface}"
+typography:
+  body-md:
+    fontFamily: "Inter, PingFang SC, sans-serif"
+    fontSize: 16px
+    fontWeight: 400
+    lineHeight: 1.6
+  label-md:
+    fontFamily: "Inter, PingFang SC, sans-serif"
+    fontSize: 14px
+    fontWeight: 600
+    lineHeight: 1.4
+spacing:
+  xs: 4px
+  sm: 8px
+  md: 16px
+  lg: 24px
+  xl: 32px
+rounded:
+  control: 12px
+  card: 24px
+  full: 9999px
+components:
+  button-primary:
+    backgroundColor: "{colors.primary}"
+    textColor: "{colors.surface}"
+    rounded: "{rounded.full}"
+    padding: 12px
+---
+
+## Overview
+${direction}
+
+## Colors
+主色用于视觉焦点与主要动作；辅助色只承担层级和环境氛围；surface 保持内容可读。所有无法从来源确认的色值必须标为推断。
+
+## Typography
+字体家族是视觉推断。实现前检查项目可用字体；不可用时使用同字面宽度与 x-height 接近的系统字体，不下载未知授权字体。
+
+## Layout
+采用 8px 基础间距。先保留参考图的信息架构与模块顺序，再将所有间距映射到 spacing scale。
+
+## Elevation & Depth
+优先使用边框、色块与轻量阴影建立层级，避免无依据的重投影和玻璃效果。
+
+## Shapes
+卡片使用 24px 圆角，控件使用 12px，胶囊按钮使用 full。相同层级不得混用不同圆角。
+
+## Components
+${componentLines}
+
+## Do's and Don'ts
+### Do
+- 先完成规范预检和结构映射，再开始实现。
+- 重复组件必须复用同一 Token、尺寸和交互状态。
+- 每个结论保留 sources.json 中的来源与置信度。
+
+### Don't
+- 不复制参考中的品牌内容、商标或不可授权资产。
+- 不根据单张截图臆造隐藏交互、字体名称或响应式规则。
+- 不在组件内部写死已经存在的 Token。`;
+    const tokens = {
+      $schema: "https://design-tokens.github.io/community-group/format/",
+      color: Object.fromEntries(colors.map((color, index) => [`palette-${index + 1}`, { $type: "color", $value: color }])),
+      spacing: { sm: { $type: "dimension", $value: { value: 8, unit: "px" } }, md: { $type: "dimension", $value: { value: 16, unit: "px" } } },
+      radius: { control: { $type: "dimension", $value: { value: 12, unit: "px" } }, card: { $type: "dimension", $value: { value: 24, unit: "px" } } },
     };
+    const variablesCss = `:root {\n${colors.map((color, index) => `  --color-palette-${index + 1}: ${color};`).join("\n")}\n  --space-sm: 8px;\n  --space-md: 16px;\n  --radius-control: 12px;\n  --radius-card: 24px;\n}`;
+    const qa = `# Design QA Checklist\n\n## 结构 QA\n- [ ] 模块、顺序、文案、图片和 CTA 与已确认参考映射一致\n- [ ] 没有新增参考中不存在的功能或营销模块\n- [ ] 指定画板尺寸无溢出、遮挡或错位\n\n## 规范 QA\n- [ ] 颜色、字号、间距和圆角均来自 DESIGN.md / Tokens\n- [ ] 重复组件的 default、hover、active、focus、disabled 状态一致\n- [ ] 没有未经确认的字体、渐变、阴影或强调色\n- [ ] 响应式状态保持相同设计语言\n- [ ] 所有推断字段已人工确认或继续标记为推断\n`;
+    const structure = `# 结构拆解\n\n${references.map((node, index) => `${index + 1}. **${node.data.title}**：${node.data.body ?? "保留来源内容和主要构图"}`).join("\n")}\n\n## 已确认组件\n${componentLines}`;
+    const common = {
+      "sources.json": strToU8(JSON.stringify(sources, null, 2)),
+      "README.md": strToU8(`# InspoAtlas 任务包\n\n用途：${exportPurposeOptions.find((option) => option.id === exportPurpose)?.title}\n\n先阅读来源和置信度，再使用提示词或设计规范。`),
+    };
+    let files: Record<string, Uint8Array>;
+    let filename: string;
+
+    if (exportPurpose === "visual-remix") {
+      files = { ...common,
+        "IMAGE_PROMPT.md": strToU8(`# 图片 / 品牌视觉反推提示词\n\n## 目标\n基于参考的视觉公式生成新的原创表现，不复刻品牌主体。\n\n## 核心提示词\n${direction}\n\n构图：单一主体形成清晰视觉焦点，保留充足负空间；材质：清透、高光反射、细腻液体质感；色彩：${colors.join(" / ")}；输出需适配新的品牌主题与内容。\n\n## 使用方式\n将目标品类、品牌性格、画幅和文案替换后交给图像模型；保留 sources.json 作为视觉依据。`),
+        "PROMPT_VARIANTS.md": strToU8("# 提示词变体\n\n1. 保守延展：保持构图和色彩比例，只替换主体与文案。\n2. 同风格新构图：保留材质、光线和色板，改变视角与版式。\n3. 品牌系统化：生成主视觉、横幅、社媒卡片和详情页头图的一致系列。"),
+        "NEGATIVE_PROMPT.md": strToU8("# 负面约束\n\n避免复制原品牌标识、原文案和受版权保护角色；避免多余主体、脏乱背景、不可读文字、塑料感高光、过度锐化、随机字体和不一致光源。"),
+        "palette.json": strToU8(JSON.stringify({ colors }, null, 2)),
+        "composition.md": strToU8(`# 构图与材质\n\n${direction}\n\n推断内容必须以参考图进行人工复核。`),
+      };
+      filename = "inspoatlas-visual-remix-kit.zip";
+    } else if (exportPurpose === "campaign-system") {
+      files = { ...common, "DESIGN.md": strToU8(designMd), "tokens/tokens.json": strToU8(JSON.stringify(tokens, null, 2)), "tokens/variables.css": strToU8(variablesCss), "components.md": strToU8(`# 组件矩阵\n\n${componentLines}\n\n所有活动页共享尺寸、圆角、状态和间距，仅允许内容与主题 Token 变化。`), "CAMPAIGN_SYSTEM.md": strToU8("# 批量活动页生产系统\n\n## 固定层\n导航、容器宽度、按钮尺寸、卡片圆角、间距 scale、状态与可访问性。\n\n## 可变层\n主题色、主视觉、活动文案、权益列表和时间信息。\n\n## 生产规则\n先冻结 DESIGN.md，再逐页填写 PAGE_BRIEF_TEMPLATE.md；任何新组件先回写组件矩阵，经确认后才能进入后续页面。"), "PAGE_BRIEF_TEMPLATE.md": strToU8("# 页面 Brief\n\n- 页面名称：\n- 活动目标：\n- 核心 CTA：\n- 主视觉素材：\n- 内容模块顺序：\n- 允许覆盖的主题 Token：\n- 不允许变化的组件：\n"), "content-schema.json": strToU8(JSON.stringify({ pageName: "", campaignGoal: "", hero: { headline: "", subheading: "", imageAssetId: "" }, cta: { label: "", href: "" }, sections: [] }, null, 2)), "QA_CHECKLIST.md": strToU8(qa) };
+      filename = "inspoatlas-campaign-system-kit.zip";
+    } else if (exportPurpose === "figma-bridge") {
+      const figmaImport = { version: 1, name: "Water Fresh Product System", variables: { colors: colors.map((value, index) => ({ name: `color/palette-${index + 1}`, value })) }, components: elements.map((node) => ({ id: node.id, name: node.data.title, description: node.data.body ?? "来源待确认", width: typeof node.style?.width === "number" ? node.style.width : 240, height: 88, cornerRadius: 12, fills: node.data.colors ?? [primary], sourceAssetId: edges.find((edge) => edge.target === node.id)?.source ?? null })) };
+      files = { ...common, "DESIGN.md": strToU8(designMd), "tokens.json": strToU8(JSON.stringify(tokens, null, 2)), "figma-import.json": strToU8(JSON.stringify(figmaImport, null, 2)), "FIGMA_IMPORT.md": strToU8("# 导入 Figma\n\n1. 在 Figma Desktop 中导入本项目 apps/figma-plugin/manifest.json 作为开发插件。\n2. 运行 InspoAtlas Figma Bridge。\n3. 选择本包中的 figma-import.json。\n4. 插件会在当前文件创建本地颜色变量和可编辑组件草稿。\n5. 对照来源截图确认图像、字体、状态与尺寸后，再发布为团队组件。\n\n说明：Figma 没有面向网页直接生成原生 .fig 文件的通用公开接口，因此本产品使用官方 Plugin API 写入当前文件。"), "elements/README.md": strToU8("元素组件来自用户已确认区域；未确认候选不会写入。当前 Demo 仅生成结构化组件草稿，不假装还原不可见状态。") };
+      filename = "inspoatlas-figma-bridge-kit.zip";
+    } else {
+      files = { ...common, "DESIGN.md": strToU8(designMd), "REBUILD_PROMPT.md": strToU8(`# AI 网页 / UI 复刻提示词\n\n先读取 @DESIGN.md 与 sources.json，不要立即写代码。\n\n1. 规范预检：提取 Token、组件规则、Do/Don't、冲突和无法确认项。\n2. 原图拆解：只描述真实存在的信息架构、模块、组件、CTA 和重复模式。\n3. 映射确认：输出“原图结构 → DESIGN.md 规则”表格与组件树，等待确认。\n4. 基础接入：将 Token 接入项目全局主题，避免组件内部写死数值。\n5. 页面实现：原图决定内容与结构，DESIGN.md 决定视觉语言。\n6. Design QA：先做结构 QA，再做规范 QA，并修正问题。\n\n不要新增参考中不存在的功能、营销文案或模块。`), "STRUCTURE.md": strToU8(structure), "tokens/tokens.json": strToU8(JSON.stringify(tokens, null, 2)), "tokens/variables.css": strToU8(variablesCss), "components.md": strToU8(`# 已确认组件\n\n${componentLines}`), "QA_CHECKLIST.md": strToU8(qa) };
+      filename = "inspoatlas-web-rebuild-kit.zip";
+    }
     const blob = new Blob([zipSync(files, { level: 6 }) as BlobPart], { type: "application/zip" });
-    const anchor = document.createElement("a"); anchor.href = URL.createObjectURL(blob); anchor.download = "inspoatlas-design-package.zip"; anchor.click(); URL.revokeObjectURL(anchor.href); notify("设计资产包已生成");
+    const anchor = document.createElement("a"); anchor.href = URL.createObjectURL(blob); anchor.download = filename; anchor.click(); URL.revokeObjectURL(anchor.href);
+    void fetch("/api/exports", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ boardId: "demo", purpose: exportPurpose }) }).catch(() => undefined);
+    setExportOpen(false); notify(`${exportPurposeOptions.find((option) => option.id === exportPurpose)?.title}任务包已生成`);
   }
 
   async function shareBoard() {
@@ -276,7 +393,7 @@ function WorkspaceCanvas() {
         <div className="brand"><span className="brand-mark">✦</span><div><strong>InspoAtlas</strong><small>灵感图谱</small></div></div>
         <div className="board-title"><span className="live-dot" />水润产品视觉 <small>已自动保存 · {savedAt}</small></div>
         <label className="search-box"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索标签、颜色、文案…" /></label>
-        <div className="top-actions"><button className="button ghost" onClick={undo} title="撤销">↶</button><button className="button ghost" onClick={redo} title="重做">↷</button><button className="button soft" onClick={shareBoard}>分享</button><button className="button primary" onClick={exportPackage}>导出资产包</button><button className="avatar">林</button></div>
+        <div className="top-actions"><button className="button ghost" onClick={undo} title="撤销">↶</button><button className="button ghost" onClick={redo} title="重做">↷</button><button className="button soft" onClick={shareBoard}>分享</button><button className="button primary" onClick={() => setExportOpen(true)}>生成任务包</button><button className="avatar">林</button></div>
       </header>
 
       <aside className="left-rail">
@@ -334,6 +451,21 @@ function WorkspaceCanvas() {
       {importOpen && <div className="modal-backdrop" onMouseDown={() => setImportOpen(false)}><section className="modal import-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setImportOpen(false)}>×</button><span className="modal-kicker">快速采集</span><h2>灵感先摊开，再慢慢看清</h2><p>拖入图片、粘贴文字，或输入一个公开网页地址。</p><div className="import-drop" onClick={() => fileInput.current?.click()}><span>⇧</span><strong>上传 JPG、PNG、WebP</strong><small>单个文件最大 20 MB</small></div><div className="url-entry"><input autoFocus value={urlValue} onChange={(event) => setUrlValue(event.target.value)} onKeyDown={(event) => event.key === "Enter" && urlValue.trim() && addTextOrUrl(urlValue.trim())} placeholder="粘贴网页 URL 或一段灵感文字" /><button onClick={() => urlValue.trim() && addTextOrUrl(urlValue.trim())}>加入画布</button></div><small className="privacy-note">私有默认 · 不公开素材 · 网页失败时仍保留来源卡</small></section></div>}
 
       {organizeOpen && <div className="modal-backdrop" onMouseDown={() => setOrganizeOpen(false)}><section className="modal organize-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setOrganizeOpen(false)}>×</button><span className="modal-kicker">AI 整理预览</span><h2>保留空间记忆，只把关系理清</h2><p>将创建 3 个灵感簇、调整 {nodes.filter((n) => n.data.kind !== "group").length} 张卡片，并建议 2 条关系。应用前不会改变原画布。</p><div className="organize-preview"><div><small>当前</small>{[1,2,3,4,5,6].map((i) => <i key={i} style={{ left: `${12 + (i * 13) % 70}%`, top: `${18 + (i * 19) % 60}%` }} />)}</div><span>→</span><div className="after"><small>整理后</small>{[1,2,3,4,5,6].map((i) => <i key={i} style={{ left: `${12 + ((i - 1) % 3) * 28}%`, top: `${24 + Math.floor((i - 1) / 3) * 34}%` }} />)}</div></div><div className="proposal-list"><span><i className="dot pink" />产品主视觉 <small>2 项</small></span><span><i className="dot blue" />设计分析 <small>2 项</small></span><span><i className="dot gold" />可复用元素 <small>2 项</small></span></div><footer><button className="button soft" onClick={() => setOrganizeOpen(false)}>取消</button><button className="button primary" onClick={applyOrganize}>应用方案 · 可撤销</button></footer></section></div>}
+      {exportOpen && <div className="modal-backdrop" onMouseDown={() => setExportOpen(false)}>
+        <section className="modal export-modal" onMouseDown={(event) => event.stopPropagation()}>
+          <button className="modal-close" onClick={() => setExportOpen(false)}>×</button>
+          <span className="modal-kicker">生产目标</span>
+          <h2>你准备拿这些灵感做什么？</h2>
+          <p>输出只保留当前任务需要的内容。DESIGN.md 负责约束，提示词负责执行，来源文件负责核验。</p>
+          <div className="export-purpose-grid">
+            {exportPurposeOptions.map((option) => <button key={option.id} className={exportPurpose === option.id ? "is-active" : ""} onClick={() => setExportPurpose(option.id)}>
+              <span>{option.icon}</span><div><strong>{option.title}</strong><p>{option.description}</p><small>{option.files}</small></div><i>{exportPurpose === option.id ? "✓" : ""}</i>
+            </button>)}
+          </div>
+          <div className="export-note"><span>可追溯</span> 每个工作包都保留来源、分析时间、置信度和“视觉推断”标记。</div>
+          <footer><button className="button soft" onClick={() => setExportOpen(false)}>取消</button><button className="button primary" onClick={exportPackage}>生成 {exportPurposeOptions.find((option) => option.id === exportPurpose)?.title}</button></footer>
+        </section>
+      </div>}
       {toast && <div className="toast"><span>✓</span>{toast}</div>}
     </main>
   );

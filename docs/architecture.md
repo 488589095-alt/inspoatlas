@@ -6,6 +6,7 @@
 
 - `apps/web`：Next.js Web、画布、API 与只读分享。
 - `apps/extension`：WXT Manifest V3 插件。
+- `apps/figma-plugin`：Figma Bridge，本地导入任务包并创建 Variables 与 Component 草稿。
 - `apps/worker`：Node 常驻进程，负责抓取、图像处理、AI、向量化与导出。
 - `packages/domain`：Zod 类型、配额、安全校验和领域操作。
 - `packages/ai`：Provider Adapter、提示词版本和结构化分析。
@@ -76,7 +77,7 @@ interface AnalysisResult {
 - `GET /api/jobs/:id`：仅所有者读取任务进度与可重试错误。
 - `POST /api/boards/:id/organize/preview`：基于当前版本生成方案。
 - `POST /api/boards/:id/organize/apply`：要求 `baseVersion` 相等，事务写入快照和新场景。
-- `POST /api/exports`：生成固定文件清单的 ZIP。
+- `POST /api/exports`：校验 `purpose` 并生成网页复刻、视觉延展、批量活动页或 Figma Bridge 任务包；Manifest 记录来源、置信度、规范版本和生成模型。
 - `POST /api/shares`：创建新令牌，只返回一次明文。
 - `DELETE /api/shares/:id`：撤销并使缓存失效。
 
