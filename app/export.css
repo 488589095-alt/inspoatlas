@@ -1,3 +1,6 @@
+@import "./workspace-v3.css";
+@import "./readability.css";
+
 .export-modal { width: min(780px, calc(100vw - 30px)); }
 .export-purpose-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 18px 0 14px; }
 .export-purpose-grid > button { display: grid; grid-template-columns: 40px 1fr 20px; align-items: start; gap: 11px; min-height: 132px; padding: 14px; border: 1px solid rgba(75,67,91,.12); border-radius: 16px; color: #4f4955; background: rgba(255,255,255,.6); cursor: pointer; text-align: left; transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease; }

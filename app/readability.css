@@ -1,0 +1,69 @@
+/* InspoAtlas desktop readability floor. Operational copy stays legible at 100% zoom. */
+.brand small,
+.board-title small,
+.left-rail nav > p,
+.smart-filters > p,
+.nav-item,
+.smart-filters > button,
+.quota-card > div,
+.quota-card strong,
+.quota-card button,
+.workflow-strip,
+.relation-view > span,
+.multi-toolbar button,
+.canvas-toolbar button small,
+.canvas-tip,
+.card-kind,
+.source-chip,
+.card-head button,
+.card-content a,
+.tag-row > span,
+.group-label > span,
+.group-label small,
+.analysis-progress,
+.analysis-toggle small,
+.analysis-drawer > header small,
+.analysis-elements small,
+.analysis-failed button,
+.analysis-warning,
+.inspector-tabs button,
+.analyze-button,
+.analyze-button small,
+.inspect-block h3,
+.block-heading button,
+.block-heading small,
+.palette-list span,
+.palette-list code,
+.region-preview,
+.region-list strong,
+.region-list small,
+.region-list button,
+.source-row,
+.empty-inspector,
+.modal-kicker,
+.modal > p,
+.import-drop strong,
+.import-drop small,
+.url-entry input,
+.url-entry button,
+.toast,
+.shortcut-card strong,
+.shortcut-card p,
+.organize-dock > header small,
+.organize-group-list small,
+.organize-note,
+.multi-inspector > small,
+.step-kicker,
+.export-purpose-grid small {
+  font-size: 12px;
+}
+
+.card-content p {
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.card-head strong,
+.inline-title-input {
+  font-size: 15px;
+}
