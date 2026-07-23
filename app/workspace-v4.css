@@ -1,0 +1,251 @@
+/* Workspace navigation and direct-manipulation refinements. */
+.workspace-modes {
+  justify-self: center;
+  display: grid;
+  grid-template-columns: repeat(3, auto);
+  align-items: center;
+  gap: 3px;
+  padding: 4px;
+  border: 1px solid rgba(75, 67, 91, .1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .58);
+}
+
+.workspace-modes button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 34px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 10px;
+  color: #817a86;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.workspace-modes button span {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 7px;
+  background: #eeebf1;
+  font-size: 11px;
+}
+
+.workspace-modes button.active {
+  color: #37323c;
+  background: white;
+  box-shadow: 0 4px 12px rgba(52, 44, 64, .09);
+  font-weight: 750;
+}
+
+.workspace-modes button.active span {
+  color: white;
+  background: #3c3742;
+}
+
+.canvas-search {
+  position: absolute;
+  z-index: 13;
+  top: 16px;
+  left: 16px;
+  display: grid;
+  grid-template-columns: 22px minmax(120px, 1fr) auto;
+  align-items: center;
+  width: 250px;
+  min-height: 42px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: rgba(255, 255, 255, .84);
+  box-shadow: 0 8px 20px rgba(58, 49, 72, .08);
+  backdrop-filter: blur(18px);
+}
+
+.canvas-search > span {
+  color: #766d7e;
+  font-size: 18px;
+}
+
+.canvas-search input {
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  color: #413b46;
+  background: transparent;
+  font-size: 12px;
+}
+
+.canvas-search small {
+  padding: 4px 6px;
+  border-radius: 7px;
+  color: #81778a;
+  background: #f0edf3;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.canvas-toolbar {
+  top: 72px;
+  left: 16px;
+  flex-direction: column;
+  transform: none;
+}
+
+.canvas-toolbar > span {
+  width: 28px;
+  height: 1px;
+  margin: 4px 0;
+}
+
+.relation-view { top: 16px; }
+.workflow-strip { display: none; }
+
+.inspector-tabs { grid-template-columns: repeat(3, 1fr); }
+
+.export-panel {
+  padding: 20px 15px 28px;
+}
+
+.export-panel h2 {
+  margin: 8px 0;
+  font-size: 20px;
+  line-height: 1.35;
+}
+
+.export-panel > p {
+  margin: 0 0 16px;
+  color: #6f6874;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.export-purpose-list {
+  display: grid;
+  gap: 7px;
+}
+
+.export-purpose-list > button {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) 16px;
+  align-items: center;
+  gap: 10px;
+  min-height: 70px;
+  padding: 10px;
+  border: 1px solid rgba(75, 67, 91, .11);
+  border-radius: 13px;
+  color: #514a56;
+  background: rgba(255, 255, 255, .58);
+  cursor: pointer;
+  text-align: left;
+}
+
+.export-purpose-list > button > span {
+  display: grid;
+  width: 36px;
+  height: 36px;
+  place-items: center;
+  border-radius: 11px;
+  background: linear-gradient(145deg, #e6e0f6, #f7e7ed);
+  font-size: 17px;
+}
+
+.export-purpose-list strong,
+.export-purpose-list small { display: block; }
+.export-purpose-list strong { font-size: 13px; }
+.export-purpose-list small { margin-top: 4px; color: #807784; font-size: 11px; line-height: 1.45; }
+.export-purpose-list i { color: #8a7d93; font-size: 16px; font-style: normal; }
+
+.export-purpose-list > button.is-active {
+  border-color: #9585c7;
+  background: linear-gradient(145deg, rgba(244, 240, 253, .96), rgba(251, 244, 247, .9));
+  box-shadow: 0 0 0 3px rgba(149, 133, 199, .09);
+}
+
+.export-now { min-height: 44px; }
+
+.user-menu { position: relative; }
+
+.user-trigger {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(75, 67, 91, .1);
+  border-radius: 12px;
+  color: #493f52;
+  background: linear-gradient(145deg, #f6d9e8, #d6dffa);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.user-popover {
+  position: absolute;
+  z-index: 150;
+  top: calc(100% + 10px);
+  right: 0;
+  width: 280px;
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, .86);
+  border-radius: 17px;
+  background: rgba(253, 251, 253, .97);
+  box-shadow: 0 24px 70px rgba(42, 35, 51, .24);
+  backdrop-filter: blur(24px);
+}
+
+.user-popover header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--line);
+}
+
+.user-popover header > span {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 13px;
+  color: #4d4256;
+  background: linear-gradient(145deg, #f6d9e8, #d6dffa);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.user-popover strong,
+.user-popover small { display: block; }
+.user-popover strong { font-size: 13px; }
+.user-popover small { overflow: hidden; max-width: 190px; margin-top: 3px; color: #89818c; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.account-status { display: flex; align-items: center; gap: 7px; margin-top: 12px; color: #4f6859; font-size: 12px; font-weight: 700; }
+.account-status i { width: 8px; height: 8px; border-radius: 50%; background: #70b68d; box-shadow: 0 0 0 4px rgba(112, 182, 141, .12); }
+.user-popover p { margin: 9px 0 12px; color: #77707b; font-size: 12px; line-height: 1.55; }
+.user-popover a { display: flex; min-height: 38px; align-items: center; justify-content: center; border-radius: 10px; color: #6a5d70; background: #f0edf3; font-size: 12px; font-weight: 700; text-decoration: none; }
+
+.nav-item { user-select: none; }
+.board-title { user-select: none; }
+.board-title input,
+.nav-item input { user-select: text; }
+
+.react-flow__node.selected .card-surface,
+.react-flow__node:has(.canvas-card.is-selected) .card-surface {
+  box-shadow: 0 18px 42px rgba(76, 63, 113, .18), 0 0 0 2px #8173b4, 0 0 0 6px rgba(129, 115, 180, .12);
+}
+
+.react-flow__node.selected .react-flow__resize-control.handle {
+  display: block !important;
+  opacity: 1 !important;
+}
+
+@media (max-width: 1180px) {
+  .workspace-modes button { padding: 0 8px; font-size: 0; }
+  .workspace-modes button span { font-size: 11px; }
+  .canvas-search { width: 210px; }
+}

@@ -21,6 +21,7 @@ import {
 import type { AnalysisResult, DesignContract, Relation, RelationType } from "@/packages/domain/src";
 import { exportPurposeOptions } from "./exportOptions";
 import { CardNode } from "./workspace/CardNode";
+import { UserMenu } from "./workspace/UserMenu";
 import { buildOrganizePreview, type OrganizePreview } from "./workspace/organize";
 import {
   flowToScene,
@@ -55,7 +56,7 @@ const defaultSize: Record<CardData["kind"], { width: number; height: number }> =
 const canvasSnapGrid: [number, number] = [8, 8];
 const minimapNodeColor = (node: CanvasNode) => node.data.kind === "group" ? "#eee7f6" : "#d7e2fb";
 
-type WorkspaceModal = "import" | "credentials" | "export" | null;
+type WorkspaceModal = "import" | "credentials" | null;
 type RelationView = "hidden" | "selection" | "related" | "all";
 type ContextMenu = { kind: "node" | "board"; id: string; x: number; y: number };
 type DeleteRequest = { kind: "board" | "nodes"; ids: string[]; title: string; body: string };
@@ -69,7 +70,7 @@ function WorkspaceCanvas() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [savedState, setSavedState] = useState("正在读取");
-  const [rightTab, setRightTab] = useState<"asset" | "baseline">("asset");
+  const [rightTab, setRightTab] = useState<"asset" | "baseline" | "export">("asset");
   const [relationView, setRelationView] = useState<RelationView>("selection");
   const [modal, setModal] = useState<WorkspaceModal>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -79,6 +80,7 @@ function WorkspaceCanvas() {
   const [urlValue, setUrlValue] = useState("");
   const [organizePreview, setOrganizePreview] = useState<OrganizePreview | null>(null);
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
+  const [editingBoardSurface, setEditingBoardSurface] = useState<"header" | "sidebar" | null>(null);
   const [boardDraft, setBoardDraft] = useState("");
   const [contract, setContract] = useState<DesignContract | null>(null);
   const [contractBusy, setContractBusy] = useState(false);
@@ -93,19 +95,25 @@ function WorkspaceCanvas() {
   const redoHistory = useRef<Array<{ nodes: CanvasNode[]; edges: Edge[] }>>([]);
   const syncedClips = useRef(new Set<string>());
   const fileInput = useRef<HTMLInputElement>(null);
+  const edgesRef = useRef<Edge[]>([]);
   const { fitView, getViewport, setViewport } = useReactFlow();
+
+  useEffect(() => {
+    edgesRef.current = edges;
+  }, [edges]);
 
   const selectedNodes = useMemo(() => nodes.filter((node) => selectedIds.includes(node.id)), [nodes, selectedIds]);
   const selected = selectedNodes[0];
   const visibleNodes = useMemo(() => {
     const base = organizePreview?.nodes ?? nodes;
     const term = search.trim().toLowerCase();
-    if (!term) return base;
-    return base.map((node) => ({
-      ...node,
-      hidden: node.data.kind !== "group" && !JSON.stringify(node.data).toLowerCase().includes(term),
-    }));
-  }, [nodes, organizePreview, search]);
+    const selection = new Set(selectedIds);
+    return base.map((node) => {
+      const selected = selection.has(node.id);
+      const hidden = Boolean(term) && node.data.kind !== "group" && !JSON.stringify(node.data).toLowerCase().includes(term);
+      return node.selected === selected && node.hidden === hidden ? node : { ...node, selected, hidden };
+    });
+  }, [nodes, organizePreview, search, selectedIds]);
   const visibleEdges = useMemo(() => {
     const selectedSet = new Set(selectedIds);
     const hiddenNodeIds = new Set(visibleNodes.filter((node) => node.hidden).map((node) => node.id));
@@ -347,6 +355,52 @@ function WorkspaceCanvas() {
     setContextMenu({ kind: "node", id: node.id, x: event.clientX, y: event.clientY });
   }, []);
   const onPaneClick = useCallback(() => setContextMenu(null), []);
+  const onNodeDragStop = useCallback((_: unknown, movedNode: CanvasNode) => {
+    if (movedNode.data.kind === "group" || movedNode.parentId) return;
+    setNodes((current) => {
+      const dragged = current.find((node) => node.id === movedNode.id);
+      if (!dragged || dragged.data.kind === "group" || dragged.parentId) return current;
+      const cardWidth = nodeWidth(dragged);
+      const cardHeight = nodeHeight(dragged);
+      const cardArea = Math.max(1, cardWidth * cardHeight);
+      const target = current
+        .filter((node) => node.data.kind === "group" && !node.parentId)
+        .map((group) => {
+          const left = Math.max(dragged.position.x, group.position.x);
+          const top = Math.max(dragged.position.y, group.position.y);
+          const right = Math.min(dragged.position.x + cardWidth, group.position.x + nodeWidth(group));
+          const bottom = Math.min(dragged.position.y + cardHeight, group.position.y + nodeHeight(group));
+          return { group, ratio: Math.max(0, right - left) * Math.max(0, bottom - top) / cardArea };
+        })
+        .filter((item) => item.ratio >= 0.42)
+        .sort((a, b) => b.ratio - a.ratio)[0]?.group;
+      if (!target) return current;
+
+      history.current.push({ nodes: structuredClone(current), edges: structuredClone(edgesRef.current) });
+      if (history.current.length > 50) history.current.shift();
+      redoHistory.current = [];
+      const targetWidth = nodeWidth(target);
+      const targetHeight = nodeHeight(target);
+      const candidates = dragged.selected
+        ? new Set(current.filter((node) => node.selected && !node.parentId && node.data.kind !== "group").map((node) => node.id))
+        : new Set([dragged.id]);
+      return current.map((node) => {
+        if (!candidates.has(node.id)) return node;
+        const relativeX = node.position.x - target.position.x;
+        const relativeY = node.position.y - target.position.y;
+        return {
+          ...node,
+          parentId: target.id,
+          extent: "parent" as const,
+          position: {
+            x: Math.max(24, Math.min(relativeX, targetWidth - nodeWidth(node) - 24)),
+            y: Math.max(66, Math.min(relativeY, targetHeight - nodeHeight(node) - 24)),
+          },
+          zIndex: 10,
+        };
+      });
+    });
+  }, [setNodes]);
 
   function confirmConnection(type: RelationType) {
     if (!connection?.source || !connection.target) return;
@@ -385,8 +439,9 @@ function WorkspaceCanvas() {
     notify(sourceBoardId ? "画布已复制" : "新画布已创建");
   }
 
-  function startBoardRename(id: string, title: string) {
+  function startBoardRename(id: string, title: string, surface: "header" | "sidebar" = "sidebar") {
     setEditingBoardId(id);
+    setEditingBoardSurface(surface);
     setBoardDraft(title);
     setContextMenu(null);
   }
@@ -395,6 +450,7 @@ function WorkspaceCanvas() {
     const previous = boards.find((item) => item.id === id)?.title ?? boardTitle;
     const title = boardDraft.trim();
     setEditingBoardId(null);
+    setEditingBoardSurface(null);
     if (!title || title === previous) return setBoardDraft("");
     const response = await fetch("/api/boards/" + id, {
       method: "PATCH",
@@ -606,31 +662,6 @@ function WorkspaceCanvas() {
     ]);
     setSelectedIds([id]);
     notify("已建立分组，内部卡片会随分组一起移动");
-  }
-
-  function moveNodesToGroup(ids: string[], groupId: string) {
-    const target = nodes.find((node) => node.id === groupId && node.data.kind === "group");
-    if (!target) return;
-    const moveIds = new Set(ids);
-    remember();
-    setNodes((current) => current.map((item) => {
-      if (!moveIds.has(item.id) || item.data.kind === "group") return item;
-      const oldParent = current.find((parent) => parent.id === item.parentId);
-      const absolute = oldParent
-        ? { x: oldParent.position.x + item.position.x, y: oldParent.position.y + item.position.y }
-        : item.position;
-      return {
-        ...item,
-        parentId: target.id,
-        extent: "parent" as const,
-        position: {
-          x: Math.max(24, absolute.x - target.position.x),
-          y: Math.max(66, absolute.y - target.position.y),
-        },
-        zIndex: 10,
-      };
-    }));
-    notify(`已移入“${target.data.title}”`);
   }
 
   function detachNodes(ids: string[]) {
@@ -924,8 +955,6 @@ function WorkspaceCanvas() {
     notify("元素已确认，可用于导出");
   }
 
-  const groups = nodes.filter((node) => node.data.kind === "group");
-
   return (
     <main
       className="workspace-shell"
@@ -937,29 +966,39 @@ function WorkspaceCanvas() {
       }}
     >
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">✦</span><div><strong>InspoAtlas</strong><small>设计基准工作台</small></div></div>
-        <div className="board-title editable" title="双击修改画布名称">
+        <div className="brand"><span className="brand-mark">✦</span><div><strong>InspoAtlas</strong><small>灵感拆解工作台</small></div></div>
+        <div
+          className="board-title editable"
+          title="双击原位修改画布名称"
+          onDoubleClick={() => boardId && startBoardRename(boardId, boardTitle, "header")}
+        >
           <span className="live-dot" />
-          {editingBoardId === boardId ? (
+          {editingBoardId === boardId && editingBoardSurface === "header" ? (
             <input
               autoFocus
               value={boardDraft}
+              onClick={(event) => event.stopPropagation()}
+              onDoubleClick={(event) => event.stopPropagation()}
               onChange={(event) => setBoardDraft(event.target.value)}
               onBlur={() => void commitBoardRename(boardId)}
               onKeyDown={(event) => {
                 if (event.key === "Enter") void commitBoardRename(boardId);
-                if (event.key === "Escape") setEditingBoardId(null);
+                if (event.key === "Escape") { setEditingBoardId(null); setEditingBoardSurface(null); }
               }}
             />
-          ) : <b onDoubleClick={() => startBoardRename(boardId, boardTitle)}>{boardTitle}</b>}
+          ) : <b>{boardTitle}</b>}
           <small>{savedState}</small>
         </div>
-        <label className="search-box"><span>⌕</span><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="搜索文字、标签、颜色与来源…" /></label>
+        <nav className="workspace-modes" aria-label="工作区">
+          <button className={rightTab === "asset" ? "active" : ""} onClick={() => setRightTab("asset")}><span>1</span>参考画布</button>
+          <button className={rightTab === "baseline" ? "active" : ""} onClick={() => setRightTab("baseline")}><span>2</span>设计基准</button>
+          <button className={rightTab === "export" ? "active" : ""} onClick={() => setRightTab("export")}><span>3</span>导出使用</button>
+        </nav>
         <div className="top-actions">
           <button className="button ghost" onClick={undo} title="撤销">↶</button>
           <button className="button ghost" onClick={redo} title="重做">↷</button>
           <button className="button soft" onClick={() => void loadCredentials()}>AI 设置</button>
-          <button className="button primary" onClick={() => setModal("export")}>导出使用</button>
+          <UserMenu />
         </div>
       </header>
 
@@ -972,13 +1011,17 @@ function WorkspaceCanvas() {
               key={board.id}
               className={"nav-item " + (board.id === boardId ? "active" : "")}
               onClick={() => setBoardId(board.id)}
+              onDoubleClick={(event) => {
+                event.stopPropagation();
+                startBoardRename(board.id, board.title, "sidebar");
+              }}
               onContextMenu={(event) => {
                 event.preventDefault();
                 setContextMenu({ kind: "board", id: board.id, x: event.clientX, y: event.clientY });
               }}
             >
               <span className="nav-thumb cool" />
-              {editingBoardId === board.id ? (
+              {editingBoardId === board.id && editingBoardSurface === "sidebar" ? (
                 <input
                   autoFocus
                   value={boardDraft}
@@ -988,11 +1031,11 @@ function WorkspaceCanvas() {
                   onKeyDown={(event) => {
                     event.stopPropagation();
                     if (event.key === "Enter") void commitBoardRename(board.id);
-                    if (event.key === "Escape") setEditingBoardId(null);
+                    if (event.key === "Escape") { setEditingBoardId(null); setEditingBoardSurface(null); }
                   }}
                 />
               ) : (
-                <span onDoubleClick={(event) => { event.stopPropagation(); startBoardRename(board.id, board.title); }}>{board.title}</span>
+                <span>{board.title}</span>
               )}
               <button
                 className="board-menu-button"
@@ -1018,15 +1061,11 @@ function WorkspaceCanvas() {
       </aside>
 
       <section className="canvas-area" aria-label="灵感无限画布">
-        <div className="workflow-strip" aria-label="工作流程">
-          <span className={nodes.length ? "done" : "active"}><b>1</b>采集参考</span>
-          <i>›</i>
-          <span className={nodes.some((node) => node.data.analysisSummary) ? "done" : nodes.length ? "active" : ""}><b>2</b>拆解整理</span>
-          <i>›</i>
-          <span className={contract ? "done" : nodes.some((node) => node.data.analysisSummary) ? "active" : ""}><b>3</b>设计基准</span>
-          <i>›</i>
-          <span className={contract ? "active" : ""}><b>4</b>导出使用</span>
-        </div>
+        <label className="canvas-search">
+          <span>⌕</span>
+          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="筛选当前画布…" />
+          <small>{search ? visibleNodes.filter((node) => !node.hidden && node.data.kind !== "group").length + " 项" : "本地筛选"}</small>
+        </label>
         <div className="canvas-toolbar">
           <button onClick={() => fileInput.current?.click()}>▧<small>图片</small></button>
           <button onClick={() => setModal("import")}>T<small>文字/网页</small></button>
@@ -1067,6 +1106,7 @@ function WorkspaceCanvas() {
           onSelectionChange={onSelectionChange}
           onNodeContextMenu={onNodeContextMenu}
           onPaneClick={onPaneClick}
+          onNodeDragStop={onNodeDragStop}
           selectionOnDrag={!organizePreview}
           selectionMode={SelectionMode.Partial}
           multiSelectionKeyCode={["Shift", "Control", "Meta"]}
@@ -1105,8 +1145,9 @@ function WorkspaceCanvas() {
 
       <aside className="inspector">
         <div className="inspector-tabs">
-          <button className={rightTab === "asset" ? "active" : ""} onClick={() => setRightTab("asset")}>素材详情</button>
+          <button className={rightTab === "asset" ? "active" : ""} onClick={() => setRightTab("asset")}>素材</button>
           <button className={rightTab === "baseline" ? "active" : ""} onClick={() => setRightTab("baseline")}>设计基准</button>
+          <button className={rightTab === "export" ? "active" : ""} onClick={() => setRightTab("export")}>导出</button>
         </div>
         {rightTab === "asset" ? (
           selectedIds.length > 1 ? (
@@ -1128,13 +1169,21 @@ function WorkspaceCanvas() {
               {!!selected.data.regions?.length && <section className="inspect-block"><div className="block-heading"><h3>检测到的元素</h3><small>确认后才会导出</small></div><div className="region-list">{selected.data.regions.map((region) => <div key={region.id}><span className="region-preview">{region.type}</span><div><strong>{region.label}</strong><small>{region.confirmed ? "已经确认" : "等待确认"}</small></div><button disabled={region.confirmed} onClick={() => void confirmRegion(region)}>{region.confirmed ? "已确认" : "确认使用"}</button></div>)}</div></section>}
             </>
           ) : <div className="empty-inspector"><strong>从画布开始</strong><p>拖动空白处框选多张卡片，或选择一张参考查看拆解结果。</p></div>
-        ) : (
+        ) : rightTab === "baseline" ? (
           <section className="contract-panel">
-            <span className="step-kicker">第 3 步 · 设计基准</span>
-            <h2>把参考整理成一套可复用的设计规则</h2>
-            <p>AI 会比较颜色、排版、组件和风格差异。确认后，可导出 DESIGN.md、提示词或 Figma 素材。</p>
-            <button className="analyze-button" onClick={() => void previewBaseline()} disabled={contractBusy}>✦ {contractBusy ? "正在整理…" : "整理成设计基准"}</button>
+            <span className="step-kicker">设计基准工作区</span>
+            <h2>把多份参考合并成可复用规则</h2>
+            <p>比较颜色、排版、组件和风格差异，确认后再进入导出工作区。</p>
+            <button className="analyze-button" onClick={() => void previewBaseline()} disabled={contractBusy}>✦ {contractBusy ? "正在整理…" : "生成设计基准"}</button>
             {contract && <div className="contract-content"><h3>{contract.title}</h3><h4>必须保持的设计原则</h4><ol>{contract.principles.map((item) => <li key={item}>{item}</li>)}</ol><h4>颜色</h4><div className="contract-swatches">{contract.tokens.colors.map((item) => <span key={item.name} title={item.name} style={{ background: item.value }} />)}</div>{!!contract.conflicts.length && <div className="contract-warning"><strong>需要你决定</strong>{contract.conflicts.map((item) => <p key={item}>{item}</p>)}</div>}<button className="button primary wide" onClick={() => void confirmBaseline()}>确认这套设计基准</button></div>}
+          </section>
+        ) : (
+          <section className="export-panel">
+            <span className="step-kicker">导出工作区</span>
+            <h2>选择接下来的设计任务</h2>
+            <p>不同任务只导出需要的规则、提示词或 Figma 素材，不再生成混杂资产包。</p>
+            <div className="export-purpose-list">{exportPurposeOptions.map((option) => <button key={option.id} className={exportPurpose === option.id ? "is-active" : ""} onClick={() => setExportPurpose(option.id)}><span>{option.icon}</span><div><strong>{option.title}</strong><small>{option.description}</small></div><i>›</i></button>)}</div>
+            <button className="button primary wide export-now" onClick={() => void exportPackage()}>生成所选任务包</button>
           </section>
         )}
       </aside>
@@ -1148,7 +1197,6 @@ function WorkspaceCanvas() {
             {sourceKinds.has(node.data.kind) && <button onClick={() => handleNodeMenu("analyze")}>{node.data.analysisSummary ? "重新拆解" : "拆解参考"}</button>}
             {node.data.sourceUrl && <button onClick={() => handleNodeMenu("open")}>打开来源</button>}
             {node.data.kind === "group" && <button onClick={() => handleNodeMenu("select-children")}>选择组内卡片</button>}
-            {node.data.kind !== "group" && groups.map((group) => <button key={group.id} onClick={() => { setContextMenu(null); moveNodesToGroup([node.id], group.id); }}>移入：{group.data.title}</button>)}
             {node.parentId && <button onClick={() => handleNodeMenu("detach")}>移出分组</button>}
             <button onClick={() => handleNodeMenu("lock")}>{node.data.pinned ? "解除锁定" : "锁定位置"}</button>
             <hr />
@@ -1178,7 +1226,6 @@ function WorkspaceCanvas() {
 
       {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">AI 设置</span><h2>连接自己的模型</h2><p>Key 只会在服务端加密保存。没有 Key 时，产品不会生成模拟分析。</p><div className="credential-list">{credentialState.map((item) => <span key={item.provider}><b>{item.provider}</b>{item.model} · •••• {item.lastFour}{item.supportsVision ? " · 可分析图片" : " · 仅文字"}</span>)}</div><div className="credential-form"><select value={credentialForm.provider} onChange={(event) => setCredentialForm({ ...credentialForm, provider: event.target.value })}><option value="openai">OpenAI（图片与文字）</option><option value="qwen">Qwen（图片与文字）</option><option value="deepseek">DeepSeek（仅文字）</option></select><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value })} placeholder="API Key" /><input value={credentialForm.model} onChange={(event) => setCredentialForm({ ...credentialForm, model: event.target.value })} placeholder="模型（留空使用推荐模型）" /><button className="button primary" disabled={!credentialForm.apiKey || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "正在测试…" : "测试并保存"}</button></div></section></div>}
 
-      {modal === "export" && <div className="modal-backdrop"><section className="modal export-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">第 4 步 · 导出使用</span><h2>你接下来要做什么？</h2><p>选择具体任务，只导出真正需要的设计规则、提示词或 Figma 素材。</p><div className="export-purpose-grid">{exportPurposeOptions.map((option) => <button key={option.id} className={exportPurpose === option.id ? "is-active" : ""} onClick={() => setExportPurpose(option.id)}><span>{option.icon}</span><div><strong>{option.title}</strong><p>{option.description}</p><small>{option.files}</small></div></button>)}</div><footer><button className="button soft" onClick={() => setModal(null)}>取消</button><button className="button primary" onClick={() => void exportPackage()}>生成导出文件</button></footer></section></div>}
 
       {toast && <div className="toast"><span>✓</span>{toast}</div>}
     </main>
