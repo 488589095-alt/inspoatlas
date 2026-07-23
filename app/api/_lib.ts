@@ -2,6 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 export function currentUser(request: Request) {
   const email = request.headers.get("oai-authenticated-user-email")
+    ?? request.headers.get("x-forwarded-email")
     ?? request.headers.get("x-demo-user")
     ?? (process.env.NODE_ENV === "production" ? null : "demo@inspoatlas.local");
   if (!email) throw new HttpError(401, "请先登录 InspoAtlas");
