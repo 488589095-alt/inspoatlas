@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
   addEdge,
   applyNodeChanges,
@@ -52,6 +52,8 @@ const defaultSize: Record<CardData["kind"], { width: number; height: number }> =
   element: { width: 250, height: 170 },
   group: { width: 760, height: 520 },
 };
+const canvasSnapGrid: [number, number] = [8, 8];
+const minimapNodeColor = (node: CanvasNode) => node.data.kind === "group" ? "#eee7f6" : "#d7e2fb";
 
 type WorkspaceModal = "import" | "credentials" | "export" | null;
 type RelationView = "hidden" | "selection" | "related" | "all";
@@ -331,6 +333,20 @@ function WorkspaceCanvas() {
   }, [setNodes]);
 
   const onConnect = useCallback((value: Connection) => setConnection(value), []);
+  const onSelectionChange = useCallback(({ nodes: selection }: { nodes: CanvasNode[] }) => {
+    const next = selection.map((node) => node.id);
+    setSelectedIds((current) => (
+      current.length === next.length && current.every((id, index) => id === next[index])
+        ? current
+        : next
+    ));
+  }, []);
+  const onNodeContextMenu = useCallback((event: ReactMouseEvent, node: CanvasNode) => {
+    event.preventDefault();
+    setSelectedIds((current) => current.length === 1 && current[0] === node.id ? current : [node.id]);
+    setContextMenu({ kind: "node", id: node.id, x: event.clientX, y: event.clientY });
+  }, []);
+  const onPaneClick = useCallback(() => setContextMenu(null), []);
 
   function confirmConnection(type: RelationType) {
     if (!connection?.source || !connection.target) return;
@@ -1048,13 +1064,9 @@ function WorkspaceCanvas() {
           onNodesChange={organizePreview ? undefined : onNodesChange}
           onEdgesChange={organizePreview ? undefined : onEdgesChange}
           onConnect={organizePreview ? undefined : onConnect}
-          onSelectionChange={({ nodes: selection }) => setSelectedIds(selection.map((node) => node.id))}
-          onNodeContextMenu={(event, node) => {
-            event.preventDefault();
-            setSelectedIds([node.id]);
-            setContextMenu({ kind: "node", id: node.id, x: event.clientX, y: event.clientY });
-          }}
-          onPaneClick={() => setContextMenu(null)}
+          onSelectionChange={onSelectionChange}
+          onNodeContextMenu={onNodeContextMenu}
+          onPaneClick={onPaneClick}
           selectionOnDrag={!organizePreview}
           selectionMode={SelectionMode.Partial}
           multiSelectionKeyCode={["Shift", "Control", "Meta"]}
@@ -1067,14 +1079,14 @@ function WorkspaceCanvas() {
           minZoom={0.14}
           maxZoom={2.2}
           snapToGrid
-          snapGrid={[8, 8]}
+          snapGrid={canvasSnapGrid}
           onlyRenderVisibleElements
           elevateEdgesOnSelect
         >
           <Background id="fine-dots" variant={BackgroundVariant.Dots} color="rgba(72,63,86,.30)" gap={20} size={1.35} />
           <Background id="major-dots" variant={BackgroundVariant.Dots} color="rgba(72,63,86,.16)" gap={100} size={2.1} />
           <Controls showInteractive={false} position="bottom-center" />
-          <MiniMap position="bottom-right" pannable zoomable nodeColor={(node) => node.data.kind === "group" ? "#eee7f6" : "#d7e2fb"} />
+          <MiniMap position="bottom-right" pannable zoomable nodeColor={minimapNodeColor} />
         </ReactFlow>
         <div className="canvas-tip">拖动空白框选 · Shift 添加选择 · 空格拖动画布 · Delete 删除</div>
 
