@@ -1,0 +1,44 @@
+.runtime-error {
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  padding: 24px;
+  place-items: center;
+  color: #302c35;
+  background:
+    radial-gradient(circle at 28% 18%, rgba(211, 223, 255, .88), transparent 36%),
+    radial-gradient(circle at 78% 24%, rgba(251, 221, 235, .76), transparent 32%),
+    #f4f1f5;
+  font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+}
+
+.runtime-error section {
+  width: min(480px, 100%);
+  padding: 34px;
+  border: 1px solid rgba(255, 255, 255, .85);
+  border-radius: 26px;
+  background: rgba(255, 255, 255, .78);
+  box-shadow: 0 28px 80px rgba(43, 35, 54, .18);
+  backdrop-filter: blur(24px);
+  text-align: center;
+}
+
+.runtime-error section > span {
+  display: grid;
+  width: 52px;
+  height: 52px;
+  margin: 0 auto 16px;
+  place-items: center;
+  border-radius: 17px;
+  color: #9a4747;
+  background: #f7e5e5;
+  font-size: 24px;
+  font-weight: 750;
+}
+
+.runtime-error h1 { margin: 0; font-size: 22px; }
+.runtime-error p { margin: 12px 0 22px; color: #716a76; font-size: 14px; line-height: 1.7; }
+.runtime-error div { display: flex; justify-content: center; gap: 9px; }
+.runtime-error button { min-height: 42px; padding: 0 17px; border: 1px solid rgba(75, 67, 91, .12); border-radius: 12px; background: white; cursor: pointer; font-size: 13px; font-weight: 700; }
+.runtime-error button:first-child { color: white; background: #302c35; }
+.runtime-error small { display: block; margin-top: 18px; color: #9a929e; font-size: 12px; }

@@ -129,23 +129,35 @@ function WorkspaceCanvas() {
   const loadBoards = useCallback(async () => {
     const response = await fetch("/api/boards", { cache: "no-store" });
     if (!response.ok) throw new Error("无法读取画布");
-    let list = ((await response.json()) as { boards: BoardSummary[] }).boards;
+    const boardPayload = await response.json().catch(() => null) as { boards?: BoardSummary[] } | null;
+    let list = Array.isArray(boardPayload?.boards)
+      ? boardPayload.boards.filter((item) => item && typeof item.id === "string")
+      : [];
     if (!list.length) {
       const created = await fetch("/api/boards", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ title: "我的灵感图谱" }),
       });
-      const payload = await created.json() as { board: BoardSummary };
+      if (!created.ok) throw new Error("无法创建初始画布");
+      const payload = await created.json().catch(() => null) as { board?: BoardSummary } | null;
+      if (!payload?.board?.id) throw new Error("初始画布数据无效");
       list = [payload.board];
     }
     setBoards(list);
-    const requested = new URLSearchParams(location.search).get("board");
-    setBoardId(list.some((item) => item.id === requested) ? requested! : list[0].id);
+    const requested = new URLSearchParams(window.location.search).get("board");
+    const nextBoardId = list.some((item) => item.id === requested) ? requested : list[0]?.id;
+    if (!nextBoardId) throw new Error("没有可打开的画布");
+    setBoardId(nextBoardId);
   }, []);
 
   useEffect(() => {
-    loadBoards().catch((error) => notify(error.message));
+    loadBoards().catch((error) => {
+      loading.current = false;
+      setBoardTitle("画布载入失败");
+      setSavedState("请刷新重试");
+      notify(error instanceof Error ? error.message : "画布载入失败");
+    });
   }, [loadBoards, notify]);
 
   useEffect(() => {
