@@ -12,7 +12,8 @@ main { padding: 20px; }
 .brand small { margin-top: 2px; color: #77717f; font-size: 12px; }
 p { color: #67616d; font-size: 13px; line-height: 1.7; }
 .config { display: block; margin: 14px 0 12px; color: #67616d; font-size: 12px; }
-.config input { display: block; box-sizing: border-box; width: 100%; margin-top: 6px; padding: 9px 10px; border: 1px solid #dcd4e3; border-radius: 10px; outline: none; background: rgba(255,255,255,.78); font-size: 12px; }
-.config input:focus { border-color: #9585c7; box-shadow: 0 0 0 3px rgba(149,133,199,.12); }
+.config input, .config select { display: block; box-sizing: border-box; width: 100%; min-height: 40px; margin-top: 6px; padding: 9px 10px; border: 1px solid #dcd4e3; border-radius: 10px; outline: none; background: rgba(255,255,255,.78); font-size: 12px; }
+.config input:focus, .config select:focus { border-color: #9585c7; box-shadow: 0 0 0 3px rgba(149,133,199,.12); }
 button { width: 100%; padding: 12px; border: 0; border-radius: 14px; color: white; background: #242228; cursor: pointer; font-size: 13px; font-weight: 650; }
 output { display: block; margin-top: 12px; color: #77717f; font-size: 12px; text-align: center; }
+.secondary { margin-top: 9px; border: 1px solid #d8d0df; color: #51495a; background: white; }

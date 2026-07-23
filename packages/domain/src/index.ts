@@ -3,18 +3,22 @@ import { z } from "zod";
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 export const MAX_TEXT_LENGTH = 50_000;
 export const MAX_ASSETS_PER_USER = 500;
-export const PLATFORM_ANALYSIS_QUOTA = 30;
-
 export const assetKinds = ["image", "web", "text"] as const;
 export const canvasItemTypes = ["image", "web", "text", "analysis", "element", "group"] as const;
-export const relationTypes = ["similar-style", "same-component", "same-project", "supports", "contrasts", "derived-from"] as const;
+export const relationTypes = ["analysis-of", "element-of", "contract-derived-from", "similar-style", "same-component", "complements", "contrasts", "same-project"] as const;
+export const relationLayers = ["provenance", "association"] as const;
+export const relationStatuses = ["confirmed", "suggested", "rejected"] as const;
 export const exportPurposes = ["web-rebuild", "visual-remix", "campaign-system", "figma-bridge"] as const;
+export const providerIds = ["openai", "qwen", "deepseek"] as const;
 
 export type AssetKind = (typeof assetKinds)[number];
 export type CanvasItemType = (typeof canvasItemTypes)[number];
 export type RelationType = (typeof relationTypes)[number];
+export type RelationLayer = (typeof relationLayers)[number];
+export type RelationStatus = (typeof relationStatuses)[number];
 export type JobStatus = "queued" | "processing" | "ready" | "failed";
 export type ExportPurpose = (typeof exportPurposes)[number];
+export type ProviderId = (typeof providerIds)[number];
 
 export const rectSchema = z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1), width: z.number().positive().max(1), height: z.number().positive().max(1) });
 export const componentRegionSchema = z.object({
@@ -25,23 +29,26 @@ export const componentRegionSchema = z.object({
 });
 
 export const analysisResultSchema = z.object({
-  summary: z.string().min(1), purpose: z.array(z.string()).max(8),
+  schemaVersion: z.literal(2).default(2), summary: z.string().min(1), purpose: z.array(z.string()).max(8),
+  principles: z.array(z.string()).min(1).max(8),
   copy: z.array(z.object({ text: z.string(), role: z.string(), sourceRegion: z.string().optional() })).max(40),
   tags: z.array(z.object({ value: z.string(), category: z.enum(["style", "mood", "industry", "pattern"]), confidence: z.number().min(0).max(1) })).max(30),
   palette: z.array(z.object({ hex: z.string().regex(/^#[0-9A-Fa-f]{6}$/), ratio: z.number().min(0).max(1), role: z.string(), confidence: z.number().min(0).max(1) })).min(1).max(12),
-  typography: z.array(z.object({ familyGuess: z.string(), role: z.string(), weight: z.number().int().min(100).max(900).optional(), confidence: z.number().min(0).max(1), inferred: z.literal(true) })).max(12),
+  typography: z.array(z.object({ familyGuess: z.string(), role: z.string(), weight: z.number().int().min(100).max(900).optional(), confidence: z.number().min(0).max(1), inferred: z.boolean() })).max(12),
   spacing: z.object({ base: z.number().positive().optional(), values: z.array(z.number().nonnegative()), confidence: z.number().min(0).max(1) }),
   radii: z.array(z.number().nonnegative()), shadows: z.array(z.string()),
   layout: z.object({ description: z.string(), grid: z.string().optional(), confidence: z.number().min(0).max(1) }),
   components: z.array(componentRegionSchema).max(80),
   accessibility: z.array(z.object({ level: z.enum(["info", "warning"]), message: z.string(), sourceRegion: z.string().optional() })),
-  sourceAssetId: z.string().min(1),
+  sourceAssetId: z.string().min(1), analyzedAt: z.string().datetime().optional(),
+  model: z.object({ provider: z.enum(providerIds), id: z.string() }).optional(),
 });
 
 export type AnalysisResult = z.infer<typeof analysisResultSchema>;
 export type ComponentRegion = z.infer<typeof componentRegionSchema>;
 
 export const clipPayloadSchema = z.object({
+  boardId: z.string().min(1).optional(),
   url: z.string().url().refine((value) => ["http:", "https:"].includes(new URL(value).protocol), "仅支持 HTTP(S)"),
   title: z.string().trim().min(1).max(500),
   screenshotParts: z.array(z.object({ index: z.number().int().nonnegative(), width: z.number().int().positive().max(10_000), height: z.number().int().positive().max(20_000), dataUrl: z.string().startsWith("data:image/") })).max(30),
@@ -50,13 +57,36 @@ export const clipPayloadSchema = z.object({
 });
 
 export type ClipPayload = z.infer<typeof clipPayloadSchema>;
-export interface CanvasCardData { title: string; body?: string; sourceUrl?: string; imageUrl?: string; tags?: string[]; colors?: string[]; status?: JobStatus | "idle"; analysis?: AnalysisResult; parentAssetId?: string; }
-export interface CanvasItem { id: string; type: CanvasItemType; x: number; y: number; width: number; height: number; data: CanvasCardData; }
-export interface Relation { id: string; sourceId: string; targetId: string; type: RelationType; origin: "human" | "ai"; score?: number; }
-export interface OrganizeProposal { id: string; boardId: string; baseVersion: number; groups: Array<{ id: string; title: string; memberIds: string[] }>; positions: Record<string, { x: number; y: number }>; suggestedRelations: Relation[]; }
+export const relationSchema = z.object({
+  id: z.string().min(1), sourceId: z.string().min(1), targetId: z.string().min(1), type: z.enum(relationTypes),
+  layer: z.enum(relationLayers), status: z.enum(relationStatuses).default("confirmed"), origin: z.enum(["human", "ai", "system"]),
+  explanation: z.string().max(500).optional(), score: z.number().min(0).max(1).optional(),
+});
+export type Relation = z.infer<typeof relationSchema>;
+export const sceneNodeSchema = z.object({
+  id: z.string().min(1), kind: z.enum(canvasItemTypes), position: z.object({ x: z.number(), y: z.number() }),
+  width: z.number().min(120).max(2400), height: z.number().min(44).max(2400), parentId: z.string().optional(),
+  pinned: z.boolean().optional(), collapsed: z.boolean().optional(), data: z.record(z.string(), z.unknown()),
+});
+export const boardSceneSchema = z.object({
+  schemaVersion: z.literal(2), nodes: z.array(sceneNodeSchema).max(500), relations: z.array(relationSchema).max(2_000),
+  viewport: z.object({ x: z.number(), y: z.number(), zoom: z.number().min(0.05).max(4) }).optional(),
+});
+export type BoardSceneV2 = z.infer<typeof boardSceneSchema>;
+export type SceneNode = z.infer<typeof sceneNodeSchema>;
+export const EMPTY_SCENE: BoardSceneV2 = { schemaVersion: 2, nodes: [], relations: [], viewport: { x: 0, y: 0, zoom: 1 } };
+export const designContractSchema = z.object({
+  schemaVersion: z.literal(1).default(1), title: z.string().min(1), principles: z.array(z.string()).min(1).max(8),
+  tokens: z.object({ colors: z.array(z.object({ name: z.string(), value: z.string(), sourceAssetIds: z.array(z.string()) })), spacing: z.array(z.number()), radii: z.array(z.number()), shadows: z.array(z.string()) }),
+  components: z.array(z.object({ name: z.string(), rules: z.array(z.string()), sourceAssetIds: z.array(z.string()) })),
+  dos: z.array(z.string()), donts: z.array(z.string()), conflicts: z.array(z.string()), unresolved: z.array(z.string()),
+  sourceAssetIds: z.array(z.string()), generatedAt: z.string(),
+});
+export type DesignContract = z.infer<typeof designContractSchema>;
+export interface OrganizeProposal { id: string; boardId: string; baseVersion: number; groups: Array<{ id: string; title: string; memberIds: string[] }>; positions: Record<string, { x: number; y: number; parentId?: string }>; suggestedRelations: Relation[]; }
 export const exportRequestSchema = z.object({ boardId: z.string().min(1), purpose: z.enum(exportPurposes) });
 export const exportFilesByPurpose: Record<ExportPurpose, string[]> = {
-  "web-rebuild": ["DESIGN.md", "REBUILD_PROMPT.md", "STRUCTURE.md", "tokens/tokens.json", "tokens/variables.css", "components.md", "QA_CHECKLIST.md", "sources.json"],
+  "web-rebuild": ["DESIGN.md", "STRUCTURE.md", "MAPPING.md", "IMPLEMENTATION_PROMPT.md", "tokens/tokens.json", "tokens/variables.css", "components.md", "STRUCTURE_QA.md", "DESIGN_QA.md", "sources.json"],
   "visual-remix": ["IMAGE_PROMPT.md", "PROMPT_VARIANTS.md", "NEGATIVE_PROMPT.md", "palette.json", "composition.md", "sources.json"],
   "campaign-system": ["DESIGN.md", "CAMPAIGN_SYSTEM.md", "PAGE_BRIEF_TEMPLATE.md", "content-schema.json", "components.md", "QA_CHECKLIST.md", "tokens/tokens.json", "tokens/variables.css", "sources.json"],
   "figma-bridge": ["DESIGN.md", "figma-import.json", "FIGMA_IMPORT.md", "tokens.json", "sources.json", "elements/README.md"],
@@ -74,10 +104,41 @@ export function isSafePublicUrl(value: string): boolean {
   } catch { return false; }
 }
 
+export function migrateBoardScene(value: unknown): BoardSceneV2 {
+  const parsed = boardSceneSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  if (!value || typeof value !== "object") return structuredClone(EMPTY_SCENE);
+  const legacy = value as { nodes?: Array<Record<string, unknown>>; edges?: Array<Record<string, unknown>>; viewport?: BoardSceneV2["viewport"] };
+  const nodes = (legacy.nodes ?? []).map((node) => {
+    const data = (node.data && typeof node.data === "object" ? node.data : {}) as Record<string, unknown>;
+    const kind = canvasItemTypes.includes(data.kind as CanvasItemType) ? data.kind as CanvasItemType : "text";
+    const position = node.position && typeof node.position === "object" ? node.position as { x?: unknown; y?: unknown } : {};
+    const style = node.style && typeof node.style === "object" ? node.style as { width?: unknown; height?: unknown } : {};
+    return {
+      id: String(node.id ?? crypto.randomUUID()), kind,
+      position: { x: Number(position.x) || 0, y: Number(position.y) || 0 },
+      width: Math.max(120, Number(style.width ?? node.width) || (kind === "analysis" ? 340 : 286)),
+      height: Math.max(44, Number(style.height ?? node.height) || (kind === "group" ? 520 : 180)),
+      parentId: typeof node.parentId === "string" ? node.parentId : undefined, data,
+    } satisfies SceneNode;
+  });
+  const relations = (legacy.edges ?? []).flatMap((edge, index) => {
+    if (typeof edge.source !== "string" || typeof edge.target !== "string") return [];
+    const label = String(edge.label ?? "");
+    const provenance = /分析|拆分|来源/.test(label);
+    return [{
+      id: String(edge.id ?? "relation-" + index), sourceId: edge.source, targetId: edge.target,
+      type: label.includes("分析") ? "analysis-of" : label.includes("拆分") ? "element-of" : "similar-style",
+      layer: provenance ? "provenance" : "association", status: "confirmed", origin: "human",
+    } satisfies Relation];
+  });
+  return { schemaVersion: 2, nodes, relations: dedupeRelations(relations), viewport: legacy.viewport };
+}
+
 export function dedupeRelations(relations: Relation[]): Relation[] {
   const seen = new Set<string>();
   return relations.filter((relation) => {
-    const directional = relation.type === "supports" || relation.type === "derived-from";
+    const directional = relation.layer === "provenance" || relation.type === "complements";
     const endpoints = directional ? `${relation.sourceId}:${relation.targetId}` : [relation.sourceId, relation.targetId].sort().join(":");
     const key = `${endpoints}:${relation.type}`;
     if (seen.has(key) || relation.sourceId === relation.targetId) return false;

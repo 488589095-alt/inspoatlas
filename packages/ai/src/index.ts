@@ -1,121 +1,84 @@
-import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
-import { analysisResultSchema, type AnalysisResult } from "@inspoatlas/domain";
+import { Buffer } from "node:buffer";
+import { analysisResultSchema, type AnalysisResult, type ProviderId } from "@inspoatlas/domain";
 
-export type ProviderId = "openai" | "qwen" | "deepseek";
-
-export interface ProviderConfig {
-  provider: ProviderId;
-  apiKey: string;
-  model: string;
-  baseUrl?: string;
-}
-
-export interface AnalyzeInput {
-  assetId: string;
-  title: string;
-  text?: string;
-  imageDataUrl?: string;
-  computedStyles?: Record<string, string>[];
-}
-
-const ENDPOINTS: Record<ProviderId, string> = {
-  openai: "https://api.openai.com/v1",
-  qwen: "https://dashscope.aliyuncs.com/compatible-mode/v1",
-  deepseek: "https://api.deepseek.com/v1",
+export interface ProviderConfig { provider: ProviderId; apiKey: string; model: string; baseUrl: string; supportsVision: boolean; }
+export interface AnalyzeInput { assetId: string; title: string; text?: string; imageDataUrl?: string; computedStyles?: Record<string, unknown>[]; }
+export const providerDefaults: Record<ProviderId, { model: string; baseUrl: string; supportsVision: boolean }> = {
+  openai: { model: "gpt-5.6-luna", baseUrl: "https://api.openai.com/v1", supportsVision: true },
+  qwen: { model: "qwen3.6-flash", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", supportsVision: true },
+  deepseek: { model: "deepseek-v4-flash", baseUrl: "https://api.deepseek.com/v1", supportsVision: false },
+};
+const allowedEndpoints: Record<ProviderId, RegExp[]> = {
+  openai: [/^https:\/\/api\.openai\.com\/v1\/?$/],
+  qwen: [/^https:\/\/dashscope(-intl|-us)?\.aliyuncs\.com\/compatible-mode\/v1\/?$/, /^https:\/\/[a-z0-9-]+\.(cn-beijing|ap-southeast-1|ap-northeast-1|eu-central-1)\.maas\.aliyuncs\.com\/compatible-mode\/v1\/?$/],
+  deepseek: [/^https:\/\/api\.deepseek\.com\/v1\/?$/],
 };
 
+export function assertProviderConfig(config: ProviderConfig) {
+  if (!allowedEndpoints[config.provider].some((pattern) => pattern.test(config.baseUrl))) throw new Error("模型端点不在允许列表中");
+  if (config.provider === "deepseek" && config.supportsVision) throw new Error("DeepSeek 官方 API 当前只用于文本分析");
+}
 export async function analyzeWithProvider(input: AnalyzeInput, config: ProviderConfig): Promise<AnalysisResult> {
-  const baseUrl = config.baseUrl ?? ENDPOINTS[config.provider];
-  if (!Object.values(ENDPOINTS).some((endpoint) => baseUrl.startsWith(endpoint))) {
-    throw new Error("模型端点不在允许列表中");
-  }
-
-  const messages = [{
-    role: "user",
-    content: [
-      { type: "text", text: buildPrompt(input) },
-      ...(input.imageDataUrl ? [{ type: "image_url", image_url: { url: input.imageDataUrl } }] : []),
-    ],
-  }];
-
-  const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
-    body: JSON.stringify({ model: config.model, messages, temperature: 0.1, response_format: { type: "json_object" } }),
-  });
-  if (!response.ok) throw new Error(`模型请求失败 (${response.status})`);
-  const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-  const raw = payload.choices?.[0]?.message?.content;
-  if (!raw) throw new Error("模型未返回分析结果");
-
-  const parsed = safeJson(raw);
-  const first = analysisResultSchema.safeParse(parsed);
-  if (first.success) return first.data;
-
-  const repaired = normalizeAnalysis(parsed, input.assetId);
-  return analysisResultSchema.parse(repaired);
+  assertProviderConfig(config);
+  if (input.imageDataUrl && !config.supportsVision) throw new Error("当前模型不支持图片输入，请配置 OpenAI 或 Qwen 视觉模型");
+  const raw = await requestJson(buildMessages(input), config);
+  const first = analysisResultSchema.safeParse(raw);
+  if (first.success) return { ...first.data, analyzedAt: new Date().toISOString(), model: { provider: config.provider, id: config.model } };
+  const repairMessages = [{ role: "user", content: "修复下面 JSON，使其严格符合设计分析 Schema。不要新增解释，只返回 JSON。验证错误：" + JSON.stringify(first.error.issues) + "\n原始 JSON：" + JSON.stringify(raw) }];
+  const repaired = analysisResultSchema.parse(await requestJson(repairMessages, config));
+  return { ...repaired, analyzedAt: new Date().toISOString(), model: { provider: config.provider, id: config.model } };
 }
-
-export function createDemoAnalysis(assetId: string): AnalysisResult {
-  return {
-    summary: "清透、高饱和的产品视觉，以大面积留白和玻璃质感突出核心对象。",
-    purpose: ["产品视觉", "营销落地页", "氛围参考"],
-    copy: [{ text: "让灵感变成可以复用的设计语言", role: "主标题" }],
-    tags: [
-      { value: "玻璃拟态", category: "style", confidence: 0.94 },
-      { value: "清透", category: "mood", confidence: 0.91 },
-      { value: "高饱和点缀", category: "pattern", confidence: 0.88 },
-    ],
-    palette: [
-      { hex: "#F8F5F2", ratio: 0.48, role: "背景", confidence: 0.96 },
-      { hex: "#E74A4A", ratio: 0.24, role: "强调", confidence: 0.93 },
-      { hex: "#C6D7FF", ratio: 0.18, role: "冷色光", confidence: 0.89 },
-      { hex: "#242326", ratio: 0.1, role: "正文", confidence: 0.98 },
-    ],
-    typography: [
-      { familyGuess: "现代无衬线体", role: "标题", weight: 600, confidence: 0.72, inferred: true },
-      { familyGuess: "现代无衬线体", role: "正文", weight: 400, confidence: 0.68, inferred: true },
-    ],
-    spacing: { base: 8, values: [8, 12, 16, 24, 32], confidence: 0.81 },
-    radii: [12, 20, 28],
-    shadows: ["0 18px 50px rgba(76, 65, 108, .16)"],
-    layout: { description: "主体居中，辅助信息沿右侧纵向排布，使用不对称留白建立层级。", grid: "12 列弹性网格", confidence: 0.84 },
-    components: [
-      { id: `${assetId}-hero`, type: "image", label: "主视觉", rect: { x: 0.08, y: 0.1, width: 0.58, height: 0.72 }, confidence: 0.92, confirmed: false },
-      { id: `${assetId}-cta`, type: "button", label: "主操作按钮", rect: { x: 0.7, y: 0.66, width: 0.2, height: 0.1 }, confidence: 0.86, confirmed: false },
-    ],
-    accessibility: [{ level: "warning", message: "浅色玻璃背景上的辅助文字需要复核对比度。" }],
-    sourceAssetId: assetId,
-  };
+export async function testProvider(config: ProviderConfig) {
+  assertProviderConfig(config);
+  const result = await requestJson([{ role: "user", content: "只返回 JSON：{\"ok\":true}" }], config);
+  if (!result || typeof result !== "object") throw new Error("模型没有返回有效 JSON");
 }
-
-export function encryptApiKey(apiKey: string, hexKey: string) {
-  const key = Buffer.from(hexKey, "hex");
-  if (key.length !== 32) throw new Error("AI_CREDENTIAL_KEY 必须为 32 字节十六进制密钥");
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", key, iv);
-  const ciphertext = Buffer.concat([cipher.update(apiKey, "utf8"), cipher.final()]);
-  return { ciphertext: ciphertext.toString("base64"), iv: iv.toString("base64"), authTag: cipher.getAuthTag().toString("base64") };
+async function requestJson(messages: Array<Record<string, unknown>>, config: ProviderConfig) {
+  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 90_000);
+  try {
+    const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/chat/completions", {
+      method: "POST", signal: controller.signal, headers: { "content-type": "application/json", authorization: "Bearer " + config.apiKey },
+      body: JSON.stringify({ model: config.model, messages, temperature: 0.1, response_format: { type: "json_object" } }),
+    });
+    if (!response.ok) throw new Error("模型请求失败（" + response.status + "）");
+    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const raw = payload.choices?.[0]?.message?.content; if (!raw) throw new Error("模型没有返回分析结果");
+    return safeJson(raw);
+  } finally { clearTimeout(timer); }
 }
-
-export function decryptApiKey(payload: { ciphertext: string; iv: string; authTag: string }, hexKey: string) {
-  const decipher = createDecipheriv("aes-256-gcm", Buffer.from(hexKey, "hex"), Buffer.from(payload.iv, "base64"));
-  decipher.setAuthTag(Buffer.from(payload.authTag, "base64"));
-  return Buffer.concat([decipher.update(Buffer.from(payload.ciphertext, "base64")), decipher.final()]).toString("utf8");
+function buildMessages(input: AnalyzeInput) {
+  const prompt = [
+    "你是专业 UI、品牌与产品设计系统分析师。只返回 JSON。",
+    "必须包含 schemaVersion=2、summary、purpose、principles、copy、tags、palette、typography、spacing、radii、shadows、layout、components、accessibility、sourceAssetId。",
+    "principles 必须为 1-8 条可执行规则。所有 confidence 范围 0-1。",
+    "components 的 rect 使用 0-1 归一化坐标，字段为 x、y、width、height；无法可靠定位时不要虚构区域。",
+    "字体无法精确确认时 inferred=true。只描述素材真实存在的信息，不添加功能和营销文案。",
+    "素材 ID：" + input.assetId, "标题：" + input.title, "文本：" + (input.text ?? "").slice(0, 16_000),
+    "计算样式：" + JSON.stringify(input.computedStyles ?? []).slice(0, 16_000),
+  ].join("\n");
+  const content: Array<Record<string, unknown>> = [{ type: "text", text: prompt }];
+  if (input.imageDataUrl) content.push({ type: "image_url", image_url: { url: input.imageDataUrl } });
+  return [{ role: "user", content }];
 }
-
-function buildPrompt(input: AnalyzeInput) {
-  return `你是 UI/产品设计分析师。只返回 JSON，必须包含 summary、purpose、copy、tags、palette、typography、spacing、radii、shadows、layout、components、accessibility、sourceAssetId。所有置信度范围 0-1；字体必须标记 inferred: true。素材 ID: ${input.assetId}；标题: ${input.title}；文本: ${(input.text ?? "").slice(0, 12000)}；计算样式: ${JSON.stringify(input.computedStyles ?? []).slice(0, 12000)}`;
-}
-
 function safeJson(value: string): unknown {
-  const cleaned = value.replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
-  try { return JSON.parse(cleaned); } catch { return {}; }
+  const cleaned = value.replace(/^\x60\x60\x60(?:json)?/i, "").replace(/\x60\x60\x60$/, "").trim();
+  try { return JSON.parse(cleaned); } catch { throw new Error("模型返回的 JSON 无法解析"); }
 }
-
-function normalizeAnalysis(value: unknown, assetId: string): AnalysisResult {
-  const demo = createDemoAnalysis(assetId);
-  if (!value || typeof value !== "object") return demo;
-  return { ...demo, ...(value as Partial<AnalysisResult>), sourceAssetId: assetId };
+export async function encryptApiKey(apiKey: string, hexKey: string) {
+  const keyBytes = fromHex(hexKey); if (keyBytes.length !== 32) throw new Error("AI_CREDENTIAL_KEY 必须为 32 字节十六进制密钥");
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await crypto.subtle.importKey("raw", keyBytes, "AES-GCM", false, ["encrypt"]);
+  const encrypted = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(apiKey)));
+  const tag = encrypted.slice(-16); const ciphertext = encrypted.slice(0, -16);
+  return { ciphertext: Buffer.from(ciphertext).toString("base64"), iv: Buffer.from(iv).toString("base64"), authTag: Buffer.from(tag).toString("base64") };
 }
-
+export async function decryptApiKey(payload: { ciphertext: string; iv: string; authTag: string }, hexKey: string) {
+  const key = await crypto.subtle.importKey("raw", fromHex(hexKey), "AES-GCM", false, ["decrypt"]);
+  const encrypted = Buffer.concat([Buffer.from(payload.ciphertext, "base64"), Buffer.from(payload.authTag, "base64")]);
+  const clear = await crypto.subtle.decrypt({ name: "AES-GCM", iv: Buffer.from(payload.iv, "base64") }, key, encrypted);
+  return new TextDecoder().decode(clear);
+}
+function fromHex(value: string) {
+  if (!/^[0-9a-fA-F]{64}$/.test(value)) return new Uint8Array();
+  return Uint8Array.from(value.match(/.{2}/g) ?? [], (part) => Number.parseInt(part, 16));
+}

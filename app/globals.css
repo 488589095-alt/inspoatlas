@@ -103,6 +103,7 @@ button { color: inherit; }
 .canvas-toolbar button small { display: block; margin-top: 1px; color: #756e7c; font-size: 8px; }
 .canvas-toolbar > span { width: 1px; height: 26px; margin: 0 4px; background: var(--line); }
 .canvas-tip { position: absolute; z-index: 8; left: 16px; bottom: 14px; padding: 8px 11px; border: 1px solid rgba(78,69,93,.08); border-radius: 10px; color: #7a7380; background: rgba(255,255,255,.62); backdrop-filter: blur(12px); font-size: 9px; }
+.relation-view { position: absolute; z-index: 11; top: 16px; right: 16px; min-height: 40px; padding: 0 12px; border: 1px solid var(--line); border-radius: 12px; color: #5f5866; background: rgba(255,255,255,.82); box-shadow: 0 8px 20px rgba(58,49,72,.08); font-size: 12px; }
 kbd { padding: 1px 5px; border: 1px solid #d8d2dd; border-radius: 4px; background: white; font-size: 8px; }
 .visually-hidden { position: absolute !important; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
@@ -299,4 +300,64 @@ kbd { font-size: 10px; }
   .canvas-area { grid-column: 2; }
   .inspector { position: fixed; z-index: 50; right: 0; bottom: 0; width: 285px; height: calc(100vh - 58px); transform: translateX(100%); }
 }
+
+/* Use-ready canvas overrides */
+.canvas-area::before { background: rgba(248, 247, 250, .36); }
+.canvas-toolbar button, .card-head button, .modal-close { min-width: 40px; min-height: 40px; }
+.canvas-toolbar button small { font-size: 12px; }
+.canvas-card { height: 100%; min-height: 100%; overflow: visible; }
+.canvas-card:not(.card-group) { display: flex; flex-direction: column; overflow: hidden; }
+.card-content { min-height: 0; overflow: auto; }
+.card-content p { font-size: 13px; line-height: 1.65; }
+.card-content details { margin: 10px 0; color: #5f5866; font-size: 12px; line-height: 1.6; }
+.card-content summary { cursor: pointer; font-weight: 700; }
+.card-content ul { margin: 6px 0 0; padding-left: 18px; }
+.card-image { min-height: 120px; flex: 1 1 190px; }
+.card-web::before { min-height: 76px; flex: 0 0 92px; margin-top: 0; }
+.card-group { pointer-events: auto; background: rgba(240, 236, 248, .25); border: 1.5px dashed rgba(111,99,133,.35); }
+.card-group > .node-menu { position: absolute; top: 8px; right: 8px; border: 0; border-radius: 10px; background: rgba(255,255,255,.76); cursor: pointer; }
+.card-group .group-label { top: 12px; left: 16px; }
+.group-label small { font-size: 12px; }
+.inline-error { width: 100%; padding: 8px; border: 1px solid #edc6c6; border-radius: 10px; color: #9d4545; background: #fff3f3; cursor: pointer; font-size: 12px; text-align: left; }
+.board-title.editable { border: 0; background: transparent; cursor: text; text-align: left; }
+.board-title b { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.left-rail nav { min-height: 0; max-height: 42vh; overflow-y: auto; }
+.nav-item > span:nth-child(2) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quota-card p { margin: 9px 0; color: #736c78; font-size: 12px; line-height: 1.55; }
+.principle-list { margin: 0; padding-left: 20px; color: #5e5764; font-size: 13px; line-height: 1.65; }
+.evidence-state > span { display: inline-flex; padding: 5px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; }
+.evidence-state .measured { color: #356a4d; background: #e1f2e8; }
+.evidence-state .inferred { color: #7b5f25; background: #f7edcf; }
+.evidence-state p { margin: 9px 0 0; color: #77707b; font-size: 12px; line-height: 1.6; }
+.contract-panel { padding: 20px 16px; }
+.contract-panel h2 { margin: 8px 0; font-size: 20px; line-height: 1.35; }
+.contract-panel > p { color: #6f6874; font-size: 13px; line-height: 1.65; }
+.contract-content { padding: 14px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.62); }
+.contract-content h3 { margin: 0 0 14px; font-size: 16px; }
+.contract-content h4 { margin: 14px 0 7px; font-size: 13px; }
+.contract-content ol { padding-left: 20px; font-size: 12.5px; line-height: 1.65; }
+.contract-swatches { display: flex; flex-wrap: wrap; gap: 5px; }
+.contract-swatches span { width: 30px; height: 30px; border: 2px solid white; border-radius: 9px; box-shadow: 0 2px 7px rgba(40,35,48,.14); }
+.contract-warning { margin-top: 12px; padding: 10px; border-radius: 11px; color: #76591f; background: #fbf1d8; font-size: 12px; }
+.contract-warning p { margin: 5px 0; line-height: 1.5; }
+.button.wide { width: 100%; margin-top: 14px; }
+.node-action-menu { position: fixed; z-index: 130; top: 50%; left: 50%; display: grid; width: 220px; padding: 8px; border: 1px solid var(--line); border-radius: 16px; background: rgba(255,255,255,.96); box-shadow: 0 24px 70px rgba(42,35,51,.24); transform: translate(-50%,-50%); }
+.node-action-menu button { min-height: 40px; padding: 0 12px; border: 0; border-radius: 9px; background: transparent; cursor: pointer; font-size: 13px; text-align: left; }
+.node-action-menu button:hover { background: #f2eef6; }
+.node-action-menu .danger { color: #a74343; }
+.relation-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.relation-options button { min-height: 44px; border: 1px solid var(--line); border-radius: 12px; background: white; cursor: pointer; font-size: 13px; }
+.organize-summary { display: grid; grid-template-columns: 1fr auto 1fr auto 1fr; align-items: center; gap: 8px; margin: 22px 0; }
+.organize-summary span { padding: 18px 8px; border-radius: 13px; background: #f0ebf5; font-size: 13px; text-align: center; }
+.credential-list { display: grid; gap: 6px; margin-bottom: 14px; }
+.credential-list span { padding: 9px 11px; border-radius: 10px; background: #eeebf3; font-size: 12px; }
+.credential-list b { margin-right: 8px; text-transform: uppercase; }
+.credential-form { display: grid; gap: 9px; }
+.credential-form select, .credential-form input { min-height: 44px; padding: 0 12px; border: 1px solid var(--line); border-radius: 11px; background: white; font-size: 13px; }
+.region-list > div { grid-template-columns: 48px minmax(0, 1fr) auto; }
+.region-list button { min-height: 38px; font-size: 11px; }
+.region-preview { width: 48px; height: 38px; overflow: hidden; font-size: 9px; }
+.react-flow__edge-path { stroke-width: 1.7; }
+.react-flow__edge.selected .react-flow__edge-path { stroke-width: 2.6; }
+.react-flow__resize-control.handle { width: 10px; height: 10px; border-radius: 50%; background: #8173b4; }
 

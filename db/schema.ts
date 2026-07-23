@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const profiles = sqliteTable("profiles", {
   id: text("id").primaryKey(), email: text("email").notNull().unique(),
@@ -11,7 +11,7 @@ export const boards = sqliteTable("boards", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), title: text("title").notNull(),
   version: integer("version").notNull().default(1), scene: text("scene", { mode: "json" }).$type<Record<string, unknown>>().notNull().default({}),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
-}, (table) => [uniqueIndex("boards_owner_title_idx").on(table.ownerId, table.title)]);
+}, (table) => [index("boards_owner_updated_idx").on(table.ownerId, table.updatedAt)]);
 
 export const assets = sqliteTable("assets", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), boardId: text("board_id").notNull(),
@@ -23,14 +23,38 @@ export const assets = sqliteTable("assets", {
 
 export const relations = sqliteTable("relations", {
   id: text("id").primaryKey(), boardId: text("board_id").notNull(), sourceId: text("source_id").notNull(), targetId: text("target_id").notNull(),
-  type: text("type").notNull(), origin: text("origin", { enum: ["human", "ai"] }).notNull(), score: real("score"),
+  type: text("type").notNull(), layer: text("layer", { enum: ["provenance", "association"] }).notNull().default("association"),
+  status: text("status", { enum: ["confirmed", "suggested", "rejected"] }).notNull().default("confirmed"),
+  origin: text("origin", { enum: ["human", "ai", "system"] }).notNull(), explanation: text("explanation"), score: real("score"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 export const analyses = sqliteTable("analyses", {
-  id: text("id").primaryKey(), assetId: text("asset_id").notNull(), schemaVersion: integer("schema_version").notNull().default(1),
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), assetId: text("asset_id").notNull().unique(), schemaVersion: integer("schema_version").notNull().default(2),
   provider: text("provider").notNull(), model: text("model").notNull(), result: text("result", { mode: "json" }).$type<Record<string, unknown>>(),
   status: text("status", { enum: ["queued", "processing", "ready", "failed"] }).notNull(), error: text("error"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const aiCredentials = sqliteTable("ai_credentials", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), provider: text("provider", { enum: ["openai", "qwen", "deepseek"] }).notNull(),
+  model: text("model").notNull(), baseUrl: text("base_url").notNull(), ciphertext: text("ciphertext").notNull(), iv: text("iv").notNull(),
+  authTag: text("auth_tag").notNull(), lastFour: text("last_four").notNull(), supportsVision: integer("supports_vision", { mode: "boolean" }).notNull().default(false),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [uniqueIndex("ai_credentials_owner_provider_idx").on(table.ownerId, table.provider)]);
+
+export const confirmedElements = sqliteTable("confirmed_elements", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), boardId: text("board_id").notNull(), assetId: text("asset_id").notNull(),
+  analysisId: text("analysis_id").notNull(), regionId: text("region_id").notNull(), label: text("label").notNull(), type: text("type").notNull(),
+  rect: text("rect", { mode: "json" }).$type<Record<string, number>>().notNull(), objectKey: text("object_key"), metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>().notNull().default({}),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
+export const designContracts = sqliteTable("design_contracts", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), boardId: text("board_id").notNull().unique(),
+  version: integer("version").notNull().default(1), status: text("status", { enum: ["draft", "confirmed"] }).notNull().default("draft"),
+  content: text("content", { mode: "json" }).$type<Record<string, unknown>>().notNull(), provider: text("provider"), model: text("model"),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
 export const jobs = sqliteTable("jobs", {
@@ -54,4 +78,3 @@ export const events = sqliteTable("events", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), name: text("name").notNull(), payload: text("payload", { mode: "json" }).$type<Record<string, unknown>>().notNull().default({}),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
-

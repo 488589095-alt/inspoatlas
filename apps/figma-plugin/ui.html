@@ -26,7 +26,7 @@
     <main>
       <div class="brand"><span class="mark">◇</span><div><h1>InspoAtlas Figma Bridge</h1><small>把已确认规范写入当前文件</small></div></div>
       <label class="drop"><div><strong>选择 figma-import.json</strong><span>将创建本地颜色变量和可编辑组件草稿</span><input id="file" type="file" accept="application/json,.json" /></div></label>
-      <p class="note">插件不联网，也不会覆盖现有组件。字体、隐藏状态和图像细节仍需根据来源人工确认。</p>
+      <p class="note">插件不联网，也不会覆盖现有组件。有计算样式证据的元素创建 Auto Layout 组件；只有图片证据的元素保留来源说明，不会伪装成完整可编辑组件。</p>
       <div class="actions"><button id="cancel">取消</button><button id="import" class="primary" disabled>导入当前文件</button></div>
       <output id="status">等待选择文件</output>
     </main>
@@ -39,7 +39,7 @@
         try {
           payload = JSON.parse(await file.files[0].text());
           importButton.disabled = false;
-          status.value = `已读取：${payload.name || "未命名任务包"}`;
+          status.value = `已读取：${payload.title || "未命名任务包"}`;
         } catch (error) {
           payload = null;
           importButton.disabled = true;

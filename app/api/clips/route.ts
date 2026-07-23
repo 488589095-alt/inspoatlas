@@ -1,13 +1,15 @@
 import { clipPayloadSchema } from "@/packages/domain/src";
 import { assets, boards, profiles } from "@/db/schema";
 import { ensureCoreTables, getDb } from "@/db";
-import { desc, eq } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { currentUser, errorResponse, newId } from "../_lib";
+import { decodeDataUrl, getAssetBucket } from "../_storage";
 
 export async function GET(request: Request) {
   const user = currentUser(request);
   try {
     await ensureCoreTables();
+    const boardId = new URL(request.url).searchParams.get("boardId");
     const rows = await getDb()
       .select({
         id: assets.id,
@@ -20,7 +22,7 @@ export async function GET(request: Request) {
         createdAt: assets.createdAt,
       })
       .from(assets)
-      .where(eq(assets.ownerId, user.id))
+      .where(boardId ? and(eq(assets.ownerId, user.id), eq(assets.boardId, boardId)) : eq(assets.ownerId, user.id))
       .orderBy(desc(assets.createdAt))
       .limit(100);
 
@@ -43,9 +45,27 @@ export async function POST(request: Request) {
     const user = currentUser(request); const clip = clipPayloadSchema.parse(await request.json());
     const assetId = newId("asset");
     await ensureCoreTables();
-    const db = getDb(); const boardId = `demo-${user.id}`;
+    const db = getDb();
     await db.insert(profiles).values({ id: user.id, email: user.email }).onConflictDoNothing();
-    await db.insert(boards).values({ id: boardId, ownerId: user.id, title: "网页采集", scene: {} }).onConflictDoNothing();
+    let boardId = clip.boardId;
+    if (boardId) {
+      const [target] = await db.select({ id: boards.id }).from(boards).where(and(eq(boards.id, boardId), eq(boards.ownerId, user.id))).limit(1);
+      if (!target) throw new Error("目标画布不存在");
+    } else {
+      const [recent] = await db.select({ id: boards.id }).from(boards).where(eq(boards.ownerId, user.id)).orderBy(desc(boards.updatedAt)).limit(1);
+      boardId = recent?.id;
+    }
+    if (!boardId) {
+      boardId = newId("board");
+      await db.insert(boards).values({ id: boardId, ownerId: user.id, title: "网页采集", scene: { schemaVersion: 2, nodes: [], relations: [] } });
+    }
+    const screenshotKeys: string[] = [];
+    for (const part of clip.screenshotParts) {
+      const decoded = decodeDataUrl(part.dataUrl);
+      const objectKey = "assets/" + user.id + "/" + assetId + "/capture-" + part.index + ".jpg";
+      await getAssetBucket().put(objectKey, decoded.bytes, { httpMetadata: { contentType: decoded.contentType }, customMetadata: { ownerId: user.id, assetId } });
+      screenshotKeys.push(objectKey);
+    }
     await db.insert(assets).values({
       id: assetId,
       ownerId: user.id,
@@ -57,12 +77,13 @@ export async function POST(request: Request) {
       status: "queued",
       metadata: {
         styles: clip.styles,
+        screenshotKeys,
         viewportCaptures: clip.screenshotParts.length,
         capturedAt: new Date().toISOString(),
         captureSource: "browser-extension",
       },
     });
-    return Response.json({ asset: { id: assetId, kind: "web", title: clip.title, sourceUrl: clip.url }, queued: true }, { status: 201 });
+    return Response.json({ asset: { id: assetId, boardId, kind: "web", title: clip.title, sourceUrl: clip.url, contentUrl: screenshotKeys.length ? "/api/assets/" + assetId + "/content" : null }, queued: true }, { status: 201 });
   } catch (error) { return errorResponse(error); }
 }
 

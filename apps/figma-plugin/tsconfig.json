@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "none",
+    "strict": true,
+    "skipLibCheck": true,
+    "outFile": "code.js"
+  },
+  "include": ["code.ts"]
+}

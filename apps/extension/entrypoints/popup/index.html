@@ -11,8 +11,10 @@
       <div class="brand"><span>✦</span><div><strong>InspoAtlas</strong><small>灵感图谱</small></div></div>
       <p>保存当前网页的视觉、正文和关键样式。仅在你点击时读取本页。</p>
       <label class="config">接收地址<input id="app-url" type="url" spellcheck="false" /></label>
+      <label class="config">目标画布<select id="board"><option value="">正在读取画布…</option></select></label>
       <button id="capture">采集到灵感图谱</button>
       <output id="status">准备就绪</output>
+      <button id="open-board" class="secondary" hidden>打开对应画布</button>
     </main>
     <script type="module" src="./main.ts"></script>
   </body>
