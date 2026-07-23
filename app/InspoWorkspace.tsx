@@ -258,19 +258,20 @@ function WorkspaceCanvas() {
         data: { kind: "analysis", title: "AI 分析 · " + source.data.title, sourceAssetId: assetId, sourceTitle: source.data.title, status: "processing", body: "等待真实模型返回结构化结果…" },
         style: defaultSize.analysis, zIndex: 3,
       };
-      return previous ? current.map((item) => item.id === analysisNodeId ? loadingCard : item) : [...current, loadingCard];
+      const marked = current.map((item) => item.id === source.id ? { ...item, data: { ...item.data, status: "processing" } } : item);
+      return previous ? marked.map((item) => item.id === analysisNodeId ? loadingCard : item) : [...marked, loadingCard];
     });
     const relation: Relation = { id: "analysis-edge-" + assetId, sourceId: source.id, targetId: analysisNodeId, type: "analysis-of", layer: "provenance", status: "confirmed", origin: "system" };
     setEdges((current) => current.some((edge) => edge.id === relation.id) ? current : [...current, { id: relation.id, source: source.id, target: analysisNodeId, label: "分析来源", data: relation, zIndex: 4, style: { stroke: "#64576f", strokeWidth: 2 } }]);
     const response = await fetch("/api/analyses", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ assetId, mode: "replace" }) });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setNodes((current) => current.map((item) => item.id === analysisNodeId ? { ...item, data: { ...item.data, status: previous?.data.status === "ready" ? "ready" : "failed", error: payload.error || "分析失败" } } : item));
+      setNodes((current) => current.map((item) => item.id === analysisNodeId ? { ...item, data: { ...item.data, status: previous?.data.status === "ready" ? "ready" : "failed", error: payload.error || "分析失败" } } : item.id === source.id ? { ...item, data: { ...item.data, status: previous?.data.status === "ready" ? "ready" : "failed" } } : item));
       if (response.status === 409) setModal("credentials");
       return notify(payload.error || "分析失败，已保留上次有效结果");
     }
     const result = payload.analysis.result as AnalysisResult;
-    setNodes((current) => current.map((item) => item.id === analysisNodeId ? { ...item, data: {
+    setNodes((current) => current.map((item) => item.id === source.id ? { ...item, data: { ...item.data, status: "ready", tags: [...new Set([...(item.data.tags ?? []), "已分析"])] } } : item.id === analysisNodeId ? { ...item, data: {
       ...item.data, analysisId: payload.analysis.id, status: "ready", error: undefined, title: "AI 分析 · " + source.data.title,
       body: result.summary, principles: result.principles, colors: result.palette.map((color) => color.hex),
       tags: result.tags.slice(0, 8).map((tag) => tag.value), regions: result.components,
