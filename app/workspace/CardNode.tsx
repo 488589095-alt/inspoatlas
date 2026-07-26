@@ -90,7 +90,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
           {data.status === "processing" ? (
             <div className="analysis-loading"><i /><span>正在拆解视觉风格、版式和组件…</span></div>
           ) : data.analysisError && !data.analysisSummary ? (
-            <div className="analysis-failed"><p>{data.analysisError}</p><button onClick={() => action("analyze")}>重试</button></div>
+            <div className="analysis-failed"><p>{displayAnalysisError(data.analysisError)}</p><button onClick={() => action("analyze")}>重试</button></div>
           ) : (
             <>
               <div className="analysis-section">
@@ -167,6 +167,14 @@ function InlineTitle({ id, value, className = "" }: { id: string; value: string;
 
   const Tag = className ? "strong" : "h3";
   return <Tag className={className} onDoubleClick={(event) => { event.stopPropagation(); setEditing(true); }}>{value}</Tag>;
+}
+
+function displayAnalysisError(value: string | undefined) {
+  if (!value) return "拆解失败，请重试。";
+  if (/invalid_(?:type|value)|expected|zod|too_(?:big|small)|\[\s*\{/i.test(value) || value.length > 260) {
+    return "模型返回的分析格式不完整。请重试；若持续失败，请在 AI 设置中更换支持结构化输出的模型。";
+  }
+  return value;
 }
 
 function analysisStatusText(status: string | undefined, hasAnalysis: boolean) {

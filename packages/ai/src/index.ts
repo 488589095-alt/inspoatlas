@@ -22,11 +22,24 @@ export async function analyzeWithProvider(input: AnalyzeInput, config: ProviderC
   assertProviderConfig(config);
   if (input.imageDataUrl && !config.supportsVision) throw new Error("当前模型不支持图片输入，请配置 OpenAI 或 Qwen 视觉模型");
   const raw = await requestJson(buildMessages(input), config);
-  const first = analysisResultSchema.safeParse(raw);
+  const first = analysisResultSchema.safeParse(normalizeAnalysisPayload(raw, input.assetId));
   if (first.success) return { ...first.data, analyzedAt: new Date().toISOString(), model: { provider: config.provider, id: config.model } };
-  const repairMessages = [{ role: "user", content: "修复下面 JSON，使其严格符合设计分析 Schema。不要新增解释，只返回 JSON。验证错误：" + JSON.stringify(first.error.issues) + "\n原始 JSON：" + JSON.stringify(raw) }];
-  const repaired = analysisResultSchema.parse(await requestJson(repairMessages, config));
-  return { ...repaired, analyzedAt: new Date().toISOString(), model: { provider: config.provider, id: config.model } };
+
+  const repairMessages = [{
+    role: "user",
+    content: [
+      "将下面的模型输出修复为指定 JSON 结构。不要解释，不要使用 Markdown。",
+      analysisSchemaGuide(input.assetId),
+      "校验问题：" + JSON.stringify(first.error.issues.slice(0, 20)),
+      "待修复输出：" + JSON.stringify(raw),
+    ].join("\n\n"),
+  }];
+  const repairedRaw = await requestJson(repairMessages, config);
+  const repaired = analysisResultSchema.safeParse(normalizeAnalysisPayload(repairedRaw, input.assetId));
+  if (!repaired.success) {
+    throw new Error("模型返回的结构与设计分析格式不兼容。请重试；若持续失败，请在 AI 设置中更换支持结构化输出的模型。");
+  }
+  return { ...repaired.data, analyzedAt: new Date().toISOString(), model: { provider: config.provider, id: config.model } };
 }
 export async function testProvider(config: ProviderConfig) {
   assertProviderConfig(config);
@@ -49,7 +62,7 @@ async function requestJson(messages: Array<Record<string, unknown>>, config: Pro
 function buildMessages(input: AnalyzeInput) {
   const prompt = [
     "你是专业 UI、品牌与产品设计系统分析师。只返回 JSON。",
-    "必须包含 schemaVersion=2、summary、purpose、principles、copy、tags、palette、typography、spacing、radii、shadows、layout、components、accessibility、sourceAssetId。",
+    analysisSchemaGuide(input.assetId),
     "principles 必须为 1-8 条可执行规则。所有 confidence 范围 0-1。",
     "components 的 rect 使用 0-1 归一化坐标，字段为 x、y、width、height；无法可靠定位时不要虚构区域。",
     "字体无法精确确认时 inferred=true。只描述素材真实存在的信息，不添加功能和营销文案。",
@@ -60,6 +73,176 @@ function buildMessages(input: AnalyzeInput) {
   if (input.imageDataUrl) content.push({ type: "image_url", image_url: { url: input.imageDataUrl } });
   return [{ role: "user", content }];
 }
+export function normalizeAnalysisPayload(value: unknown, assetId: string): unknown {
+  const raw = asRecord(value);
+  const allowedCategories = new Set(["style", "mood", "industry", "pattern"]);
+  const allowedComponentTypes = new Set(["button", "card", "input", "navigation", "icon", "image", "text", "other"]);
+
+  const copy = asArray(raw.copy).flatMap((item) => {
+    if (typeof item === "string") return [{ text: item, role: "reference" }];
+    const entry = asRecord(item);
+    const value = asText(entry.text ?? entry.value ?? entry.copy);
+    return value ? [{ text: value, role: asText(entry.role, "reference"), ...(entry.sourceRegion ? { sourceRegion: asText(entry.sourceRegion) } : {}) }] : [];
+  });
+  const tags = asArray(raw.tags).flatMap((item) => {
+    if (typeof item === "string") return [{ value: item, category: "style", confidence: .5 }];
+    const entry = asRecord(item);
+    const tag = asText(entry.value ?? entry.name ?? entry.label);
+    if (!tag) return [];
+    const category = asText(entry.category, "style");
+    return [{ value: tag, category: allowedCategories.has(category) ? category : "style", confidence: asConfidence(entry.confidence) }];
+  });
+  const palette = asArray(raw.palette ?? raw.colors).flatMap((item) => {
+    const entry = asRecord(item);
+    const color = normalizeHex(typeof item === "string" ? item : entry.hex ?? entry.value ?? entry.code ?? entry.color);
+    if (!color) return [];
+    return [{
+      hex: color,
+      ratio: clamp(asNumber(entry.ratio ?? entry.proportion, 0), 0, 1),
+      role: asText(entry.role ?? entry.name, "参考色"),
+      confidence: asConfidence(entry.confidence),
+    }];
+  });
+  const typography = asArray(raw.typography ?? raw.fonts).flatMap((item) => {
+    const entry = asRecord(item);
+    const familyGuess = typeof item === "string" ? item : asText(entry.familyGuess ?? entry.family ?? entry.name);
+    if (!familyGuess) return [];
+    const weight = asOptionalNumber(entry.weight);
+    return [{
+      familyGuess,
+      role: asText(entry.role, "正文"),
+      ...(weight === undefined ? {} : { weight: Math.round(clamp(weight, 100, 900) / 100) * 100 }),
+      confidence: asConfidence(entry.confidence),
+      inferred: typeof entry.inferred === "boolean" ? entry.inferred : true,
+    }];
+  });
+  const spacingRaw = asRecord(raw.spacing);
+  const spacingValues = asArray(Array.isArray(raw.spacing) ? raw.spacing : spacingRaw.values)
+    .map((item) => asNumber(item, Number.NaN))
+    .filter((item) => Number.isFinite(item) && item >= 0);
+  const layoutRaw = asRecord(raw.layout);
+  const layoutDescription = typeof raw.layout === "string"
+    ? raw.layout
+    : asText(layoutRaw.description ?? layoutRaw.summary);
+  const components = asArray(raw.components ?? raw.regions).flatMap((item, index) => {
+    const entry = asRecord(item);
+    const rectRaw = asRecord(entry.rect ?? entry.bounds ?? entry.bbox);
+    const rect = {
+      x: clamp(asNumber(rectRaw.x, 0), 0, 1),
+      y: clamp(asNumber(rectRaw.y, 0), 0, 1),
+      width: clamp(asNumber(rectRaw.width ?? rectRaw.w, 0), 0, 1),
+      height: clamp(asNumber(rectRaw.height ?? rectRaw.h, 0), 0, 1),
+    };
+    if (!rect.width || !rect.height) return [];
+    const type = asText(entry.type, "other");
+    return [{
+      id: asText(entry.id, `region-${index + 1}`),
+      type: allowedComponentTypes.has(type) ? type : "other",
+      label: asText(entry.label ?? entry.name, "未命名元素"),
+      rect,
+      confidence: asConfidence(entry.confidence),
+      confirmed: typeof entry.confirmed === "boolean" ? entry.confirmed : false,
+    }];
+  });
+  const accessibility = asArray(raw.accessibility).flatMap((item) => {
+    if (typeof item === "string") return [{ level: "info", message: item }];
+    const entry = asRecord(item);
+    const message = asText(entry.message ?? entry.text);
+    if (!message) return [];
+    return [{
+      level: entry.level === "warning" ? "warning" : "info",
+      message,
+      ...(entry.sourceRegion ? { sourceRegion: asText(entry.sourceRegion) } : {}),
+    }];
+  });
+
+  return {
+    ...raw,
+    schemaVersion: 2,
+    summary: asText(raw.summary ?? raw.description),
+    purpose: asArray(raw.purpose).map((item) => asText(item)).filter(Boolean),
+    principles: asArray(raw.principles).map((item) => asText(item)).filter(Boolean),
+    copy,
+    tags,
+    palette,
+    typography,
+    spacing: {
+      ...(asOptionalNumber(spacingRaw.base) === undefined ? {} : { base: asOptionalNumber(spacingRaw.base) }),
+      values: spacingValues,
+      confidence: asConfidence(spacingRaw.confidence),
+    },
+    radii: asArray(raw.radii ?? raw.borderRadius).map((item) => asNumber(item, Number.NaN)).filter((item) => Number.isFinite(item) && item >= 0),
+    shadows: asArray(raw.shadows).map((item) => asText(item)).filter(Boolean),
+    layout: {
+      description: layoutDescription,
+      ...(layoutRaw.grid ? { grid: asText(layoutRaw.grid) } : {}),
+      confidence: asConfidence(layoutRaw.confidence),
+    },
+    components,
+    accessibility,
+    sourceAssetId: assetId,
+  };
+}
+
+function analysisSchemaGuide(assetId: string) {
+  return [
+    "严格返回以下 JSON 对象结构，数组元素不得简写成字符串（purpose、principles、radii、shadows 除外）：",
+    JSON.stringify({
+      schemaVersion: 2,
+      summary: "一句中文摘要",
+      purpose: ["用途"],
+      principles: ["可执行设计规则"],
+      copy: [{ text: "原文", role: "headline", sourceRegion: "可选区域ID" }],
+      tags: [{ value: "标签", category: "style|mood|industry|pattern", confidence: 0.8 }],
+      palette: [{ hex: "#RRGGBB", ratio: 0.5, role: "主色", confidence: 0.8 }],
+      typography: [{ familyGuess: "字体推断", role: "正文", weight: 400, confidence: 0.5, inferred: true }],
+      spacing: { base: 8, values: [8, 16, 24], confidence: 0.7 },
+      radii: [8, 16],
+      shadows: ["0 8px 24px rgba(0,0,0,.12)"],
+      layout: { description: "布局说明", grid: "可选网格说明", confidence: 0.8 },
+      components: [{ id: "region-1", type: "button|card|input|navigation|icon|image|text|other", label: "元素名", rect: { x: 0.1, y: 0.1, width: 0.2, height: 0.1 }, confidence: 0.8, confirmed: false }],
+      accessibility: [{ level: "info|warning", message: "提醒", sourceRegion: "可选区域ID" }],
+      sourceAssetId: assetId,
+    }),
+  ].join("\n");
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+function asArray(value: unknown): unknown[] {
+  if (Array.isArray(value)) return value;
+  return value === undefined || value === null || value === "" ? [] : [value];
+}
+function asText(value: unknown, fallback = "") {
+  return typeof value === "string" ? value.trim() : typeof value === "number" ? String(value) : fallback;
+}
+function asNumber(value: unknown, fallback: number) {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const match = value.match(/-?\d+(?:\.\d+)?/);
+    if (match) return Number(match[0]);
+  }
+  return fallback;
+}
+function asOptionalNumber(value: unknown) {
+  const parsed = asNumber(value, Number.NaN);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+function asConfidence(value: unknown) {
+  return clamp(asNumber(value, .5), 0, 1);
+}
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+function normalizeHex(value: unknown) {
+  if (typeof value !== "string") return "";
+  const clean = value.trim();
+  if (/^#[0-9a-f]{6}$/i.test(clean)) return clean.toUpperCase();
+  if (/^#[0-9a-f]{3}$/i.test(clean)) return ("#" + clean.slice(1).split("").map((part) => part + part).join("")).toUpperCase();
+  return "";
+}
+
 function safeJson(value: string): unknown {
   const cleaned = value.replace(/^\x60\x60\x60(?:json)?/i, "").replace(/\x60\x60\x60$/, "").trim();
   try { return JSON.parse(cleaned); } catch { throw new Error("模型返回的 JSON 无法解析"); }

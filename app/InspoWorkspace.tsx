@@ -69,6 +69,10 @@ function WorkspaceCanvas() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
+  const [searchExpanded, setSearchExpanded] = useState(true);
+  const [toolbarExpanded, setToolbarExpanded] = useState(true);
+  const [showMinimap, setShowMinimap] = useState(true);
+  const [focusMode, setFocusMode] = useState(false);
   const [savedState, setSavedState] = useState("正在读取");
   const [rightTab, setRightTab] = useState<"asset" | "baseline" | "export">("asset");
   const [relationView, setRelationView] = useState<RelationView>("selection");
@@ -298,6 +302,7 @@ function WorkspaceCanvas() {
         })));
       }
       if (event.key === "Escape") {
+        setFocusMode(false);
         setContextMenu(null);
         setSelectedIds([]);
         setNodes((current) => current.map((node) => ({ ...node, selected: false })));
@@ -645,11 +650,11 @@ function WorkspaceCanvas() {
         data: {
           ...item.data,
           status: item.data.analysisSummary ? "ready" : "failed",
-          analysisError: payload.error || "拆解失败",
+          analysisError: friendlyAnalysisError(payload.error),
         },
       } : item));
       if (response.status === 409) setModal("credentials");
-      return notify(payload.error || "拆解失败，已保留上次结果");
+      return notify(friendlyAnalysisError(payload.error));
     }
     const result = payload.analysis.result as AnalysisResult;
     setNodes((current) => current.map((item) => item.id === source.id ? {
@@ -1022,7 +1027,7 @@ function WorkspaceCanvas() {
 
   return (
     <main
-      className="workspace-shell"
+      className={"workspace-shell" + (focusMode ? " focus-mode" : "")}
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
@@ -1121,18 +1126,19 @@ function WorkspaceCanvas() {
       </aside>
 
       <section className="canvas-area" aria-label="灵感无限画布">
-        <label className="canvas-search" title="按标题、标签、文字、来源、颜色和拆解结果查找">
-          <span>⌕</span>
-          <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="查找标题、标签、颜色…" />
-          <small>{search ? visibleNodes.filter((node) => node.className?.includes("is-search-match")).length + " 项匹配" : "当前画布"}</small>
-        </label>
-        <div className="canvas-toolbar">
-          <button onClick={() => fileInput.current?.click()}>▧<small>图片</small></button>
-          <button onClick={() => setModal("import")}>T<small>文字/网页</small></button>
-          <button onClick={() => createGroup()}>▱<small>分组</small></button>
-          <span />
-          <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()}>✦<small>拆解参考</small></button>
-          <button onClick={previewOrganize}>⌗<small>整理画布</small></button>
+        <div className={"canvas-search" + (searchExpanded ? "" : " is-collapsed")} title="按标题、标签、文字、来源、颜色和拆解结果查找">
+          <button className="search-toggle" onClick={() => setSearchExpanded((value) => !value)} aria-label={searchExpanded ? "收起画布查找" : "展开画布查找"}>⌕</button>
+          {searchExpanded && <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="查找标题、标签、颜色…" autoFocus={Boolean(search)} />}
+          {searchExpanded && <small>{search ? visibleNodes.filter((node) => node.className?.includes("is-search-match")).length + " 项匹配" : "当前画布"}</small>}
+        </div>
+        <div className={"canvas-toolbar" + (toolbarExpanded ? "" : " is-collapsed")}>
+          {toolbarExpanded && <button onClick={() => fileInput.current?.click()}>▧<small>图片</small></button>}
+          {toolbarExpanded && <button onClick={() => setModal("import")}>T<small>文字/网页</small></button>}
+          {toolbarExpanded && <button onClick={() => createGroup()}>▱<small>分组</small></button>}
+          {toolbarExpanded && <span />}
+          {toolbarExpanded && <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()}>✦<small>拆解参考</small></button>}
+          {toolbarExpanded && <button onClick={previewOrganize}>⌗<small>整理画布</small></button>}
+          <button className="toolbar-toggle" onClick={() => setToolbarExpanded((value) => !value)} title={toolbarExpanded ? "收起工具" : "展开工具"}>{toolbarExpanded ? "−" : "工具"}</button>
         </div>
         {selectedIds.length > 1 && !organizePreview && (
           <div className="multi-toolbar">
@@ -1198,9 +1204,13 @@ function WorkspaceCanvas() {
           <Background id="fine-dots" variant={BackgroundVariant.Dots} color="rgba(72,63,86,.30)" gap={20} size={1.35} />
           <Background id="major-dots" variant={BackgroundVariant.Dots} color="rgba(72,63,86,.16)" gap={100} size={2.1} />
           <Controls showInteractive={false} position="bottom-center" />
-          <MiniMap position="bottom-right" pannable zoomable nodeColor={minimapNodeColor} />
+          {showMinimap && <MiniMap position="bottom-right" pannable zoomable nodeColor={minimapNodeColor} />}
         </ReactFlow>
         <div className="canvas-tip">拖动空白框选 · Shift 添加选择 · 右键拖动画布 · Delete 删除</div>
+        <div className="canvas-view-controls">
+          <button onClick={() => setShowMinimap((value) => !value)} title={showMinimap ? "收起缩略图" : "展开缩略图"}>{showMinimap ? "隐藏缩略图" : "显示缩略图"}</button>
+          <button className={focusMode ? "active" : ""} onClick={() => setFocusMode((value) => !value)} title="隐藏或恢复周边面板">{focusMode ? "退出专注" : "专注画布"}</button>
+        </div>
 
         {organizePreview && (
           <aside className="organize-dock">
@@ -1313,7 +1323,7 @@ function mergeAnalysis(node: CanvasNode, analysis: Record<string, unknown>): Can
         ...node.data,
         analysisId: String(analysis.id || ""),
         status: String(analysis.status || node.data.status || "failed"),
-        analysisError: typeof analysis.error === "string" ? analysis.error : undefined,
+        analysisError: typeof analysis.error === "string" ? friendlyAnalysisError(analysis.error) : undefined,
       },
     };
   }
@@ -1324,13 +1334,22 @@ function mergeAnalysis(node: CanvasNode, analysis: Record<string, unknown>): Can
       analysisId: String(analysis.id || ""),
       analysisSummary: result.summary,
       status: String(analysis.status || "ready"),
-      analysisError: typeof analysis.error === "string" ? analysis.error : undefined,
+      analysisError: typeof analysis.error === "string" ? friendlyAnalysisError(analysis.error) : undefined,
       principles: result.principles,
       colors: result.palette.map((color) => color.hex),
       tags: result.tags.slice(0, 8).map((tag) => tag.value),
       regions: result.components,
     },
   };
+}
+
+function friendlyAnalysisError(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return "拆解失败，请重试。";
+  const message = value.trim();
+  if (/invalid_(?:type|value)|expected|zod|too_(?:big|small)|\[\s*\{/i.test(message) || message.length > 260) {
+    return "模型返回的分析格式不完整，系统已保留原素材。请重试；若持续失败，请在 AI 设置中更换支持结构化输出的模型。";
+  }
+  return message;
 }
 
 function nodeWidth(node: CanvasNode) {

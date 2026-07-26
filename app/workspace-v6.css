@@ -1,0 +1,137 @@
+/* Workspace V6: collapsible canvas chrome and focus mode. */
+.inspector-tabs {
+  display: grid !important;
+  width: 100%;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.inspector-tabs button {
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 2px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.canvas-search {
+  display: grid;
+  grid-template-columns: 28px minmax(100px, 1fr) auto;
+  transition: width .18s ease, padding .18s ease;
+}
+
+.canvas-search .search-toggle {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: #695f72;
+  background: transparent;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.canvas-search .search-toggle:hover {
+  background: #f0edf4;
+}
+
+.canvas-search.is-collapsed {
+  width: 44px;
+  min-height: 44px;
+  grid-template-columns: 1fr;
+  padding: 0;
+  place-items: center;
+}
+
+.canvas-toolbar {
+  transition: padding .18s ease, min-width .18s ease;
+}
+
+.canvas-toolbar .toolbar-toggle {
+  min-width: 34px;
+  padding: 0 8px;
+  color: #6c6374;
+  background: rgba(241, 237, 245, .86);
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.canvas-toolbar.is-collapsed {
+  min-width: 54px;
+  padding: 5px;
+}
+
+.canvas-view-controls {
+  position: absolute;
+  z-index: 14;
+  right: 16px;
+  bottom: 14px;
+  display: flex;
+  gap: 6px;
+}
+
+.canvas-view-controls button {
+  min-height: 36px;
+  padding: 0 11px;
+  border: 1px solid rgba(75, 67, 91, .1);
+  border-radius: 10px;
+  color: #665e6e;
+  background: rgba(255, 255, 255, .84);
+  box-shadow: 0 8px 20px rgba(58, 49, 72, .08);
+  backdrop-filter: blur(16px);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.canvas-view-controls button:hover,
+.canvas-view-controls button.active {
+  color: #39333f;
+  background: #f0ebf5;
+}
+
+.react-flow__minimap {
+  right: 16px !important;
+  bottom: 62px !important;
+  transition: opacity .18s ease, transform .18s ease;
+}
+
+.workspace-shell.focus-mode {
+  grid-template: 1fr / 1fr;
+}
+
+.workspace-shell.focus-mode .topbar,
+.workspace-shell.focus-mode .left-rail,
+.workspace-shell.focus-mode .inspector {
+  display: none;
+}
+
+.workspace-shell.focus-mode .canvas-area {
+  grid-row: 1;
+  grid-column: 1;
+}
+
+.workspace-shell.focus-mode .canvas-view-controls {
+  right: 18px;
+  bottom: 18px;
+}
+
+.workspace-shell.focus-mode .react-flow__minimap {
+  right: 18px !important;
+  bottom: 66px !important;
+}
+
+.analysis-failed p {
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1050px) {
+  .inspector-tabs button {
+    font-size: 11px;
+  }
+}

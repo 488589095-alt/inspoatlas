@@ -1,6 +1,7 @@
 @import "./workspace-v3.css";
 @import "./workspace-v4.css";
 @import "./workspace-v5.css";
+@import "./workspace-v6.css";
 @import "./readability.css";
 
 .export-modal { width: min(780px, calc(100vw - 30px)); }
