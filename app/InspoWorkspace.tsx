@@ -8,6 +8,7 @@ import {
   BackgroundVariant,
   Connection,
   Edge,
+  MiniMap,
   NodeChange,
   ReactFlow,
   ReactFlowProvider,
@@ -67,6 +68,8 @@ function WorkspaceCanvas() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [searchExpanded, setSearchExpanded] = useState(false);
+  const [searchCursor, setSearchCursor] = useState(0);
+  const [showMiniMap, setShowMiniMap] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
   const [savedState, setSavedState] = useState("正在读取");
   const [rightTab, setRightTab] = useState<"asset" | "baseline" | "export">("asset");
@@ -84,9 +87,11 @@ function WorkspaceCanvas() {
   const [contract, setContract] = useState<DesignContract | null>(null);
   const [contractBusy, setContractBusy] = useState(false);
   const [exportPurpose, setExportPurpose] = useState("web-rebuild");
-  const [credentialState, setCredentialState] = useState<Array<{ provider: string; model: string; lastFour: string; supportsVision: boolean }>>([]);
-  const [credentialForm, setCredentialForm] = useState<{ provider: ProviderId; apiKey: string; model: string; region: string }>({ provider: "openai", apiKey: "", model: "", region: "intl" });
+  const [credentialState, setCredentialState] = useState<Array<{ provider: string; model: string; lastFour: string; supportsVision: boolean; active: boolean }>>([]);
+  const [credentialForm, setCredentialForm] = useState<{ provider: ProviderId; apiKey: string; model: string; region: string }>({ provider: "openai", apiKey: "", model: providerCatalog.openai.models[0], region: "intl" });
   const [loadingCredential, setLoadingCredential] = useState(false);
+  const [credentialBusyProvider, setCredentialBusyProvider] = useState<ProviderId | null>(null);
+  const [credentialToDelete, setCredentialToDelete] = useState<ProviderId | null>(null);
   const version = useRef(1);
   const loading = useRef(true);
   const saveTimer = useRef<number | undefined>(undefined);
@@ -102,6 +107,10 @@ function WorkspaceCanvas() {
     edgesRef.current = edges;
   }, [edges]);
 
+  useEffect(() => {
+    if (selectedIds.length) setRightTab("asset");
+  }, [selectedIds]);
+
   const selectedNodes = useMemo(() => nodes.filter((node) => selectedIds.includes(node.id)), [nodes, selectedIds]);
   const selected = selectedNodes[0];
   const selectedProvider = providerCatalog[credentialForm.provider];
@@ -113,19 +122,14 @@ function WorkspaceCanvas() {
       if (!term || node.data.kind === "group") {
         return cleanClass === (node.className ?? "") ? node : { ...node, className: cleanClass };
       }
-      const searchable = [
-        node.data.title,
-        node.data.body,
-        node.data.sourceUrl,
-        node.data.analysisSummary,
-        ...(node.data.tags ?? []),
-        ...(node.data.colors ?? []),
-        ...(node.data.principles ?? []),
-      ].filter(Boolean).join(" ").toLowerCase();
-      const searchClass = searchable.includes(term) ? "is-search-match" : "is-search-dim";
+      const searchClass = nodeMatchesQuery(node, term) ? "is-search-match" : "is-search-dim";
       return { ...node, className: `${cleanClass} ${searchClass}`.trim() };
     });
   }, [nodes, organizePreview, search]);
+  const searchMatchIds = useMemo(
+    () => search.trim() ? visibleNodes.filter((node) => node.data.kind !== "group" && node.className?.includes("is-search-match")).map((node) => node.id) : [],
+    [search, visibleNodes],
+  );
   const visibleEdges = useMemo(() => {
     const selectedSet = new Set(selectedIds);
     return edges.map((edge) => {
@@ -254,6 +258,7 @@ function WorkspaceCanvas() {
       if (detail.action === "rename" && detail.title) return renameNode(detail.id, detail.title);
       if (detail.action === "menu") {
         setSelectedIds([detail.id]);
+        setRightTab("asset");
         setContextMenu({
           kind: "node",
           id: detail.id,
@@ -317,6 +322,19 @@ function WorkspaceCanvas() {
         const assets = ((await response.json()) as { assets: Array<Record<string, unknown>> }).assets;
         const fresh = assets.filter((item) => !syncedClips.current.has(String(item.id)));
         assets.forEach((item) => syncedClips.current.add(String(item.id)));
+        const byId = new Map(assets.map((item) => [String(item.id), item]));
+        setNodes((current) => {
+          let changed = false;
+          const next = current.map((node) => {
+            const clip = byId.get(node.id);
+            if (!clip || node.data.kind !== "web") return node;
+            const count = clipScreenshotCount(clip);
+            if (node.data.screenshotPartCount === count) return node;
+            changed = true;
+            return { ...node, data: { ...node.data, screenshotPartCount: count, imageUrl: "/api/assets/" + node.id + "/content" } };
+          });
+          return changed ? next : current;
+        });
         if (!fresh.length) return;
         setNodes((current) => [
           ...current,
@@ -333,6 +351,7 @@ function WorkspaceCanvas() {
               tags: ["插件采集"],
               status: String(item.status),
               imageUrl: "/api/assets/" + item.id + "/content",
+              screenshotPartCount: clipScreenshotCount(item),
             },
             style: defaultSize.web,
             zIndex: 10,
@@ -361,8 +380,10 @@ function WorkspaceCanvas() {
         : next
     ));
   }, []);
+  const onNodeClick = useCallback(() => setRightTab("asset"), []);
   const onNodeContextMenu = useCallback((event: ReactMouseEvent, node: CanvasNode) => {
     event.preventDefault();
+    setRightTab("asset");
     setSelectedIds((current) => current.length === 1 && current[0] === node.id ? current : [node.id]);
     setContextMenu({ kind: "node", id: node.id, x: event.clientX, y: event.clientY });
   }, []);
@@ -917,23 +938,78 @@ function WorkspaceCanvas() {
 
   async function loadCredentials() {
     const response = await fetch("/api/ai-credentials", { cache: "no-store" });
-    if (response.ok) setCredentialState((await response.json()).credentials || []);
+    if (response.ok) {
+      const rows = ((await response.json()).credentials || []) as typeof credentialState;
+      setCredentialState(rows);
+      const active = rows.find((item) => item.active) ?? rows[0];
+      if (active && providerCatalog[active.provider as ProviderId]) {
+        setCredentialForm({ provider: active.provider as ProviderId, apiKey: "", model: reconnectModel(active.provider as ProviderId, active.model), region: "intl" });
+      }
+    }
     setModal("credentials");
   }
 
   async function saveCredential() {
     setLoadingCredential(true);
+    const existing = credentialState.find((item) => item.provider === credentialForm.provider);
     const response = await fetch("/api/ai-credentials", {
-      method: "POST",
+      method: credentialForm.apiKey ? "POST" : existing ? "PATCH" : "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(credentialForm),
+      body: JSON.stringify(credentialForm.apiKey ? credentialForm : { provider: credentialForm.provider, model: credentialForm.model }),
     });
     const payload = await response.json().catch(() => ({}));
     setLoadingCredential(false);
     if (!response.ok) return notify(payload.error || "模型服务验证失败");
     setCredentialForm((value) => ({ ...value, apiKey: "" }));
     await loadCredentials();
-    notify("模型服务已验证并保存");
+    notify(existing && !credentialForm.apiKey ? "已使用保存的 Key 更新模型" : "模型服务已验证并保存");
+  }
+
+  async function activateCredential(provider: ProviderId, model?: string) {
+    setCredentialBusyProvider(provider);
+    const response = await fetch("/api/ai-credentials", {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ provider, model: reconnectModel(provider, model) }),
+    });
+    const payload = await response.json().catch(() => ({}));
+    setCredentialBusyProvider(null);
+    if (!response.ok) return notify(payload.error || "模型服务连接失败");
+    await loadCredentials();
+    notify("已切换当前模型服务");
+  }
+
+  async function deleteCredential(provider: ProviderId) {
+    const response = await fetch("/api/ai-credentials?provider=" + encodeURIComponent(provider), { method: "DELETE" });
+    if (!response.ok) return notify("删除模型服务失败");
+    setCredentialToDelete(null);
+    await loadCredentials();
+    notify("已删除模型服务");
+  }
+
+  function focusSearchMatch(index: number) {
+    if (!searchMatchIds.length) return;
+    const normalized = (index + searchMatchIds.length) % searchMatchIds.length;
+    const id = searchMatchIds[normalized];
+    setSearchCursor(normalized);
+    setNodes((current) => current.map((node) => ({ ...node, selected: node.id === id })));
+    setSelectedIds([id]);
+    setRightTab("asset");
+    void fitView({ nodes: [{ id }], padding: 0.55, minZoom: 0.85, maxZoom: 1.25, duration: 360 });
+  }
+
+  function handleSearchChange(value: string) {
+    setSearch(value);
+    setSearchCursor(0);
+    const term = value.trim().toLowerCase();
+    if (!term) return;
+    const match = nodes.find((node) => node.data.kind !== "group" && nodeMatchesQuery(node, term));
+    if (match) window.setTimeout(() => {
+      setNodes((current) => current.map((node) => ({ ...node, selected: node.id === match.id })));
+      setSelectedIds([match.id]);
+      setRightTab("asset");
+      void fitView({ nodes: [{ id: match.id }], padding: 0.55, minZoom: 0.85, maxZoom: 1.25, duration: 360 });
+    }, 40);
   }
 
   function handleNodeMenu(action: string) {
@@ -1125,19 +1201,20 @@ function WorkspaceCanvas() {
         <div className={"canvas-search" + (searchExpanded ? "" : " is-collapsed")} title="按标题、标签、文字、来源、颜色和拆解结果查找">
           {!searchExpanded && <button className="search-toggle" onClick={() => setSearchExpanded(true)} aria-label="打开画布查找">⌕</button>}
           {searchExpanded && <span className="search-leading">⌕</span>}
-          {searchExpanded && <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="查找标题、标签、颜色…" autoFocus />}
-          {searchExpanded && <small>{search ? visibleNodes.filter((node) => node.className?.includes("is-search-match")).length + " 项" : "画布"}</small>}
+          {searchExpanded && <input type="search" value={search} onChange={(event) => handleSearchChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); focusSearchMatch(searchCursor + (event.shiftKey ? -1 : 1)); } }} placeholder="查找标题、标签、颜色…" autoFocus />}
+          {searchExpanded && <div className="search-result-nav"><button disabled={!searchMatchIds.length} onClick={() => focusSearchMatch(searchCursor - 1)} aria-label="上一个结果">‹</button><small>{search ? searchMatchIds.length ? (searchCursor + 1) + "/" + searchMatchIds.length : "0 项" : "画布"}</small><button disabled={!searchMatchIds.length} onClick={() => focusSearchMatch(searchCursor + 1)} aria-label="下一个结果">›</button></div>}
           {searchExpanded && <button className="search-close" onClick={() => { setSearch(""); setSearchExpanded(false); }} aria-label="关闭画布查找">×</button>}
         </div>
         <div className="canvas-toolbar" role="toolbar" aria-label="画布工具">
-          <button onClick={() => fileInput.current?.click()} title="添加图片"><b>▧</b><small>图片</small></button>
-          <button onClick={() => setModal("import")} title="添加文字或网页"><b>T</b><small>文字/网页</small></button>
+          <button onClick={() => fileInput.current?.click()} title="从本地上传图片素材"><b>↑</b><small>上传</small></button>
+          <button onClick={() => setModal("import")} title="添加网页、文字或文件夹"><b>＋</b><small>添加</small></button>
           <button onClick={() => createGroup()} title="新建分组"><b>▱</b><small>分组</small></button>
           <span />
           <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()} title="拆解所选参考"><b>✦</b><small>拆解</small></button>
           <button onClick={previewOrganize} title="整理画布"><b>⌗</b><small>整理</small></button>
           <span />
-          <button onClick={() => void fitView({ padding: 0.18, duration: 320 })} title="快速定位全部内容"><b>⌖</b><small>定位</small></button>
+          <button onClick={() => void fitView({ padding: 0.18, duration: 320 })} title="快速定位全部内容"><b>⛶</b><small>定位</small></button>
+          <button className={showMiniMap ? "is-active" : ""} onClick={() => setShowMiniMap((value) => !value)} title={showMiniMap ? "隐藏缩略图" : "显示缩略图"}><b>▣</b><small>缩略图</small></button>
         </div>
         {selectedIds.length > 1 && !organizePreview && (
           <div className="multi-toolbar">
@@ -1181,6 +1258,7 @@ function WorkspaceCanvas() {
           onEdgesChange={organizePreview ? undefined : onEdgesChange}
           onConnect={organizePreview ? undefined : onConnect}
           onSelectionChange={onSelectionChange}
+          onNodeClick={onNodeClick}
           onNodeContextMenu={onNodeContextMenu}
           onPaneClick={onPaneClick}
           onNodeDragStop={onNodeDragStop}
@@ -1202,7 +1280,7 @@ function WorkspaceCanvas() {
         >
           <Background id="fine-dots" variant={BackgroundVariant.Dots} color="rgba(72,63,86,.30)" gap={20} size={1.35} />
           <Background id="major-dots" variant={BackgroundVariant.Dots} color="rgba(72,63,86,.16)" gap={100} size={2.1} />
-
+          {showMiniMap && <MiniMap pannable zoomable nodeColor={miniMapNodeColor} maskColor="rgba(246,243,248,.58)" ariaLabel="画布缩略图" />}
         </ReactFlow>
         <div className="canvas-tip">拖动空白框选 · Shift 添加选择 · 右键拖动画布 · 滚轮缩放 · Delete 删除</div>
         {focusMode && <button className="focus-exit-button" onClick={() => setFocusMode(false)}>退出专注 <kbd>Esc</kbd></button>}
@@ -1301,12 +1379,46 @@ function WorkspaceCanvas() {
 
       {modal === "import" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal import-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">第 1 步 · 采集参考</span><h2>加入当前画布</h2><p>上传图片或整个灵感文件夹，也可以粘贴文字、输入网页地址。网页使用插件采集时会保存完整截图。</p><div className="import-choice"><button className="import-drop" onClick={() => fileInput.current?.click()}><span>⇧</span><strong>上传图片</strong><small>JPG、PNG、WebP · 单张最大 20 MB</small></button><button className="import-drop folder-drop" onClick={() => folderInput.current?.click()}><span>▱</span><strong>上传文件夹</strong><small>自动建立同名分组并排列图片</small></button></div><div className="url-entry"><input autoFocus value={urlValue} onChange={(event) => setUrlValue(event.target.value)} placeholder="公开 URL 或参考文字" /><button onClick={() => urlValue.trim() && void addAsset(urlValue.trim())}>加入</button></div></section></div>}
 
-      {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal model-service-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">模型服务</span><h2>添加分析服务</h2><p>选择你已有账户的开放平台。密钥只在服务端加密保存，不会写入画布或浏览器日志。</p><div className="credential-list">{credentialState.map((item) => { const catalog = providerCatalog[item.provider as ProviderId]; return <span key={item.provider}><b>{catalog?.label ?? item.provider}</b>{item.model} · •••• {item.lastFour}{item.supportsVision ? " · 图片与文字" : " · 仅文字"}</span>; })}</div><div className="provider-picker"><label><span>开放平台</span><select value={credentialForm.provider} onChange={(event) => setCredentialForm({ ...credentialForm, provider: event.target.value as ProviderId, model: "" })}>{Object.entries(providerCatalog).map(([id, item]) => <option key={id} value={id}>{item.label}{item.supportsVision ? " · 图片与文字" : " · 仅文字"}</option>)}</select></label><div className="provider-summary"><div><strong>{selectedProvider.label}</strong><small>{selectedProvider.description}</small></div><a href={selectedProvider.platformUrl} target="_blank" rel="noreferrer">前往开放平台 ↗</a></div></div><div className="credential-form"><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value })} placeholder="API Key" /><input list="provider-model-options" value={credentialForm.model} onChange={(event) => setCredentialForm({ ...credentialForm, model: event.target.value })} placeholder={`推荐：${selectedProvider.models[0]}`} /><datalist id="provider-model-options">{selectedProvider.models.map((model) => <option key={model} value={model} />)}</datalist><button className="button primary" disabled={!credentialForm.apiKey || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "正在验证…" : "验证并保存"}</button></div></section></div>}
+      {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal model-service-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">模型服务</span><h2>管理分析服务</h2><p>Key 由服务端加密保存，页面只会读取末四位。点击已保存记录可重新验证并切换当前服务。</p>{credentialState.length > 0 && <><div className="credential-section-title"><span>已保存的服务</span><small>紫色标记为当前使用</small></div><div className="credential-list">{credentialState.map((item) => { const provider = item.provider as ProviderId; const catalog = providerCatalog[provider]; return <article key={item.provider} className={"credential-card" + (item.active ? " is-active" : "")}><button className="credential-card-main" disabled={credentialBusyProvider === provider} onClick={() => void activateCredential(provider, reconnectModel(provider, item.model))}><strong>{catalog?.label ?? item.provider}</strong><span>{item.model} · •••• {item.lastFour}</span><small>{credentialBusyProvider === provider ? "正在验证…" : provider === "moonshot" && item.model === "kimi-k2.5" ? "旧模型 · 点击迁移到 kimi-k3" : item.active ? "● 当前使用 · 点击重新验证" : "点击连接并设为当前"}</small></button><button className="credential-remove" onClick={() => setCredentialToDelete(provider)} aria-label={"删除 " + (catalog?.label ?? item.provider)}>×</button></article>; })}</div></>}<div className="credential-section-title"><span>{credentialState.some((item) => item.provider === credentialForm.provider) ? "更新当前平台" : "添加新平台"}</span><small>模型会影响视觉能力、速度和费用</small></div><div className="provider-picker"><label><span>开放平台</span><select value={credentialForm.provider} onChange={(event) => { const provider = event.target.value as ProviderId; const saved = credentialState.find((item) => item.provider === provider); setCredentialForm({ ...credentialForm, provider, model: saved?.model ?? providerCatalog[provider].models[0], apiKey: "" }); }}>{Object.entries(providerCatalog).map(([id, item]) => <option key={id} value={id}>{item.label}{item.supportsVision ? " · 图片与文字" : " · 仅文字"}</option>)}</select></label><div className="provider-summary"><div><strong>{selectedProvider.label}</strong><small>{selectedProvider.description}</small></div><a href={selectedProvider.platformUrl} target="_blank" rel="noreferrer">开放平台 ↗</a></div></div><div className="credential-form"><label><span>API Key{credentialState.some((item) => item.provider === credentialForm.provider) ? "（留空则使用已保存 Key）" : ""}</span><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value })} placeholder={credentialState.some((item) => item.provider === credentialForm.provider) ? "使用已保存的 Key" : "粘贴 API Key"} /></label><label><span>分析模型</span><input list="provider-model-options" value={credentialForm.model} onChange={(event) => setCredentialForm({ ...credentialForm, model: event.target.value })} placeholder={selectedProvider.models[0]} /><datalist id="provider-model-options">{selectedProvider.models.map((model) => <option key={model} value={model} />)}</datalist></label><button className="button primary" disabled={(!credentialForm.apiKey && !credentialState.some((item) => item.provider === credentialForm.provider)) || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "正在验证…" : credentialState.some((item) => item.provider === credentialForm.provider) && !credentialForm.apiKey ? "验证并更新" : "验证并保存"}</button></div><p className="credential-form-note">模型选择会影响图片理解能力、调用费用和输出速度。不了解时保留系统推荐即可。</p></section></div>}
 
+
+      {credentialToDelete && <div className="modal-backdrop"><section className="modal credential-delete-modal"><span className="step-kicker">删除模型服务</span><h2>删除 {providerCatalog[credentialToDelete].label}？</h2><p>保存的加密 Key 和模型设置会立即删除，之后需要重新添加才能使用。</p><div className="confirm-actions"><button className="button soft" onClick={() => setCredentialToDelete(null)}>取消</button><button className="button danger" onClick={() => void deleteCredential(credentialToDelete)}>删除</button></div></section></div>}
 
       {toast && <div className="toast"><span>✓</span>{toast}</div>}
     </main>
   );
+}
+
+function reconnectModel(provider: ProviderId, model?: string) {
+  if (provider === "moonshot" && model === "kimi-k2.5") return "kimi-k3";
+  return model || providerCatalog[provider].models[0];
+}
+
+function miniMapNodeColor(node: CanvasNode) {
+  if (node.data.kind === "group") return "#dcd4e7";
+  if (node.data.kind === "web") return "#c9d8ef";
+  if (node.data.kind === "image") return "#e7cbd9";
+  if (node.data.kind === "element") return "#d8e7d3";
+  return "#d7d0dd";
+}
+
+function clipScreenshotCount(item: Record<string, unknown>) {
+  const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata as Record<string, unknown> : {};
+  const count = Number(metadata.viewportCaptures);
+  return Number.isInteger(count) && count > 0 ? count : 1;
+}
+
+function nodeMatchesQuery(node: CanvasNode, term: string) {
+  const searchable = [
+    node.data.title,
+    node.data.body,
+    node.data.sourceUrl,
+    node.data.analysisSummary,
+    ...(node.data.tags ?? []),
+    ...(node.data.colors ?? []),
+    ...(node.data.principles ?? []),
+  ].filter(Boolean).join(" ").toLowerCase();
+  return searchable.includes(term);
 }
 
 function mergeAnalysis(node: CanvasNode, analysis: Record<string, unknown>): CanvasNode {

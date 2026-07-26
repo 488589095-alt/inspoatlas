@@ -65,8 +65,8 @@ export const providerCatalog: Record<ProviderId, {
   moonshot: {
     label: "Moonshot · Kimi",
     description: "适合中文长上下文与视觉参考",
-    platformUrl: "https://platform.moonshot.cn/console/api-keys",
-    models: ["kimi-k2.5", "kimi-k2.6", "moonshot-v1-128k"],
+    platformUrl: "https://platform.kimi.com/",
+    models: ["kimi-k3", "kimi-k2.6", "kimi-k2.7-code", "moonshot-v1-128k-vision-preview"],
     supportsVision: true,
   },
   zhipu: {

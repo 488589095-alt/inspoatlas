@@ -49,10 +49,18 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
           <button className="node-menu nodrag" aria-label="卡片操作" onClick={(event) => { event.stopPropagation(); action("menu", event); }}>•••</button>
         </header>
         {data.imageUrl && (
-          <div className="card-image">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={data.imageUrl} alt={data.title} draggable={false} />
+          <div className={"card-image" + (data.kind === "web" ? " web-shot nodrag nowheel" : "")}>
+            {data.kind === "web"
+              ? Array.from({ length: Math.max(1, Number(data.screenshotPartCount) || 1) }, (_, index) => (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img key={index} src={withScreenshotPart(data.imageUrl!, index)} alt={index ? "" : data.title} draggable={false} loading={index ? "lazy" : "eager"} />
+                ))
+              : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={data.imageUrl} alt={data.title} draggable={false} />
+              )}
             <span className="source-chip">{data.kind === "web" ? "网页截图" : "原始素材"}</span>
+            {data.kind === "web" && Number(data.screenshotPartCount) > 1 && <span className="web-shot-count">{data.screenshotPartCount} 段 · 滚动查看</span>}
           </div>
         )}
         {data.kind === "web" && !data.imageUrl && (
@@ -182,6 +190,11 @@ function analysisStatusText(status: string | undefined, hasAnalysis: boolean) {
   if (status === "failed" && !hasAnalysis) return "拆解失败";
   if (hasAnalysis) return "AI 拆解";
   return "拆解这个参考";
+}
+
+function withScreenshotPart(value: string, index: number) {
+  const separator = value.includes("?") ? "&" : "?";
+  return value + separator + "part=" + index;
 }
 
 function safeHost(value: string) {

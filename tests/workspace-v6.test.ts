@@ -12,9 +12,9 @@ test("画布采用底部工具坞、单一专注入口且分析错误不会原�
 
   assert.match(workspace, /searchExpanded/);
   assert.doesNotMatch(workspace, /\\btoolbarExpanded\\b/);
-  assert.doesNotMatch(workspace, /\\bshowMinimap\\b/);
+  assert.ok(workspace.includes("showMiniMap"));
   assert.doesNotMatch(workspace, /<Controls/);
-  assert.doesNotMatch(workspace, /<MiniMap/);
+  assert.match(workspace, /<MiniMap/);
   assert.match(workspace, /focusMode/);
   assert.match(workspace, /专注模式/);
   assert.ok(workspace.includes("fitView({ padding: 0.18, duration: 320 })"));

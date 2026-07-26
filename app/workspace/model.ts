@@ -7,6 +7,7 @@ export type CardData = Record<string, unknown> & {
   title: string;
   body?: string;
   imageUrl?: string;
+  screenshotPartCount?: number;
   sourceUrl?: string;
   assetId?: string;
   sourceAssetId?: string;

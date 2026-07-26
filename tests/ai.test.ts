@@ -26,4 +26,6 @@ test("模型服务目录覆盖常用平台并提供官方入口", () => {
   }
   assert.equal(providerCatalog.deepseek.supportsVision, false);
   assert.equal(providerCatalog.minimax.supportsVision, false);
+  assert.equal(providerCatalog.moonshot.models[0], "kimi-k3");
+  assert.ok(!providerCatalog.moonshot.models.includes("kimi-k2.5"));
 });

@@ -9,7 +9,7 @@ export const providerDefaults: Record<ProviderId, { model: string; baseUrl: stri
   gemini: { model: "gemini-3.6-flash", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", supportsVision: true },
   qwen: { model: "qwen3.6-flash", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", supportsVision: true },
   deepseek: { model: "deepseek-chat", baseUrl: "https://api.deepseek.com/v1", supportsVision: false },
-  moonshot: { model: "kimi-k2.5", baseUrl: "https://api.moonshot.cn/v1", supportsVision: true },
+  moonshot: { model: "kimi-k3", baseUrl: "https://api.moonshot.cn/v1", supportsVision: true },
   zhipu: { model: "glm-4.5v", baseUrl: "https://open.bigmodel.cn/api/paas/v4", supportsVision: true },
   doubao: { model: "doubao-seed-2-0-lite-260215", baseUrl: "https://ark.cn-beijing.volces.com/api/v3", supportsVision: true },
   minimax: { model: "MiniMax-M2.7", baseUrl: "https://api.minimax.io/v1", supportsVision: false },
@@ -73,11 +73,10 @@ async function requestJson(messages: Array<Record<string, unknown>>, config: Pro
         body: JSON.stringify({
           model: config.model,
           max_tokens: 8_000,
-          temperature: 0.1,
           messages: toAnthropicMessages(messages),
         }),
       });
-      if (!response.ok) throw new Error("模型请求失败（" + response.status + "）");
+      if (!response.ok) throw await providerRequestError(response, config);
       const payload = await response.json() as { content?: Array<{ type?: string; text?: string }> };
       const raw = payload.content?.find((item) => item.type === "text")?.text;
       if (!raw) throw new Error("模型没有返回分析结果");
@@ -86,13 +85,27 @@ async function requestJson(messages: Array<Record<string, unknown>>, config: Pro
 
     const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/chat/completions", {
       method: "POST", signal: controller.signal, headers: { "content-type": "application/json", authorization: "Bearer " + config.apiKey },
-      body: JSON.stringify({ model: config.model, messages, temperature: 0.1, response_format: { type: "json_object" } }),
+      body: JSON.stringify({ model: config.model, messages, response_format: { type: "json_object" } }),
     });
-    if (!response.ok) throw new Error("模型请求失败（" + response.status + "）");
+    if (!response.ok) throw await providerRequestError(response, config);
     const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
     const raw = payload.choices?.[0]?.message?.content; if (!raw) throw new Error("模型没有返回分析结果");
     return safeJson(raw);
   } finally { clearTimeout(timer); }
+}
+
+async function providerRequestError(response: Response, config: ProviderConfig) {
+  const payload = await response.json().catch(() => ({})) as { error?: { message?: string } | string; message?: string };
+  const raw = typeof payload.error === "string" ? payload.error : payload.error?.message ?? payload.message ?? "";
+  const detail = String(raw).replace(/sk-[A-Za-z0-9_-]+/g, "[已隐藏]").slice(0, 180);
+  if (response.status === 401) {
+    if (config.provider === "moonshot") return new Error("Kimi API Key 无效。请确认它来自 Kimi API 开放平台，而不是 Kimi 会员或 Kimi Code。");
+    return new Error("API Key 无效或已失效，请前往对应开放平台重新创建。");
+  }
+  if (response.status === 403) return new Error("当前 API Key 没有使用该模型的权限。");
+  if (response.status === 404) return new Error(`模型 ${config.model} 当前不可用，请改用该平台现有模型。`);
+  if (response.status === 429) return new Error("模型服务额度不足或请求过于频繁，请检查余额后重试。");
+  return new Error(detail ? `模型服务返回 ${response.status}：${detail}` : `模型服务连接失败（${response.status}）`);
 }
 
 function toAnthropicMessages(messages: Array<Record<string, unknown>>) {
