@@ -3,6 +3,7 @@ import { analysisResultSchema, type AnalysisResult, type ProviderId } from "@ins
 
 export interface ProviderConfig { provider: ProviderId; apiKey: string; model: string; baseUrl: string; supportsVision: boolean; }
 export interface AnalyzeInput { assetId: string; title: string; text?: string; imageDataUrl?: string; computedStyles?: Record<string, unknown>[]; }
+export interface TextMessage { role: "user" | "assistant"; content: string; }
 export const providerDefaults: Record<ProviderId, { model: string; baseUrl: string; supportsVision: boolean }> = {
   openai: { model: "gpt-5.2", baseUrl: "https://api.openai.com/v1", supportsVision: true },
   anthropic: { model: "claude-sonnet-4-20250514", baseUrl: "https://api.anthropic.com/v1", supportsVision: true },
@@ -58,8 +59,45 @@ export async function testProvider(config: ProviderConfig) {
   const result = await requestJson([{ role: "user", content: "只返回 JSON：{\"ok\":true}" }], config);
   if (!result || typeof result !== "object") throw new Error("模型没有返回有效 JSON");
 }
+export async function generateTextWithProvider(messages: TextMessage[], config: ProviderConfig) {
+  assertProviderConfig(config);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 180_000);
+  try {
+    if (config.provider === "anthropic") {
+      const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/messages", {
+        method: "POST",
+        signal: controller.signal,
+        headers: { "content-type": "application/json", "x-api-key": config.apiKey, "anthropic-version": "2023-06-01" },
+        body: JSON.stringify({ model: config.model, max_tokens: 2_200, messages }),
+      });
+      if (!response.ok) throw await providerRequestError(response, config);
+      const payload = await response.json() as { content?: Array<{ type?: string; text?: string }> };
+      const text = payload.content?.find((item) => item.type === "text")?.text;
+      if (!text) throw new Error("模型没有返回设计建议");
+      return text.trim();
+    }
+    const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/chat/completions", {
+      method: "POST",
+      signal: controller.signal,
+      headers: { "content-type": "application/json", authorization: "Bearer " + config.apiKey },
+      body: JSON.stringify({ model: config.model, messages, max_tokens: 2_200 }),
+    });
+    if (!response.ok) throw await providerRequestError(response, config);
+    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const text = payload.choices?.[0]?.message?.content;
+    if (!text) throw new Error("模型没有返回设计建议");
+    return text.trim();
+  } catch (error) {
+    if (isAbortError(error)) throw new Error("模型响应超时，请重试或更换响应更快的模型。");
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function requestJson(messages: Array<Record<string, unknown>>, config: ProviderConfig) {
-  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 90_000);
+  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 240_000);
   try {
     if (config.provider === "anthropic") {
       const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/messages", {
@@ -72,7 +110,7 @@ async function requestJson(messages: Array<Record<string, unknown>>, config: Pro
         },
         body: JSON.stringify({
           model: config.model,
-          max_tokens: 8_000,
+          max_tokens: 3_500,
           messages: toAnthropicMessages(messages),
         }),
       });
@@ -85,13 +123,20 @@ async function requestJson(messages: Array<Record<string, unknown>>, config: Pro
 
     const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/chat/completions", {
       method: "POST", signal: controller.signal, headers: { "content-type": "application/json", authorization: "Bearer " + config.apiKey },
-      body: JSON.stringify({ model: config.model, messages, response_format: { type: "json_object" } }),
+      body: JSON.stringify({ model: config.model, messages, max_tokens: 3_500, response_format: { type: "json_object" } }),
     });
     if (!response.ok) throw await providerRequestError(response, config);
     const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
     const raw = payload.choices?.[0]?.message?.content; if (!raw) throw new Error("模型没有返回分析结果");
     return safeJson(raw);
+  } catch (error) {
+    if (isAbortError(error)) throw new Error("视觉分析响应超时，请重试或更换响应更快的视觉模型。");
+    throw error;
   } finally { clearTimeout(timer); }
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && (error.name === "AbortError" || /aborted|timed? out|timeout/i.test(error.message));
 }
 
 async function providerRequestError(response: Response, config: ProviderConfig) {

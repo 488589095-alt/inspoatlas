@@ -72,7 +72,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
         <div className="card-content">
           <InlineTitle id={id} value={data.title} />
           {data.sourceUrl && <a href={data.sourceUrl} target="_blank" rel="noreferrer" className="nodrag">{safeHost(data.sourceUrl)} ↗</a>}
-          {data.body && <p>{data.body}</p>}
+          {data.body && (data.kind === "web" ? <div className="card-body-scroll nodrag nowheel"><p>{data.body}</p></div> : <p>{data.body}</p>)}
           {!!data.colors?.length && <div className="color-row">{data.colors.slice(0, 7).map((color) => <span key={color} title={color} style={{ background: color }} />)}</div>}
           {!!data.tags?.length && <div className="tag-row">{data.tags.slice(0, 8).map((tag) => <span key={tag}>{tag}</span>)}</div>}
         </div>

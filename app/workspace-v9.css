@@ -1,0 +1,460 @@
+﻿/* Workspace V9: precise selection, quieter model settings, independent minimap and design assistant. */
+
+.model-service-modal {
+  width: min(640px, calc(100vw - 40px));
+  max-height: calc(100vh - 48px);
+  box-sizing: border-box;
+  padding: 32px;
+  overflow: auto;
+}
+
+.model-service-modal > .step-kicker,
+.model-service-modal .credential-section-title small,
+.model-service-modal .credential-form-note,
+.model-service-modal .credential-card-main small {
+  display: none;
+}
+
+.model-service-modal h2 {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: -.04em;
+}
+
+.model-service-modal > p {
+  max-width: 520px;
+  margin: 8px 0 24px;
+  color: #766f7a;
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.model-service-modal .credential-section-title {
+  margin: 0 0 9px;
+}
+
+.model-service-modal .credential-section-title:not(:first-of-type) {
+  margin-top: 24px;
+}
+
+.model-service-modal .credential-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.model-service-modal .credential-card {
+  min-height: 60px;
+  border-radius: 13px;
+}
+
+.model-service-modal .credential-card-main {
+  display: flex;
+  min-height: 60px;
+  padding: 0 16px;
+  align-items: center;
+  gap: 12px;
+}
+
+.model-service-modal .credential-card-main strong {
+  min-width: 150px;
+  font-size: 13px;
+}
+
+.model-service-modal .credential-card-main span {
+  flex: 1;
+  font-size: 12px;
+}
+
+.model-service-modal .credential-card.is-active .credential-card-main::after {
+  content: "当前使用";
+  margin-right: 8px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: #66527d;
+  background: #eee7f5;
+  font-size: 11px;
+  font-weight: 700;
+  align-self: center;
+}
+
+.model-service-modal .credential-card.is-active .credential-card-main span {
+  flex: 1;
+}
+
+.model-service-modal .provider-picker {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.model-service-modal .provider-picker label,
+.model-service-modal .credential-form label {
+  display: grid;
+  gap: 7px;
+}
+
+.model-service-modal .provider-picker label > span,
+.model-service-modal .credential-form label > span {
+  color: #625b67;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.model-service-modal .provider-summary {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 12px 14px;
+  border-radius: 12px;
+}
+
+.model-service-modal .provider-summary strong {
+  font-size: 13px;
+}
+
+.model-service-modal .provider-summary small {
+  margin-top: 2px;
+  font-size: 11px;
+}
+
+.model-service-modal .provider-summary a {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.model-service-modal .credential-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.model-service-modal .credential-form .button {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 44px;
+  margin-top: 2px;
+}
+
+.card-content .card-body-scroll {
+  max-height: 104px;
+  padding-right: 7px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(93, 82, 106, .42) transparent;
+}
+
+.card-content .card-body-scroll p {
+  margin: 0;
+}
+
+.canvas-area .react-flow__minimap {
+  right: 16px !important;
+  bottom: 58px !important;
+  width: 190px;
+  height: 118px;
+  border: 1px solid rgba(83, 73, 96, .12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .88);
+  box-shadow: 0 12px 32px rgba(63, 52, 75, .13);
+}
+
+.minimap-toggle {
+  position: absolute;
+  right: 18px;
+  bottom: 16px;
+  z-index: 35;
+  width: 36px;
+  height: 36px;
+  border: 1px solid rgba(79, 69, 91, .12);
+  border-radius: 11px;
+  color: #62596b;
+  background: rgba(255, 255, 255, .92);
+  box-shadow: 0 8px 24px rgba(63, 52, 75, .12);
+  cursor: pointer;
+  font-size: 15px;
+}
+
+.minimap-toggle.is-open {
+  color: #fff;
+  background: #4d4454;
+}
+
+.assistant-top-button.active {
+  color: #fff;
+  background: #4d4356;
+}
+
+.assistant-drawer {
+  position: fixed;
+  z-index: 180;
+  top: 86px;
+  right: 16px;
+  bottom: 16px;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  width: min(410px, calc(100vw - 32px));
+  overflow: hidden;
+  border: 1px solid rgba(76, 66, 88, .12);
+  border-radius: 22px;
+  background: rgba(252, 250, 252, .97);
+  box-shadow: 0 24px 70px rgba(54, 44, 64, .24);
+  backdrop-filter: blur(20px);
+}
+
+.assistant-drawer > header {
+  display: flex;
+  min-height: 66px;
+  padding: 0 18px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid rgba(77, 67, 88, .08);
+}
+
+.assistant-drawer > header > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.assistant-drawer > header > div > span {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border-radius: 11px;
+  color: #fff;
+  background: #4d4356;
+}
+
+.assistant-drawer > header strong,
+.assistant-drawer > header small {
+  display: block;
+}
+
+.assistant-drawer > header strong {
+  font-size: 14px;
+}
+
+.assistant-drawer > header small {
+  margin-top: 2px;
+  color: #89808d;
+  font-size: 11px;
+}
+
+.assistant-drawer > header > button {
+  width: 34px;
+  height: 34px;
+  border: 0;
+  border-radius: 50%;
+  color: #6f6674;
+  background: #f0edf1;
+  cursor: pointer;
+  font-size: 18px;
+}
+
+.assistant-goal {
+  display: grid;
+  padding: 16px 18px 10px;
+  gap: 7px;
+}
+
+.assistant-goal label {
+  color: #4c4451;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.assistant-goal textarea,
+.assistant-compose textarea {
+  resize: none;
+  box-sizing: border-box;
+  border: 1px solid rgba(77, 67, 88, .13);
+  outline: 0;
+  color: #39333e;
+  background: #fff;
+  font: inherit;
+}
+
+.assistant-goal textarea {
+  min-height: 82px;
+  padding: 11px 12px;
+  border-radius: 13px;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.assistant-goal textarea:focus,
+.assistant-compose textarea:focus {
+  border-color: #8e7aa8;
+  box-shadow: 0 0 0 3px rgba(139, 119, 164, .11);
+}
+
+.assistant-scope {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  margin: 0 18px 10px;
+  padding: 3px;
+  border-radius: 11px;
+  background: #eeebef;
+}
+
+.assistant-scope button {
+  height: 34px;
+  border: 0;
+  border-radius: 8px;
+  color: #756c79;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.assistant-scope button.active {
+  color: #3f3745;
+  background: #fff;
+  box-shadow: 0 2px 8px rgba(54, 45, 64, .08);
+  font-weight: 800;
+}
+
+.assistant-scope button:disabled {
+  opacity: .42;
+  cursor: not-allowed;
+}
+
+.assistant-thread {
+  min-height: 0;
+  padding: 10px 18px 16px;
+  overflow-y: auto;
+}
+
+.assistant-empty {
+  padding: 18px;
+  border: 1px dashed rgba(83, 71, 97, .18);
+  border-radius: 15px;
+  background: rgba(246, 242, 248, .68);
+}
+
+.assistant-empty strong {
+  font-size: 13px;
+}
+
+.assistant-empty p {
+  margin: 7px 0 13px;
+  color: #7d7481;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.assistant-empty > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.assistant-empty button {
+  padding: 7px 9px;
+  border: 1px solid rgba(83, 71, 97, .12);
+  border-radius: 9px;
+  color: #62566e;
+  background: #fff;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.assistant-thread article {
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.assistant-thread article > span {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border-radius: 8px;
+  color: #fff;
+  background: #4d4356;
+  font-size: 11px;
+}
+
+.assistant-thread article.user > span {
+  color: #665b6e;
+  background: #eae5ed;
+}
+
+.assistant-thread article p {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 4px 13px 13px;
+  color: #4b444f;
+  background: #f0edf2;
+  font-size: 12.5px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.assistant-thread article.user p {
+  background: #fff;
+}
+
+.assistant-thread article.is-loading {
+  opacity: .68;
+}
+
+.assistant-compose {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  padding: 12px 14px 14px;
+  border-top: 1px solid rgba(77, 67, 88, .08);
+  background: rgba(255, 255, 255, .76);
+}
+
+.assistant-compose textarea {
+  min-height: 48px;
+  max-height: 120px;
+  padding: 10px 11px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.assistant-compose button {
+  width: 56px;
+  border: 0;
+  border-radius: 12px;
+  color: #fff;
+  background: #443b4b;
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.assistant-compose button:disabled {
+  opacity: .38;
+  cursor: not-allowed;
+}
+
+@media (max-width: 760px) {
+  .model-service-modal {
+    padding: 24px 20px;
+  }
+
+  .model-service-modal .credential-form {
+    grid-template-columns: 1fr;
+  }
+
+  .model-service-modal .credential-form .button {
+    grid-column: auto;
+  }
+
+  .model-service-modal .credential-card-main strong {
+    min-width: 0;
+  }
+
+  .assistant-drawer {
+    top: 72px;
+  }
+}

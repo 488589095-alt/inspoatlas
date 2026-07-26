@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import {
@@ -58,6 +58,8 @@ type WorkspaceModal = "import" | "credentials" | null;
 type RelationView = "hidden" | "selection" | "related" | "all";
 type ContextMenu = { kind: "node" | "board"; id: string; x: number; y: number };
 type DeleteRequest = { kind: "board" | "nodes"; ids: string[]; title: string; body: string };
+type AssistantScope = "selection" | "board";
+type AssistantMessage = { role: "user" | "assistant"; content: string };
 
 function WorkspaceCanvas() {
   const [boards, setBoards] = useState<BoardSummary[]>([]);
@@ -92,6 +94,12 @@ function WorkspaceCanvas() {
   const [loadingCredential, setLoadingCredential] = useState(false);
   const [credentialBusyProvider, setCredentialBusyProvider] = useState<ProviderId | null>(null);
   const [credentialToDelete, setCredentialToDelete] = useState<ProviderId | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantScope, setAssistantScope] = useState<AssistantScope>("board");
+  const [assistantGoal, setAssistantGoal] = useState("");
+  const [assistantQuestion, setAssistantQuestion] = useState("");
+  const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([]);
+  const [assistantBusy, setAssistantBusy] = useState(false);
   const version = useRef(1);
   const loading = useRef(true);
   const saveTimer = useRef<number | undefined>(undefined);
@@ -329,9 +337,10 @@ function WorkspaceCanvas() {
             const clip = byId.get(node.id);
             if (!clip || node.data.kind !== "web") return node;
             const count = clipScreenshotCount(clip);
-            if (node.data.screenshotPartCount === count) return node;
+            const imageUrl = count ? "/api/assets/" + node.id + "/content" : undefined;
+            if (node.data.screenshotPartCount === count && node.data.imageUrl === imageUrl) return node;
             changed = true;
-            return { ...node, data: { ...node.data, screenshotPartCount: count, imageUrl: "/api/assets/" + node.id + "/content" } };
+            return { ...node, data: { ...node.data, screenshotPartCount: count || undefined, imageUrl } };
           });
           return changed ? next : current;
         });
@@ -350,8 +359,8 @@ function WorkspaceCanvas() {
               body: String(item.extractedText || "插件采集已到达，等待拆解"),
               tags: ["插件采集"],
               status: String(item.status),
-              imageUrl: "/api/assets/" + item.id + "/content",
-              screenshotPartCount: clipScreenshotCount(item),
+              imageUrl: clipScreenshotCount(item) ? "/api/assets/" + item.id + "/content" : undefined,
+              screenshotPartCount: clipScreenshotCount(item) || undefined,
             },
             style: defaultSize.web,
             zIndex: 10,
@@ -699,6 +708,42 @@ function WorkspaceCanvas() {
     for (const id of ids) await analyze(id, false);
   }
 
+  async function askDesignAssistant() {
+    const goal = assistantGoal.trim();
+    const question = assistantQuestion.trim();
+    if (!goal) return notify("请先说明你要设计什么");
+    if (!question) return notify("请输入你想讨论的问题");
+    if (assistantScope === "selection" && !selectedIds.length) return notify("请先选择要分析的卡片");
+
+    const nextMessages: AssistantMessage[] = [...assistantMessages, { role: "user", content: question }];
+    setAssistantMessages(nextMessages);
+    setAssistantQuestion("");
+    setAssistantBusy(true);
+    try {
+      const response = await fetch(`/api/boards/${encodeURIComponent(boardId)}/design-assistant`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          goal,
+          question,
+          scope: assistantScope,
+          selectedNodeIds: assistantScope === "selection" ? selectedIds : [],
+          history: assistantMessages.slice(-6),
+        }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 409) setModal("credentials");
+        throw new Error(friendlyAnalysisError(payload.error));
+      }
+      setAssistantMessages([...nextMessages, { role: "assistant", content: String(payload.answer || "暂时没有生成建议。") }]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "设计助手暂时不可用";
+      setAssistantMessages([...nextMessages, { role: "assistant", content: `未能完成：${message}` }]);
+    } finally {
+      setAssistantBusy(false);
+    }
+  }
   function toggleAnalysis(nodeId: string) {
     setNodes((current) => {
       const target = current.find((node) => node.id === nodeId);
@@ -1134,6 +1179,7 @@ function WorkspaceCanvas() {
         <div className="top-actions">
           <button className="button ghost" onClick={undo} title="撤销">↶</button>
           <button className="button ghost" onClick={redo} title="重做">↷</button>
+          <button className={"button soft assistant-top-button" + (assistantOpen ? " active" : "")} onClick={() => { setAssistantScope(selectedIds.length ? "selection" : "board"); setAssistantOpen((value) => !value); }}>✦ 设计助手</button>
           <button className={"button soft focus-top-button" + (focusMode ? " active" : "")} onClick={() => setFocusMode((value) => !value)}>{focusMode ? "退出专注" : "专注模式"}</button>
           <UserMenu />
         </div>
@@ -1185,11 +1231,6 @@ function WorkspaceCanvas() {
             </div>
           ))}
         </nav>
-        <div className="shortcut-card">
-          <strong>画布操作</strong>
-          <p>拖动空白处框选；在空白处按住右键拖动画布；右键卡片或画布名称查看更多操作。</p>
-          <span><kbd>Delete</kbd> 删除　<kbd>Ctrl A</kbd> 全选</span>
-        </div>
         <div className="quota-card">
           <div><span>模型服务</span><strong>{credentialState.length ? `已添加 ${credentialState.length} 项` : "未添加"}</strong></div>
           <p>管理用于参考拆解、设计基准和一致性检查的模型服务。</p>
@@ -1214,7 +1255,6 @@ function WorkspaceCanvas() {
           <button onClick={previewOrganize} title="整理画布"><b>⌗</b><small>整理</small></button>
           <span />
           <button onClick={() => void fitView({ padding: 0.18, duration: 320 })} title="快速定位全部内容"><b>⛶</b><small>定位</small></button>
-          <button className={showMiniMap ? "is-active" : ""} onClick={() => setShowMiniMap((value) => !value)} title={showMiniMap ? "隐藏缩略图" : "显示缩略图"}><b>▣</b><small>缩略图</small></button>
         </div>
         {selectedIds.length > 1 && !organizePreview && (
           <div className="multi-toolbar">
@@ -1263,7 +1303,7 @@ function WorkspaceCanvas() {
           onPaneClick={onPaneClick}
           onNodeDragStop={onNodeDragStop}
           selectionOnDrag={!organizePreview}
-          selectionMode={SelectionMode.Partial}
+          selectionMode={SelectionMode.Full}
           multiSelectionKeyCode={["Shift", "Control", "Meta"]}
           panOnDrag={[2]}
           deleteKeyCode={null}
@@ -1282,7 +1322,7 @@ function WorkspaceCanvas() {
           <Background id="major-dots" variant={BackgroundVariant.Dots} color="rgba(72,63,86,.16)" gap={100} size={2.1} />
           {showMiniMap && <MiniMap pannable zoomable nodeColor={miniMapNodeColor} maskColor="rgba(246,243,248,.58)" ariaLabel="画布缩略图" />}
         </ReactFlow>
-        <div className="canvas-tip">拖动空白框选 · Shift 添加选择 · 右键拖动画布 · 滚轮缩放 · Delete 删除</div>
+        <button className={"minimap-toggle" + (showMiniMap ? " is-open" : "")} onClick={() => setShowMiniMap((value) => !value)} title={showMiniMap ? "收起缩略图" : "打开缩略图"} aria-label={showMiniMap ? "收起缩略图" : "打开缩略图"}>▣</button>
         {focusMode && <button className="focus-exit-button" onClick={() => setFocusMode(false)}>退出专注 <kbd>Esc</kbd></button>}
 
         {organizePreview && (
@@ -1343,6 +1383,31 @@ function WorkspaceCanvas() {
         )}
       </aside>
 
+      {assistantOpen && (
+        <aside className="assistant-drawer" aria-label="设计助手">
+          <header>
+            <div><span>✦</span><div><strong>设计助手</strong><small>基于画布里的参考给出设计思路</small></div></div>
+            <button onClick={() => setAssistantOpen(false)} aria-label="关闭设计助手">×</button>
+          </header>
+          <section className="assistant-goal">
+            <label htmlFor="assistant-goal">你要设计什么？</label>
+            <textarea id="assistant-goal" value={assistantGoal} onChange={(event) => setAssistantGoal(event.target.value)} placeholder="例如：为户外运动品牌设计一套夏季活动落地页，需要保持年轻、专业且便于批量延展。" />
+          </section>
+          <div className="assistant-scope" role="group" aria-label="分析范围">
+            <button className={assistantScope === "selection" ? "active" : ""} disabled={!selectedIds.length} onClick={() => setAssistantScope("selection")}>当前选择{selectedIds.length ? " · " + selectedIds.length + " 张" : ""}</button>
+            <button className={assistantScope === "board" ? "active" : ""} onClick={() => setAssistantScope("board")}>整张画布</button>
+          </div>
+          <div className="assistant-thread">
+            {!assistantMessages.length && <div className="assistant-empty"><strong>先说明目标，再从参考中找方向</strong><p>我会引用画布中的具体卡片，比较可复用的视觉语言、结构和冲突，不会替你凭空决定。</p><div><button onClick={() => setAssistantQuestion("这些参考里，哪些视觉规律最适合我的设计目标？")}>提炼视觉规律</button><button onClick={() => setAssistantQuestion("请给出信息结构、组件和视觉风格的落地建议。")}>生成落地思路</button></div></div>}
+            {assistantMessages.map((message, index) => <article key={index} className={message.role}><span>{message.role === "assistant" ? "✦" : "我"}</span><p>{message.content}</p></article>)}
+            {assistantBusy && <article className="assistant is-loading"><span>✦</span><p>正在结合目标与参考内容思考…</p></article>}
+          </div>
+          <form className="assistant-compose" onSubmit={(event) => { event.preventDefault(); void askDesignAssistant(); }}>
+            <textarea value={assistantQuestion} onChange={(event) => setAssistantQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askDesignAssistant(); } }} placeholder="继续追问设计方向、结构、组件或一致性…" />
+            <button disabled={assistantBusy || !assistantGoal.trim() || !assistantQuestion.trim()}>{assistantBusy ? "…" : "发送"}</button>
+          </form>
+        </aside>
+      )}
       {contextMenu?.kind === "node" && (() => {
         const node = nodes.find((item) => item.id === contextMenu.id);
         if (!node) return null;
@@ -1404,8 +1469,10 @@ function miniMapNodeColor(node: CanvasNode) {
 
 function clipScreenshotCount(item: Record<string, unknown>) {
   const metadata = item.metadata && typeof item.metadata === "object" ? item.metadata as Record<string, unknown> : {};
+  const keys = Array.isArray(metadata.screenshotKeys) ? metadata.screenshotKeys : [];
+  if (keys.length) return keys.length;
   const count = Number(metadata.viewportCaptures);
-  return Number.isInteger(count) && count > 0 ? count : 1;
+  return Number.isInteger(count) && count > 0 && metadata.captureSource === "browser-extension" ? count : 0;
 }
 
 function nodeMatchesQuery(node: CanvasNode, term: string) {
@@ -1453,6 +1520,7 @@ function mergeAnalysis(node: CanvasNode, analysis: Record<string, unknown>): Can
 function friendlyAnalysisError(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return "拆解失败，请重试。";
   const message = value.trim();
+  if (/aborted|aborterror|timed? out|timeout/i.test(message)) return "视觉分析用时超过当前限制。系统已保留素材，请重试；若仍超时，可先缩小截图或更换响应更快的视觉模型。";
   if (/invalid_(?:type|value)|expected|zod|too_(?:big|small)|\[\s*\{/i.test(message) || message.length > 260) {
     return "模型返回的分析格式不完整，系统已保留原素材。请重试；若持续失败，请在 AI 设置中更换支持结构化输出的模型。";
   }
