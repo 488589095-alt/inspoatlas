@@ -9,7 +9,7 @@ export const relationTypes = ["analysis-of", "element-of", "contract-derived-fro
 export const relationLayers = ["provenance", "association"] as const;
 export const relationStatuses = ["confirmed", "suggested", "rejected"] as const;
 export const exportPurposes = ["web-rebuild", "visual-remix", "campaign-system", "figma-bridge"] as const;
-export const providerIds = ["openai", "qwen", "deepseek"] as const;
+export const providerIds = ["openai", "anthropic", "gemini", "qwen", "deepseek", "moonshot", "zhipu", "doubao", "minimax"] as const;
 
 export type AssetKind = (typeof assetKinds)[number];
 export type CanvasItemType = (typeof canvasItemTypes)[number];
@@ -19,6 +19,78 @@ export type RelationStatus = (typeof relationStatuses)[number];
 export type JobStatus = "queued" | "processing" | "ready" | "failed";
 export type ExportPurpose = (typeof exportPurposes)[number];
 export type ProviderId = (typeof providerIds)[number];
+
+export const providerCatalog: Record<ProviderId, {
+  label: string;
+  description: string;
+  platformUrl: string;
+  models: readonly string[];
+  supportsVision: boolean;
+}> = {
+  openai: {
+    label: "OpenAI",
+    description: "适合网页、图片和文字拆解",
+    platformUrl: "https://platform.openai.com/api-keys",
+    models: ["gpt-5.2", "gpt-5.1", "gpt-5-mini", "gpt-4.1"],
+    supportsVision: true,
+  },
+  anthropic: {
+    label: "Anthropic Claude",
+    description: "适合视觉理解与长文档分析",
+    platformUrl: "https://console.anthropic.com/settings/keys",
+    models: ["claude-sonnet-4-20250514", "claude-opus-4-1-20250805"],
+    supportsVision: true,
+  },
+  gemini: {
+    label: "Google Gemini",
+    description: "适合多模态参考与长上下文",
+    platformUrl: "https://aistudio.google.com/apikey",
+    models: ["gemini-3.6-flash", "gemini-3.6-pro"],
+    supportsVision: true,
+  },
+  qwen: {
+    label: "阿里云百炼 · Qwen",
+    description: "中文视觉分析与结构化输出",
+    platformUrl: "https://bailian.console.aliyun.com/",
+    models: ["qwen3.7-plus", "qwen3.6-flash", "qwen3.6-plus", "qwen3-vl-plus"],
+    supportsVision: true,
+  },
+  deepseek: {
+    label: "DeepSeek",
+    description: "用于文字参考、规范合并与 QA",
+    platformUrl: "https://platform.deepseek.com/api_keys",
+    models: ["deepseek-chat", "deepseek-reasoner"],
+    supportsVision: false,
+  },
+  moonshot: {
+    label: "Moonshot · Kimi",
+    description: "适合中文长上下文与视觉参考",
+    platformUrl: "https://platform.moonshot.cn/console/api-keys",
+    models: ["kimi-k2.5", "kimi-k2.6", "moonshot-v1-128k"],
+    supportsVision: true,
+  },
+  zhipu: {
+    label: "智谱开放平台 · GLM",
+    description: "GLM 视觉与文本模型",
+    platformUrl: "https://open.bigmodel.cn/usercenter/apikeys",
+    models: ["glm-4.5v", "glm-5", "glm-4.7"],
+    supportsVision: true,
+  },
+  doubao: {
+    label: "火山方舟 · 豆包",
+    description: "视觉理解与中文内容分析",
+    platformUrl: "https://console.volcengine.com/ark/region:ark+cn-beijing/apikey",
+    models: ["doubao-seed-2-0-lite-260215", "doubao-seed-2-0-pro-260215"],
+    supportsVision: true,
+  },
+  minimax: {
+    label: "MiniMax",
+    description: "用于文字规范、总结和一致性 QA",
+    platformUrl: "https://platform.minimax.io/user-center/basic-information/interface-key",
+    models: ["MiniMax-M2.7", "MiniMax-M2.7-highspeed", "MiniMax-M2.5"],
+    supportsVision: false,
+  },
+};
 
 export const rectSchema = z.object({ x: z.number().min(0).max(1), y: z.number().min(0).max(1), width: z.number().positive().max(1), height: z.number().positive().max(1) });
 export const componentRegionSchema = z.object({

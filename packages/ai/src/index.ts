@@ -4,19 +4,31 @@ import { analysisResultSchema, type AnalysisResult, type ProviderId } from "@ins
 export interface ProviderConfig { provider: ProviderId; apiKey: string; model: string; baseUrl: string; supportsVision: boolean; }
 export interface AnalyzeInput { assetId: string; title: string; text?: string; imageDataUrl?: string; computedStyles?: Record<string, unknown>[]; }
 export const providerDefaults: Record<ProviderId, { model: string; baseUrl: string; supportsVision: boolean }> = {
-  openai: { model: "gpt-5.6-luna", baseUrl: "https://api.openai.com/v1", supportsVision: true },
+  openai: { model: "gpt-5.2", baseUrl: "https://api.openai.com/v1", supportsVision: true },
+  anthropic: { model: "claude-sonnet-4-20250514", baseUrl: "https://api.anthropic.com/v1", supportsVision: true },
+  gemini: { model: "gemini-3.6-flash", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", supportsVision: true },
   qwen: { model: "qwen3.6-flash", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", supportsVision: true },
-  deepseek: { model: "deepseek-v4-flash", baseUrl: "https://api.deepseek.com/v1", supportsVision: false },
+  deepseek: { model: "deepseek-chat", baseUrl: "https://api.deepseek.com/v1", supportsVision: false },
+  moonshot: { model: "kimi-k2.5", baseUrl: "https://api.moonshot.cn/v1", supportsVision: true },
+  zhipu: { model: "glm-4.5v", baseUrl: "https://open.bigmodel.cn/api/paas/v4", supportsVision: true },
+  doubao: { model: "doubao-seed-2-0-lite-260215", baseUrl: "https://ark.cn-beijing.volces.com/api/v3", supportsVision: true },
+  minimax: { model: "MiniMax-M2.7", baseUrl: "https://api.minimax.io/v1", supportsVision: false },
 };
 const allowedEndpoints: Record<ProviderId, RegExp[]> = {
   openai: [/^https:\/\/api\.openai\.com\/v1\/?$/],
+  anthropic: [/^https:\/\/api\.anthropic\.com\/v1\/?$/],
+  gemini: [/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/openai\/?$/],
   qwen: [/^https:\/\/dashscope(-intl|-us)?\.aliyuncs\.com\/compatible-mode\/v1\/?$/, /^https:\/\/[a-z0-9-]+\.(cn-beijing|ap-southeast-1|ap-northeast-1|eu-central-1)\.maas\.aliyuncs\.com\/compatible-mode\/v1\/?$/],
   deepseek: [/^https:\/\/api\.deepseek\.com\/v1\/?$/],
+  moonshot: [/^https:\/\/api\.moonshot\.cn\/v1\/?$/],
+  zhipu: [/^https:\/\/open\.bigmodel\.cn\/api\/paas\/v4\/?$/],
+  doubao: [/^https:\/\/ark\.cn-beijing\.volces\.com\/api\/v3\/?$/],
+  minimax: [/^https:\/\/api\.minimax\.io\/v1\/?$/],
 };
 
 export function assertProviderConfig(config: ProviderConfig) {
   if (!allowedEndpoints[config.provider].some((pattern) => pattern.test(config.baseUrl))) throw new Error("模型端点不在允许列表中");
-  if (config.provider === "deepseek" && config.supportsVision) throw new Error("DeepSeek 官方 API 当前只用于文本分析");
+  if (["deepseek", "minimax"].includes(config.provider) && config.supportsVision) throw new Error("当前模型服务仅用于文字分析");
 }
 export async function analyzeWithProvider(input: AnalyzeInput, config: ProviderConfig): Promise<AnalysisResult> {
   assertProviderConfig(config);
@@ -49,6 +61,29 @@ export async function testProvider(config: ProviderConfig) {
 async function requestJson(messages: Array<Record<string, unknown>>, config: ProviderConfig) {
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 90_000);
   try {
+    if (config.provider === "anthropic") {
+      const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/messages", {
+        method: "POST",
+        signal: controller.signal,
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": config.apiKey,
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: config.model,
+          max_tokens: 8_000,
+          temperature: 0.1,
+          messages: toAnthropicMessages(messages),
+        }),
+      });
+      if (!response.ok) throw new Error("模型请求失败（" + response.status + "）");
+      const payload = await response.json() as { content?: Array<{ type?: string; text?: string }> };
+      const raw = payload.content?.find((item) => item.type === "text")?.text;
+      if (!raw) throw new Error("模型没有返回分析结果");
+      return safeJson(raw);
+    }
+
     const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/chat/completions", {
       method: "POST", signal: controller.signal, headers: { "content-type": "application/json", authorization: "Bearer " + config.apiKey },
       body: JSON.stringify({ model: config.model, messages, temperature: 0.1, response_format: { type: "json_object" } }),
@@ -58,6 +93,25 @@ async function requestJson(messages: Array<Record<string, unknown>>, config: Pro
     const raw = payload.choices?.[0]?.message?.content; if (!raw) throw new Error("模型没有返回分析结果");
     return safeJson(raw);
   } finally { clearTimeout(timer); }
+}
+
+function toAnthropicMessages(messages: Array<Record<string, unknown>>) {
+  return messages.map((message) => {
+    const content = message.content;
+    if (!Array.isArray(content)) return { role: message.role, content };
+    const blocks: Array<Record<string, unknown>> = [];
+    for (const block of content) {
+      const item = asRecord(block);
+      if (item.type === "text") blocks.push({ type: "text", text: asText(item.text) });
+      if (item.type === "image_url") {
+        const image = asRecord(item.image_url);
+        const value = asText(image.url);
+        const match = value.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) blocks.push({ type: "image", source: { type: "base64", media_type: match[1], data: match[2] } });
+      }
+    }
+    return { role: message.role, content: blocks };
+  });
 }
 function buildMessages(input: AnalyzeInput) {
   const prompt = [

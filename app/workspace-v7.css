@@ -1,0 +1,270 @@
+/* Workspace V7: compact Figma-style bottom dock and model service management. */
+.canvas-toolbar {
+  top: auto;
+  bottom: 18px;
+  left: 50%;
+  min-height: 50px;
+  padding: 5px 6px;
+  gap: 2px;
+  border-color: rgba(70, 62, 82, .14);
+  border-radius: 16px;
+  background: rgba(250, 248, 251, .93);
+  box-shadow: 0 16px 42px rgba(42, 35, 51, .2), 0 1px 0 rgba(255, 255, 255, .9) inset;
+  backdrop-filter: blur(24px) saturate(150%);
+  transform: translateX(-50%);
+}
+
+.canvas-toolbar button {
+  display: flex;
+  min-width: 50px;
+  height: 40px;
+  padding: 0 8px;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 10px;
+}
+
+.canvas-toolbar button b {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.canvas-toolbar button small {
+  display: block;
+  margin: 0;
+  color: #665f6d;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.canvas-toolbar button:hover {
+  background: #eeeaf2;
+}
+
+.canvas-toolbar .ai-tool {
+  background: linear-gradient(145deg, #eee8f6, #f5ebef);
+}
+
+.canvas-toolbar > span {
+  height: 24px;
+  margin: 0 4px;
+}
+
+.multi-toolbar {
+  bottom: 82px;
+}
+
+.canvas-tip {
+  bottom: 22px;
+}
+
+.canvas-search {
+  grid-template-columns: 28px minmax(120px, 1fr) auto 28px;
+  width: 290px;
+  min-height: 42px;
+  padding: 0 7px;
+  border-radius: 13px;
+  background: rgba(250, 248, 251, .92);
+  box-shadow: 0 12px 34px rgba(42, 35, 51, .14);
+}
+
+.canvas-search.is-collapsed {
+  width: 42px;
+  min-height: 42px;
+  border-radius: 12px;
+}
+
+.canvas-search .search-leading {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  color: #726879;
+  font-size: 17px;
+}
+
+.canvas-search .search-close {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  border-radius: 8px;
+  color: #7e7584;
+  background: transparent;
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.canvas-search .search-close:hover {
+  background: #ece8ef;
+}
+
+.focus-top-button.active {
+  color: #fff;
+  border-color: #3d3743;
+  background: #3d3743;
+}
+
+.focus-exit-button {
+  position: absolute;
+  z-index: 30;
+  top: 16px;
+  right: 16px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(74, 65, 87, .13);
+  border-radius: 11px;
+  color: #554d5d;
+  background: rgba(250, 248, 251, .92);
+  box-shadow: 0 10px 28px rgba(42, 35, 51, .14);
+  backdrop-filter: blur(20px);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.focus-exit-button kbd {
+  margin-left: 5px;
+}
+
+.model-service-modal {
+  width: min(680px, calc(100vw - 32px));
+}
+
+.model-service-modal .credential-list {
+  display: grid;
+  max-height: 124px;
+  overflow-y: auto;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin: 0 0 14px;
+}
+
+.model-service-modal .credential-list:empty {
+  display: none;
+}
+
+.model-service-modal .credential-list > span {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid rgba(75, 67, 91, .09);
+  border-radius: 11px;
+  background: rgba(247, 244, 249, .8);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.model-service-modal .credential-list b {
+  display: block;
+  overflow: hidden;
+  margin-bottom: 2px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-picker {
+  display: grid;
+  grid-template-columns: minmax(220px, .9fr) minmax(260px, 1.1fr);
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.provider-picker label {
+  display: grid;
+  gap: 6px;
+}
+
+.provider-picker label > span {
+  color: #7e7584;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.provider-picker select,
+.model-service-modal .credential-form input {
+  width: 100%;
+  height: 42px;
+  box-sizing: border-box;
+  padding: 0 11px;
+  border: 1px solid rgba(75, 67, 91, .13);
+  border-radius: 11px;
+  outline: 0;
+  background: rgba(255, 255, 255, .9);
+  font-size: 12px;
+}
+
+.provider-picker select:focus,
+.model-service-modal .credential-form input:focus {
+  border-color: #8d7cba;
+  box-shadow: 0 0 0 3px rgba(141, 124, 186, .11);
+}
+
+.provider-summary {
+  display: flex;
+  min-width: 0;
+  padding: 9px 11px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(75, 67, 91, .09);
+  border-radius: 12px;
+  background: linear-gradient(145deg, rgba(240, 235, 248, .76), rgba(247, 241, 244, .74));
+}
+
+.provider-summary strong,
+.provider-summary small {
+  display: block;
+}
+
+.provider-summary strong {
+  font-size: 12px;
+}
+
+.provider-summary small {
+  margin-top: 3px;
+  color: #7d7481;
+  font-size: 10.5px;
+}
+
+.provider-summary a {
+  flex: 0 0 auto;
+  color: #685779;
+  font-size: 11px;
+  font-weight: 750;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.model-service-modal .credential-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 8px;
+}
+
+.model-service-modal .credential-form .button {
+  min-width: 108px;
+}
+
+@media (max-width: 720px) {
+  .canvas-toolbar button {
+    min-width: 42px;
+    padding: 0 7px;
+  }
+
+  .canvas-toolbar button small {
+    display: none;
+  }
+
+  .provider-picker,
+  .model-service-modal .credential-form {
+    grid-template-columns: 1fr;
+  }
+
+  .model-service-modal .credential-list {
+    grid-template-columns: 1fr;
+  }
+}

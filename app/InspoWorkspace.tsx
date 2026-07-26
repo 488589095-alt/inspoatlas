@@ -7,9 +7,7 @@ import {
   Background,
   BackgroundVariant,
   Connection,
-  Controls,
   Edge,
-  MiniMap,
   NodeChange,
   ReactFlow,
   ReactFlowProvider,
@@ -18,7 +16,7 @@ import {
   useNodesState,
   useReactFlow,
 } from "@xyflow/react";
-import type { AnalysisResult, DesignContract, Relation, RelationType } from "@/packages/domain/src";
+import { providerCatalog, type AnalysisResult, type DesignContract, type ProviderId, type Relation, type RelationType } from "@/packages/domain/src";
 import { exportPurposeOptions } from "./exportOptions";
 import { CardNode } from "./workspace/CardNode";
 import { UserMenu } from "./workspace/UserMenu";
@@ -54,7 +52,6 @@ const defaultSize: Record<CardData["kind"], { width: number; height: number }> =
   group: { width: 760, height: 520 },
 };
 const canvasSnapGrid: [number, number] = [8, 8];
-const minimapNodeColor = (node: CanvasNode) => node.data.kind === "group" ? "#eee7f6" : "#d7e2fb";
 
 type WorkspaceModal = "import" | "credentials" | null;
 type RelationView = "hidden" | "selection" | "related" | "all";
@@ -69,9 +66,7 @@ function WorkspaceCanvas() {
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
-  const [searchExpanded, setSearchExpanded] = useState(true);
-  const [toolbarExpanded, setToolbarExpanded] = useState(true);
-  const [showMinimap, setShowMinimap] = useState(true);
+  const [searchExpanded, setSearchExpanded] = useState(false);
   const [focusMode, setFocusMode] = useState(false);
   const [savedState, setSavedState] = useState("正在读取");
   const [rightTab, setRightTab] = useState<"asset" | "baseline" | "export">("asset");
@@ -90,7 +85,7 @@ function WorkspaceCanvas() {
   const [contractBusy, setContractBusy] = useState(false);
   const [exportPurpose, setExportPurpose] = useState("web-rebuild");
   const [credentialState, setCredentialState] = useState<Array<{ provider: string; model: string; lastFour: string; supportsVision: boolean }>>([]);
-  const [credentialForm, setCredentialForm] = useState({ provider: "openai", apiKey: "", model: "", region: "intl" });
+  const [credentialForm, setCredentialForm] = useState<{ provider: ProviderId; apiKey: string; model: string; region: string }>({ provider: "openai", apiKey: "", model: "", region: "intl" });
   const [loadingCredential, setLoadingCredential] = useState(false);
   const version = useRef(1);
   const loading = useRef(true);
@@ -109,6 +104,7 @@ function WorkspaceCanvas() {
 
   const selectedNodes = useMemo(() => nodes.filter((node) => selectedIds.includes(node.id)), [nodes, selectedIds]);
   const selected = selectedNodes[0];
+  const selectedProvider = providerCatalog[credentialForm.provider];
   const visibleNodes = useMemo(() => {
     const base = organizePreview?.nodes ?? nodes;
     const term = search.trim().toLowerCase();
@@ -934,10 +930,10 @@ function WorkspaceCanvas() {
     });
     const payload = await response.json().catch(() => ({}));
     setLoadingCredential(false);
-    if (!response.ok) return notify(payload.error || "Key 测试失败");
+    if (!response.ok) return notify(payload.error || "模型服务验证失败");
     setCredentialForm((value) => ({ ...value, apiKey: "" }));
     await loadCredentials();
-    notify("Key 已测试并加密保存");
+    notify("模型服务已验证并保存");
   }
 
   function handleNodeMenu(action: string) {
@@ -1062,7 +1058,7 @@ function WorkspaceCanvas() {
         <div className="top-actions">
           <button className="button ghost" onClick={undo} title="撤销">↶</button>
           <button className="button ghost" onClick={redo} title="重做">↷</button>
-          <button className="button soft" onClick={() => void loadCredentials()}>AI 设置</button>
+          <button className={"button soft focus-top-button" + (focusMode ? " active" : "")} onClick={() => setFocusMode((value) => !value)}>{focusMode ? "退出专注" : "专注模式"}</button>
           <UserMenu />
         </div>
       </header>
@@ -1119,26 +1115,29 @@ function WorkspaceCanvas() {
           <span><kbd>Delete</kbd> 删除　<kbd>Ctrl A</kbd> 全选</span>
         </div>
         <div className="quota-card">
-          <div><span>AI 模型</span><strong>{credentialState.length ? "已连接" : "未连接"}</strong></div>
-          <p>没有 Key 时不会生成模拟结果。</p>
-          <button onClick={() => void loadCredentials()}>连接自己的模型</button>
+          <div><span>模型服务</span><strong>{credentialState.length ? `已添加 ${credentialState.length} 项` : "未添加"}</strong></div>
+          <p>管理用于参考拆解、设计基准和一致性检查的模型服务。</p>
+          <button onClick={() => void loadCredentials()}>管理模型服务</button>
         </div>
       </aside>
 
       <section className="canvas-area" aria-label="灵感无限画布">
         <div className={"canvas-search" + (searchExpanded ? "" : " is-collapsed")} title="按标题、标签、文字、来源、颜色和拆解结果查找">
-          <button className="search-toggle" onClick={() => setSearchExpanded((value) => !value)} aria-label={searchExpanded ? "收起画布查找" : "展开画布查找"}>⌕</button>
-          {searchExpanded && <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="查找标题、标签、颜色…" autoFocus={Boolean(search)} />}
-          {searchExpanded && <small>{search ? visibleNodes.filter((node) => node.className?.includes("is-search-match")).length + " 项匹配" : "当前画布"}</small>}
+          {!searchExpanded && <button className="search-toggle" onClick={() => setSearchExpanded(true)} aria-label="打开画布查找">⌕</button>}
+          {searchExpanded && <span className="search-leading">⌕</span>}
+          {searchExpanded && <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="查找标题、标签、颜色…" autoFocus />}
+          {searchExpanded && <small>{search ? visibleNodes.filter((node) => node.className?.includes("is-search-match")).length + " 项" : "画布"}</small>}
+          {searchExpanded && <button className="search-close" onClick={() => { setSearch(""); setSearchExpanded(false); }} aria-label="关闭画布查找">×</button>}
         </div>
-        <div className={"canvas-toolbar" + (toolbarExpanded ? "" : " is-collapsed")}>
-          {toolbarExpanded && <button onClick={() => fileInput.current?.click()}>▧<small>图片</small></button>}
-          {toolbarExpanded && <button onClick={() => setModal("import")}>T<small>文字/网页</small></button>}
-          {toolbarExpanded && <button onClick={() => createGroup()}>▱<small>分组</small></button>}
-          {toolbarExpanded && <span />}
-          {toolbarExpanded && <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()}>✦<small>拆解参考</small></button>}
-          {toolbarExpanded && <button onClick={previewOrganize}>⌗<small>整理画布</small></button>}
-          <button className="toolbar-toggle" onClick={() => setToolbarExpanded((value) => !value)} title={toolbarExpanded ? "收起工具" : "展开工具"}>{toolbarExpanded ? "−" : "工具"}</button>
+        <div className="canvas-toolbar" role="toolbar" aria-label="画布工具">
+          <button onClick={() => fileInput.current?.click()} title="添加图片"><b>▧</b><small>图片</small></button>
+          <button onClick={() => setModal("import")} title="添加文字或网页"><b>T</b><small>文字/网页</small></button>
+          <button onClick={() => createGroup()} title="新建分组"><b>▱</b><small>分组</small></button>
+          <span />
+          <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()} title="拆解所选参考"><b>✦</b><small>拆解</small></button>
+          <button onClick={previewOrganize} title="整理画布"><b>⌗</b><small>整理</small></button>
+          <span />
+          <button onClick={() => void fitView({ padding: 0.18, duration: 320 })} title="快速定位全部内容"><b>⌖</b><small>定位</small></button>
         </div>
         {selectedIds.length > 1 && !organizePreview && (
           <div className="multi-toolbar">
@@ -1203,14 +1202,10 @@ function WorkspaceCanvas() {
         >
           <Background id="fine-dots" variant={BackgroundVariant.Dots} color="rgba(72,63,86,.30)" gap={20} size={1.35} />
           <Background id="major-dots" variant={BackgroundVariant.Dots} color="rgba(72,63,86,.16)" gap={100} size={2.1} />
-          <Controls showInteractive={false} position="bottom-center" />
-          {showMinimap && <MiniMap position="bottom-right" pannable zoomable nodeColor={minimapNodeColor} />}
+
         </ReactFlow>
-        <div className="canvas-tip">拖动空白框选 · Shift 添加选择 · 右键拖动画布 · Delete 删除</div>
-        <div className="canvas-view-controls">
-          <button onClick={() => setShowMinimap((value) => !value)} title={showMinimap ? "收起缩略图" : "展开缩略图"}>{showMinimap ? "隐藏缩略图" : "显示缩略图"}</button>
-          <button className={focusMode ? "active" : ""} onClick={() => setFocusMode((value) => !value)} title="隐藏或恢复周边面板">{focusMode ? "退出专注" : "专注画布"}</button>
-        </div>
+        <div className="canvas-tip">拖动空白框选 · Shift 添加选择 · 右键拖动画布 · 滚轮缩放 · Delete 删除</div>
+        {focusMode && <button className="focus-exit-button" onClick={() => setFocusMode(false)}>退出专注 <kbd>Esc</kbd></button>}
 
         {organizePreview && (
           <aside className="organize-dock">
@@ -1306,7 +1301,7 @@ function WorkspaceCanvas() {
 
       {modal === "import" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal import-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">第 1 步 · 采集参考</span><h2>加入当前画布</h2><p>上传图片或整个灵感文件夹，也可以粘贴文字、输入网页地址。网页使用插件采集时会保存完整截图。</p><div className="import-choice"><button className="import-drop" onClick={() => fileInput.current?.click()}><span>⇧</span><strong>上传图片</strong><small>JPG、PNG、WebP · 单张最大 20 MB</small></button><button className="import-drop folder-drop" onClick={() => folderInput.current?.click()}><span>▱</span><strong>上传文件夹</strong><small>自动建立同名分组并排列图片</small></button></div><div className="url-entry"><input autoFocus value={urlValue} onChange={(event) => setUrlValue(event.target.value)} placeholder="公开 URL 或参考文字" /><button onClick={() => urlValue.trim() && void addAsset(urlValue.trim())}>加入</button></div></section></div>}
 
-      {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">AI 设置</span><h2>连接自己的模型</h2><p>Key 只会在服务端加密保存。没有 Key 时，产品不会生成模拟分析。</p><div className="credential-list">{credentialState.map((item) => <span key={item.provider}><b>{item.provider}</b>{item.model} · •••• {item.lastFour}{item.supportsVision ? " · 可分析图片" : " · 仅文字"}</span>)}</div><div className="credential-form"><select value={credentialForm.provider} onChange={(event) => setCredentialForm({ ...credentialForm, provider: event.target.value })}><option value="openai">OpenAI（图片与文字）</option><option value="qwen">Qwen（图片与文字）</option><option value="deepseek">DeepSeek（仅文字）</option></select><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value })} placeholder="API Key" /><input value={credentialForm.model} onChange={(event) => setCredentialForm({ ...credentialForm, model: event.target.value })} placeholder="模型（留空使用推荐模型）" /><button className="button primary" disabled={!credentialForm.apiKey || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "正在测试…" : "测试并保存"}</button></div></section></div>}
+      {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal model-service-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">模型服务</span><h2>添加分析服务</h2><p>选择你已有账户的开放平台。密钥只在服务端加密保存，不会写入画布或浏览器日志。</p><div className="credential-list">{credentialState.map((item) => { const catalog = providerCatalog[item.provider as ProviderId]; return <span key={item.provider}><b>{catalog?.label ?? item.provider}</b>{item.model} · •••• {item.lastFour}{item.supportsVision ? " · 图片与文字" : " · 仅文字"}</span>; })}</div><div className="provider-picker"><label><span>开放平台</span><select value={credentialForm.provider} onChange={(event) => setCredentialForm({ ...credentialForm, provider: event.target.value as ProviderId, model: "" })}>{Object.entries(providerCatalog).map(([id, item]) => <option key={id} value={id}>{item.label}{item.supportsVision ? " · 图片与文字" : " · 仅文字"}</option>)}</select></label><div className="provider-summary"><div><strong>{selectedProvider.label}</strong><small>{selectedProvider.description}</small></div><a href={selectedProvider.platformUrl} target="_blank" rel="noreferrer">前往开放平台 ↗</a></div></div><div className="credential-form"><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value })} placeholder="API Key" /><input list="provider-model-options" value={credentialForm.model} onChange={(event) => setCredentialForm({ ...credentialForm, model: event.target.value })} placeholder={`推荐：${selectedProvider.models[0]}`} /><datalist id="provider-model-options">{selectedProvider.models.map((model) => <option key={model} value={model} />)}</datalist><button className="button primary" disabled={!credentialForm.apiKey || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "正在验证…" : "验证并保存"}</button></div></section></div>}
 
 
       {toast && <div className="toast"><span>✓</span>{toast}</div>}

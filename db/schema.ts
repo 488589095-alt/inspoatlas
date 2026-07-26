@@ -37,7 +37,7 @@ export const analyses = sqliteTable("analyses", {
 });
 
 export const aiCredentials = sqliteTable("ai_credentials", {
-  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), provider: text("provider", { enum: ["openai", "qwen", "deepseek"] }).notNull(),
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), provider: text("provider", { enum: ["openai", "anthropic", "gemini", "qwen", "deepseek", "moonshot", "zhipu", "doubao", "minimax"] }).notNull(),
   model: text("model").notNull(), baseUrl: text("base_url").notNull(), ciphertext: text("ciphertext").notNull(), iv: text("iv").notNull(),
   authTag: text("auth_tag").notNull(), lastFour: text("last_four").notNull(), supportsVision: integer("supports_vision", { mode: "boolean" }).notNull().default(false),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
