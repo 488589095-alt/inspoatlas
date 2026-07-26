@@ -1,9 +1,18 @@
 /* Workspace V7: compact Figma-style bottom dock and model service management. */
-.canvas-toolbar {
-  top: auto;
-  bottom: 18px;
-  left: 50%;
-  min-height: 50px;
+.canvas-area > .canvas-toolbar {
+  top: auto !important;
+  right: auto !important;
+  bottom: 18px !important;
+  left: 50% !important;
+  display: flex !important;
+  width: max-content;
+  max-width: calc(100% - 32px);
+  height: 52px;
+  min-height: 52px;
+  box-sizing: border-box;
+  flex-direction: row !important;
+  align-items: center;
+  justify-content: center;
   padding: 5px 6px;
   gap: 2px;
   border-color: rgba(70, 62, 82, .14);
@@ -14,7 +23,7 @@
   transform: translateX(-50%);
 }
 
-.canvas-toolbar button {
+.canvas-area > .canvas-toolbar button {
   display: flex;
   min-width: 50px;
   height: 40px;
@@ -25,13 +34,13 @@
   border-radius: 10px;
 }
 
-.canvas-toolbar button b {
+.canvas-area > .canvas-toolbar button b {
   font-size: 16px;
   font-weight: 500;
   line-height: 1;
 }
 
-.canvas-toolbar button small {
+.canvas-area > .canvas-toolbar button small {
   display: block;
   margin: 0;
   color: #665f6d;
@@ -39,15 +48,15 @@
   white-space: nowrap;
 }
 
-.canvas-toolbar button:hover {
+.canvas-area > .canvas-toolbar button:hover {
   background: #eeeaf2;
 }
 
-.canvas-toolbar .ai-tool {
+.canvas-area > .canvas-toolbar .ai-tool {
   background: linear-gradient(145deg, #eee8f6, #f5ebef);
 }
 
-.canvas-toolbar > span {
+.canvas-area > .canvas-toolbar > span {
   height: 24px;
   margin: 0 4px;
 }
@@ -250,12 +259,12 @@
 }
 
 @media (max-width: 720px) {
-  .canvas-toolbar button {
+  .canvas-area > .canvas-toolbar button {
     min-width: 42px;
     padding: 0 7px;
   }
 
-  .canvas-toolbar button small {
+  .canvas-area > .canvas-toolbar button small {
     display: none;
   }
 

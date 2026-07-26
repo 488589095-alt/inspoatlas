@@ -25,6 +25,10 @@ test("画布采用底部工具坞、单一专注入口且分析错误不会原�
   assert.match(card, /displayAnalysisError/);
   assert.ok(styles.includes("grid-template-columns: repeat(3, minmax(0, 1fr)) !important"));
   assert.ok(styles.includes(".workspace-shell.focus-mode"));
-  assert.ok(dockStyles.includes(".canvas-toolbar"));
+  assert.ok(dockStyles.includes(".canvas-area > .canvas-toolbar"));
+  assert.ok(dockStyles.includes("top: auto !important"));
+  assert.ok(dockStyles.includes("right: auto !important"));
+  assert.ok(dockStyles.includes("width: max-content"));
+  assert.ok(dockStyles.includes("height: 52px"));
   assert.ok(dockStyles.includes(".focus-top-button"));
 });
