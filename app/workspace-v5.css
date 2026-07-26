@@ -1,0 +1,123 @@
+/* Workspace V5: stable selection, compact navigation and canvas-first controls. */
+.topbar {
+  grid-template-columns: 230px minmax(180px, 1fr) auto;
+}
+
+.top-actions {
+  justify-self: end;
+}
+
+.workspace-modes {
+  display: none;
+}
+
+.canvas-toolbar {
+  top: 16px;
+  left: 50%;
+  flex-direction: row;
+  transform: translateX(-50%);
+}
+
+.canvas-toolbar > span {
+  width: 1px;
+  height: 28px;
+  margin: 0 4px;
+}
+
+.canvas-search {
+  width: 220px;
+}
+
+.canvas-search input[type="search"]::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+.react-flow__node.is-search-dim {
+  opacity: .22;
+  filter: saturate(.4);
+  transition: opacity .16s ease, filter .16s ease;
+}
+
+.react-flow__node.is-search-match {
+  opacity: 1;
+  filter: none;
+}
+
+.react-flow__node.is-search-match .card-surface {
+  box-shadow: 0 18px 42px rgba(76, 63, 113, .18), 0 0 0 2px #8173b4, 0 0 0 7px rgba(129, 115, 180, .12);
+}
+
+.inspector-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  grid-template-columns: none;
+}
+
+.inspector-tabs button {
+  min-width: 0;
+  flex: 1 1 0;
+  padding: 0 3px;
+  white-space: nowrap;
+}
+
+.card-group.is-selected {
+  border-color: #8173b4;
+  background: rgba(238, 233, 248, .34);
+  box-shadow: 0 0 0 5px rgba(129, 115, 180, .1);
+}
+
+.card-group .react-flow__resize-control.handle {
+  width: 11px !important;
+  height: 11px !important;
+  border: 2px solid white !important;
+  border-radius: 50% !important;
+  background: #8173b4 !important;
+  box-shadow: 0 2px 8px rgba(66, 54, 94, .28);
+  pointer-events: auto !important;
+}
+
+.import-choice {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.import-choice .import-drop {
+  width: 100%;
+  height: 132px;
+  padding: 14px;
+  border: 1px dashed #b9aec4;
+  color: var(--ink);
+  font-family: inherit;
+}
+
+.import-choice .folder-drop {
+  background: linear-gradient(135deg, rgba(237, 229, 248, .62), rgba(225, 237, 247, .58));
+}
+
+.import-choice .import-drop strong,
+.import-choice .import-drop small {
+  display: block;
+}
+
+@media (max-width: 1180px) {
+  .topbar {
+    grid-template-columns: 190px minmax(160px, 1fr) auto;
+  }
+
+  .canvas-search {
+    width: 190px;
+  }
+}
+
+@media (max-width: 900px) {
+  .canvas-toolbar {
+    left: auto;
+    right: 12px;
+    transform: none;
+  }
+
+  .canvas-search {
+    width: 190px;
+  }
+}

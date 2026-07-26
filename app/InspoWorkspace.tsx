@@ -95,6 +95,7 @@ function WorkspaceCanvas() {
   const redoHistory = useRef<Array<{ nodes: CanvasNode[]; edges: Edge[] }>>([]);
   const syncedClips = useRef(new Set<string>());
   const fileInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement>(null);
   const edgesRef = useRef<Edge[]>([]);
   const { fitView, getViewport, setViewport } = useReactFlow();
 
@@ -107,23 +108,33 @@ function WorkspaceCanvas() {
   const visibleNodes = useMemo(() => {
     const base = organizePreview?.nodes ?? nodes;
     const term = search.trim().toLowerCase();
-    const selection = new Set(selectedIds);
     return base.map((node) => {
-      const selected = selection.has(node.id);
-      const hidden = Boolean(term) && node.data.kind !== "group" && !JSON.stringify(node.data).toLowerCase().includes(term);
-      return node.selected === selected && node.hidden === hidden ? node : { ...node, selected, hidden };
+      const cleanClass = (node.className ?? "").replace(/\s*is-search-(?:match|dim)/g, "");
+      if (!term || node.data.kind === "group") {
+        return cleanClass === (node.className ?? "") ? node : { ...node, className: cleanClass };
+      }
+      const searchable = [
+        node.data.title,
+        node.data.body,
+        node.data.sourceUrl,
+        node.data.analysisSummary,
+        ...(node.data.tags ?? []),
+        ...(node.data.colors ?? []),
+        ...(node.data.principles ?? []),
+      ].filter(Boolean).join(" ").toLowerCase();
+      const searchClass = searchable.includes(term) ? "is-search-match" : "is-search-dim";
+      return { ...node, className: `${cleanClass} ${searchClass}`.trim() };
     });
-  }, [nodes, organizePreview, search, selectedIds]);
+  }, [nodes, organizePreview, search]);
   const visibleEdges = useMemo(() => {
     const selectedSet = new Set(selectedIds);
-    const hiddenNodeIds = new Set(visibleNodes.filter((node) => node.hidden).map((node) => node.id));
     return edges.map((edge) => {
-      let hidden = relationView === "hidden" || hiddenNodeIds.has(edge.source) || hiddenNodeIds.has(edge.target);
+      let hidden = relationView === "hidden";
       if (relationView === "selection") hidden ||= !(selectedSet.has(edge.source) && selectedSet.has(edge.target));
       if (relationView === "related") hidden ||= !(selectedSet.has(edge.source) || selectedSet.has(edge.target));
       return { ...edge, hidden };
     });
-  }, [edges, relationView, selectedIds, visibleNodes]);
+  }, [edges, relationView, selectedIds]);
 
   const notify = useCallback((message: string) => {
     setToast(message);
@@ -344,7 +355,7 @@ function WorkspaceCanvas() {
   const onSelectionChange = useCallback(({ nodes: selection }: { nodes: CanvasNode[] }) => {
     const next = selection.map((node) => node.id);
     setSelectedIds((current) => (
-      current.length === next.length && current.every((id, index) => id === next[index])
+      current.length === next.length && next.every((id) => current.includes(id))
         ? current
         : next
     ));
@@ -525,34 +536,88 @@ function WorkspaceCanvas() {
     notify(isUrl ? "网页来源卡已保存" : "文字参考已保存");
   }
 
-  async function addImage(file: File) {
-    if (!/^image\/(jpeg|png|webp)$/.test(file.type) || file.size > 20 * 1024 * 1024) {
-      return notify("仅支持 20 MB 内的 JPG、PNG、WebP");
+  async function addImages(input: File[] | FileList, asFolder = false) {
+    const allFiles = Array.from(input);
+    const files = allFiles.filter((file) => /^image\/(jpeg|png|webp)$/.test(file.type) && file.size <= 20 * 1024 * 1024);
+    if (!files.length) return notify("没有找到 20 MB 内的 JPG、PNG 或 WebP");
+
+    const uploaded: Array<{ asset: { id: string; title: string; contentUrl?: string } }> = [];
+    let failed = allFiles.length - files.length;
+    for (const file of files) {
+      const form = new FormData();
+      form.set("boardId", boardId);
+      form.set("file", file);
+      if (file.webkitRelativePath) form.set("relativePath", file.webkitRelativePath);
+      const response = await fetch("/api/assets", { method: "POST", body: form });
+      if (!response.ok) {
+        failed += 1;
+        continue;
+      }
+      uploaded.push(await response.json());
     }
-    const form = new FormData();
-    form.set("boardId", boardId);
-    form.set("file", file);
-    const response = await fetch("/api/assets", { method: "POST", body: form });
-    if (!response.ok) return notify((await response.json().catch(() => ({}))).error || "图片上传失败");
-    const { asset } = await response.json();
+    if (!uploaded.length) return notify("图片上传失败，请稍后重试");
+
     remember();
-    setNodes((current) => [...current, {
-      id: asset.id,
-      type: "inspo",
-      position: { x: 100 + current.length * 18, y: 120 + current.length * 14 },
-      data: {
-        kind: "image",
-        title: asset.title,
-        assetId: asset.id,
-        imageUrl: asset.contentUrl || "/api/assets/" + asset.id + "/content",
-        tags: ["待拆解"],
-      },
-      style: defaultSize.image,
-      zIndex: 10,
-    }]);
-    setSelectedIds([asset.id]);
+    const rootFolder = asFolder
+      ? files[0]?.webkitRelativePath.split("/").filter(Boolean)[0] || "导入的文件夹"
+      : "";
+    const groupId = rootFolder ? crypto.randomUUID() : "";
+    setNodes((current) => {
+      if (!groupId) {
+        const cards = uploaded.map(({ asset }, index): CanvasNode => ({
+          id: asset.id,
+          type: "inspo",
+          position: { x: 100 + (current.length + index) * 18, y: 120 + (current.length + index) * 14 },
+          data: {
+            kind: "image",
+            title: asset.title,
+            assetId: asset.id,
+            imageUrl: asset.contentUrl || "/api/assets/" + asset.id + "/content",
+            tags: ["待拆解"],
+          },
+          style: defaultSize.image,
+          zIndex: 10,
+        }));
+        return [...current, ...cards];
+      }
+
+      const columns = Math.min(3, Math.max(1, uploaded.length));
+      const rows = Math.ceil(uploaded.length / columns);
+      const groupWidth = 48 + columns * 300 + (columns - 1) * 24;
+      const groupHeight = 90 + rows * 340 + Math.max(0, rows - 1) * 24 + 28;
+      const group: CanvasNode = {
+        id: groupId,
+        type: "inspo",
+        position: { x: 96 + current.length * 12, y: 112 + current.length * 10 },
+        data: { kind: "group", title: rootFolder, body: `${uploaded.length} 张参考 · 拖动分组可整体移动` },
+        style: { width: groupWidth, height: groupHeight },
+        zIndex: 0,
+      };
+      const cards = uploaded.map(({ asset }, index): CanvasNode => ({
+        id: asset.id,
+        type: "inspo",
+        parentId: groupId,
+        extent: "parent",
+        position: { x: 24 + (index % columns) * 324, y: 70 + Math.floor(index / columns) * 364 },
+        data: {
+          kind: "image",
+          title: asset.title,
+          assetId: asset.id,
+          imageUrl: asset.contentUrl || "/api/assets/" + asset.id + "/content",
+          tags: ["待拆解"],
+        },
+        style: defaultSize.image,
+        zIndex: 10,
+      }));
+      return [...current, group, ...cards];
+    });
+    setSelectedIds(uploaded.map(({ asset }) => asset.id));
     setModal(null);
-    notify("图片已加入当前画布");
+    notify(`已加入 ${uploaded.length} 张图片${rootFolder ? `，并建立“${rootFolder}”分组` : ""}${failed ? `，跳过 ${failed} 个不支持的文件` : ""}`);
+  }
+
+  async function addImage(file: File) {
+    await addImages([file]);
   }
 
   async function analyze(nodeId?: string, captureHistory = true) {
@@ -961,8 +1026,8 @@ function WorkspaceCanvas() {
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
-        const file = event.dataTransfer.files[0];
-        if (file) void addImage(file);
+        const files = event.dataTransfer.files;
+        if (files.length) void addImages(files);
       }}
     >
       <header className="topbar">
@@ -989,11 +1054,6 @@ function WorkspaceCanvas() {
           ) : <b>{boardTitle}</b>}
           <small>{savedState}</small>
         </div>
-        <nav className="workspace-modes" aria-label="工作区">
-          <button className={rightTab === "asset" ? "active" : ""} onClick={() => setRightTab("asset")}><span>1</span>参考画布</button>
-          <button className={rightTab === "baseline" ? "active" : ""} onClick={() => setRightTab("baseline")}><span>2</span>设计基准</button>
-          <button className={rightTab === "export" ? "active" : ""} onClick={() => setRightTab("export")}><span>3</span>导出使用</button>
-        </nav>
         <div className="top-actions">
           <button className="button ghost" onClick={undo} title="撤销">↶</button>
           <button className="button ghost" onClick={redo} title="重做">↷</button>
@@ -1050,7 +1110,7 @@ function WorkspaceCanvas() {
         </nav>
         <div className="shortcut-card">
           <strong>画布操作</strong>
-          <p>拖动空白处框选；按住空格拖动画布；右键卡片或画布名称查看更多操作。</p>
+          <p>拖动空白处框选；在空白处按住右键拖动画布；右键卡片或画布名称查看更多操作。</p>
           <span><kbd>Delete</kbd> 删除　<kbd>Ctrl A</kbd> 全选</span>
         </div>
         <div className="quota-card">
@@ -1061,10 +1121,10 @@ function WorkspaceCanvas() {
       </aside>
 
       <section className="canvas-area" aria-label="灵感无限画布">
-        <label className="canvas-search">
+        <label className="canvas-search" title="按标题、标签、文字、来源、颜色和拆解结果查找">
           <span>⌕</span>
-          <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="筛选当前画布…" />
-          <small>{search ? visibleNodes.filter((node) => !node.hidden && node.data.kind !== "group").length + " 项" : "本地筛选"}</small>
+          <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="查找标题、标签、颜色…" />
+          <small>{search ? visibleNodes.filter((node) => node.className?.includes("is-search-match")).length + " 项匹配" : "当前画布"}</small>
         </label>
         <div className="canvas-toolbar">
           <button onClick={() => fileInput.current?.click()}>▧<small>图片</small></button>
@@ -1086,7 +1146,19 @@ function WorkspaceCanvas() {
             <button className="danger" onClick={() => requestDeleteNodes(selectedIds)}>删除</button>
           </div>
         )}
-        <input ref={fileInput} className="visually-hidden" type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => event.target.files?.[0] && void addImage(event.target.files[0])} />
+        <input ref={fileInput} className="visually-hidden" type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => event.target.files?.length && void addImages(event.target.files)} />
+        <input
+          ref={(node) => {
+            folderInput.current = node;
+            node?.setAttribute("webkitdirectory", "");
+            node?.setAttribute("directory", "");
+          }}
+          className="visually-hidden"
+          type="file"
+          multiple
+          accept="image/jpeg,image/png,image/webp"
+          onChange={(event) => event.target.files?.length && void addImages(event.target.files, true)}
+        />
         <label className="relation-view">
           <span>连线显示</span>
           <select value={relationView} onChange={(event) => setRelationView(event.target.value as RelationView)}>
@@ -1110,7 +1182,7 @@ function WorkspaceCanvas() {
           selectionOnDrag={!organizePreview}
           selectionMode={SelectionMode.Partial}
           multiSelectionKeyCode={["Shift", "Control", "Meta"]}
-          panOnDrag={[1, 2]}
+          panOnDrag={[2]}
           deleteKeyCode={null}
           nodesDraggable={!organizePreview}
           nodesConnectable={!organizePreview}
@@ -1128,7 +1200,7 @@ function WorkspaceCanvas() {
           <Controls showInteractive={false} position="bottom-center" />
           <MiniMap position="bottom-right" pannable zoomable nodeColor={minimapNodeColor} />
         </ReactFlow>
-        <div className="canvas-tip">拖动空白框选 · Shift 添加选择 · 空格拖动画布 · Delete 删除</div>
+        <div className="canvas-tip">拖动空白框选 · Shift 添加选择 · 右键拖动画布 · Delete 删除</div>
 
         {organizePreview && (
           <aside className="organize-dock">
@@ -1222,7 +1294,7 @@ function WorkspaceCanvas() {
 
       {connection && <div className="modal-backdrop"><section className="modal relation-modal"><button className="modal-close" onClick={() => setConnection(null)}>×</button><span className="step-kicker">建立关联</span><h2>这两张参考如何一起使用？</h2><p>关系应帮助后续查找和整理，不是为了把画布连满。</p><div className="relation-options">{relationChoices.map((item) => <button key={item.type} onClick={() => confirmConnection(item.type)}>{item.label}</button>)}</div></section></div>}
 
-      {modal === "import" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal import-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">第 1 步 · 采集参考</span><h2>加入当前画布</h2><p>上传图片、粘贴文字或输入网页地址。网页使用插件采集时会保存完整截图。</p><div className="import-drop" onClick={() => fileInput.current?.click()}><span>⇧</span><strong>上传 JPG、PNG、WebP</strong><small>最大 20 MB</small></div><div className="url-entry"><input autoFocus value={urlValue} onChange={(event) => setUrlValue(event.target.value)} placeholder="公开 URL 或参考文字" /><button onClick={() => urlValue.trim() && void addAsset(urlValue.trim())}>加入</button></div></section></div>}
+      {modal === "import" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal import-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">第 1 步 · 采集参考</span><h2>加入当前画布</h2><p>上传图片或整个灵感文件夹，也可以粘贴文字、输入网页地址。网页使用插件采集时会保存完整截图。</p><div className="import-choice"><button className="import-drop" onClick={() => fileInput.current?.click()}><span>⇧</span><strong>上传图片</strong><small>JPG、PNG、WebP · 单张最大 20 MB</small></button><button className="import-drop folder-drop" onClick={() => folderInput.current?.click()}><span>▱</span><strong>上传文件夹</strong><small>自动建立同名分组并排列图片</small></button></div><div className="url-entry"><input autoFocus value={urlValue} onChange={(event) => setUrlValue(event.target.value)} placeholder="公开 URL 或参考文字" /><button onClick={() => urlValue.trim() && void addAsset(urlValue.trim())}>加入</button></div></section></div>}
 
       {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">AI 设置</span><h2>连接自己的模型</h2><p>Key 只会在服务端加密保存。没有 Key 时，产品不会生成模拟分析。</p><div className="credential-list">{credentialState.map((item) => <span key={item.provider}><b>{item.provider}</b>{item.model} · •••• {item.lastFour}{item.supportsVision ? " · 可分析图片" : " · 仅文字"}</span>)}</div><div className="credential-form"><select value={credentialForm.provider} onChange={(event) => setCredentialForm({ ...credentialForm, provider: event.target.value })}><option value="openai">OpenAI（图片与文字）</option><option value="qwen">Qwen（图片与文字）</option><option value="deepseek">DeepSeek（仅文字）</option></select><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value })} placeholder="API Key" /><input value={credentialForm.model} onChange={(event) => setCredentialForm({ ...credentialForm, model: event.target.value })} placeholder="模型（留空使用推荐模型）" /><button className="button primary" disabled={!credentialForm.apiKey || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "正在测试…" : "测试并保存"}</button></div></section></div>}
 
