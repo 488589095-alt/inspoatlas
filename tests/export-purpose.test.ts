@@ -4,7 +4,11 @@ import { exportFilesByPurpose, exportRequestSchema } from "../packages/domain/sr
 
 test("导出任务必须选择明确生产目标", () => {
   assert.equal(exportRequestSchema.parse({ boardId: "board-1", purpose: "web-rebuild" }).purpose, "web-rebuild");
+  const routed = exportRequestSchema.parse({ boardId: "board-1", purpose: "campaign-system", goal: "scale", destination: "figma-buzz" });
+  assert.equal(routed.goal, "scale");
+  assert.equal(routed.destination, "figma-buzz");
   assert.throws(() => exportRequestSchema.parse({ boardId: "board-1", purpose: "mixed-zip" }));
+  assert.throws(() => exportRequestSchema.parse({ boardId: "board-1", purpose: "campaign-system", goal: "scale", destination: "unknown-tool" }));
 });
 
 test("四类任务包不混入无关文件", () => {

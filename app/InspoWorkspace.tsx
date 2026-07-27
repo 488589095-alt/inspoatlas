@@ -19,7 +19,12 @@ import {
   type Viewport,
 } from "@xyflow/react";
 import { providerCatalog, type AnalysisResult, type DesignContract, type ProviderId, type Relation, type RelationType } from "@/packages/domain/src";
-import { exportPurposeOptions } from "./exportOptions";
+import {
+  exportDestinationsByGoal,
+  productionGoalOptions,
+  type ExportDestination,
+  type ProductionGoal,
+} from "./exportOptions";
 import { CardNode } from "./workspace/CardNode";
 import { UserMenu } from "./workspace/UserMenu";
 import { buildOrganizePreview, type OrganizePreview } from "./workspace/organize";
@@ -89,7 +94,10 @@ function WorkspaceCanvas() {
   const [boardDraft, setBoardDraft] = useState("");
   const [contract, setContract] = useState<DesignContract | null>(null);
   const [contractBusy, setContractBusy] = useState(false);
-  const [exportPurpose, setExportPurpose] = useState("web-rebuild");
+  const [productionGoal, setProductionGoal] = useState<ProductionGoal>("recreate");
+  const [exportDestination, setExportDestination] = useState<ExportDestination>("figma-design");
+  const [exportBusy, setExportBusy] = useState(false);
+  const [exportComplete, setExportComplete] = useState(false);
   const [credentialState, setCredentialState] = useState<Array<{ provider: string; model: string; lastFour: string; supportsVision: boolean; active: boolean }>>([]);
   const [credentialForm, setCredentialForm] = useState<{ provider: ProviderId; apiKey: string; model: string; region: string }>({ provider: "openai", apiKey: "", model: providerCatalog.openai.models[0], region: "intl" });
   const [loadingCredential, setLoadingCredential] = useState(false);
@@ -128,6 +136,8 @@ function WorkspaceCanvas() {
 
   const selectedNodes = useMemo(() => nodes.filter((node) => selectedIds.includes(node.id)), [nodes, selectedIds]);
   const selected = selectedNodes[0];
+  const exportDestinations = exportDestinationsByGoal[productionGoal];
+  const activeDestination = exportDestinations.find((item) => item.id === exportDestination) ?? exportDestinations[0];
   const selectedProvider = providerCatalog[credentialForm.provider];
   const visibleNodes = useMemo(() => {
     const base = organizePreview?.nodes ?? nodes;
@@ -1115,20 +1125,32 @@ function WorkspaceCanvas() {
   }
 
   async function exportPackage() {
+    setExportBusy(true);
+    setExportComplete(false);
     const response = await fetch("/api/exports", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ boardId, purpose: exportPurpose }),
+      body: JSON.stringify({
+        boardId,
+        purpose: activeDestination.purpose,
+        goal: productionGoal,
+        destination: activeDestination.id,
+      }),
     });
-    if (!response.ok) return notify((await response.json().catch(() => ({}))).error || "请先确认设计基准");
+    if (!response.ok) {
+      setExportBusy(false);
+      return notify((await response.json().catch(() => ({}))).error || "请先确认设计基准");
+    }
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "inspoatlas-" + exportPurpose + ".zip";
+    anchor.download = "inspoatlas-" + activeDestination.id + ".zip";
     anchor.click();
     URL.revokeObjectURL(url);
-    setModal(null);
+    setExportBusy(false);
+    setExportComplete(true);
+    notify("任务已准备好，下载后先打开 START_HERE.html");
   }
 
   async function loadCredentials() {
@@ -1528,12 +1550,79 @@ function WorkspaceCanvas() {
             {contract && <div className="contract-content"><h3>{contract.title}</h3><h4>必须保持的设计原则</h4><ol>{contract.principles.map((item) => <li key={item}>{item}</li>)}</ol><h4>颜色</h4><div className="contract-swatches">{contract.tokens.colors.map((item) => <span key={item.name} title={item.name} style={{ background: item.value }} />)}</div>{!!contract.conflicts.length && <div className="contract-warning"><strong>需要你决定</strong>{contract.conflicts.map((item) => <p key={item}>{item}</p>)}</div>}<button className="button primary wide" onClick={() => void confirmBaseline()}>确认这套设计基准</button></div>}
           </section>
         ) : (
-          <section className="export-panel">
-            <span className="step-kicker">导出工作区</span>
-            <h2>选择接下来的设计任务</h2>
-            <p>不同任务只导出需要的规则、提示词或 Figma 素材，不再生成混杂资产包。</p>
-            <div className="export-purpose-list">{exportPurposeOptions.map((option) => <button key={option.id} className={exportPurpose === option.id ? "is-active" : ""} onClick={() => setExportPurpose(option.id)}><span>{option.icon}</span><div><strong>{option.title}</strong><small>{option.description}</small></div><i>›</i></button>)}</div>
-            <button className="button primary wide export-now" onClick={() => void exportPackage()}>生成所选任务包</button>
+          <section className="export-panel export-flow">
+            <span className="step-kicker">下一步工作区</span>
+            <h2>从参考走到可用结果</h2>
+            <p>先选想完成的事情，再选要在哪个工具继续。系统只准备这条路径真正需要的内容。</p>
+
+            <div className="export-progress" aria-label="导出步骤">
+              <span className="is-active"><i>1</i>想做什么</span>
+              <b />
+              <span className="is-active"><i>2</i>去哪里用</span>
+              <b />
+              <span><i>3</i>开始制作</span>
+            </div>
+
+            <div className="export-section-heading"><small>第一步</small><h3>你想得到什么？</h3></div>
+            <div className="export-goal-list">
+              {productionGoalOptions.map((option) => (
+                <button
+                  key={option.id}
+                  className={productionGoal === option.id ? "is-active" : ""}
+                  onClick={() => {
+                    setProductionGoal(option.id);
+                    setExportDestination(exportDestinationsByGoal[option.id][0].id);
+                    setExportComplete(false);
+                  }}
+                >
+                  <i>{option.step}</i>
+                  <div><strong>{option.title}</strong><small>{option.description}</small></div>
+                  <span>{productionGoal === option.id ? "✓" : "›"}</span>
+                </button>
+              ))}
+            </div>
+
+            <div className="export-section-heading"><small>第二步</small><h3>接下来在哪里工作？</h3></div>
+            <div className="export-destination-list">
+              {exportDestinations.map((option) => (
+                <button
+                  key={option.id}
+                  className={activeDestination.id === option.id ? "is-active" : ""}
+                  onClick={() => { setExportDestination(option.id); setExportComplete(false); }}
+                >
+                  <span className="destination-icon">{option.icon}</span>
+                  <div>
+                    <strong>{option.title}{option.recommended && <em>推荐</em>}</strong>
+                    <small>{option.description}</small>
+                  </div>
+                  <i>{activeDestination.id === option.id ? "✓" : "›"}</i>
+                </button>
+              ))}
+            </div>
+
+            {activeDestination.glossary && (
+              <details className="export-glossary">
+                <summary>{activeDestination.glossary.term}</summary>
+                <p>{activeDestination.glossary.explanation}</p>
+              </details>
+            )}
+
+            <div className="export-result-preview">
+              <span>将为你准备</span>
+              <strong>{activeDestination.deliverable}</strong>
+              <p><b>下一步：</b>{activeDestination.nextStep}</p>
+            </div>
+
+            <button className="button primary wide export-now" onClick={() => void exportPackage()} disabled={exportBusy}>
+              {exportBusy ? "正在准备…" : activeDestination.action}
+            </button>
+
+            {exportComplete && (
+              <div className="export-receipt" role="status">
+                <span>✓</span>
+                <div><strong>已经下载</strong><small>解压后先打开 START_HERE.html，它会告诉你下一步点哪里、复制什么。</small></div>
+              </div>
+            )}
           </section>
         )}
       </aside>
