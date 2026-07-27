@@ -4,7 +4,7 @@ import { decryptApiKey, encryptApiKey, providerDefaults, testProvider, type Prov
 import { providerIds } from "@/packages/domain/src";
 import { ensureCoreTables, getDb } from "@/db";
 import { aiCredentials } from "@/db/schema";
-import { credentialMasterKey } from "../_credentials";
+import { credentialMasterKey, managedAiSummary } from "../_credentials";
 import { currentUser, errorResponse, HttpError, newId } from "../_lib";
 
 const activateSchema = z.object({
@@ -25,7 +25,7 @@ export async function GET(request: Request) {
       provider: aiCredentials.provider, model: aiCredentials.model, baseUrl: aiCredentials.baseUrl,
       lastFour: aiCredentials.lastFour, supportsVision: aiCredentials.supportsVision, updatedAt: aiCredentials.updatedAt,
     }).from(aiCredentials).where(eq(aiCredentials.ownerId, user.id)).orderBy(desc(aiCredentials.updatedAt));
-    return Response.json({ credentials: rows.map((row, index) => ({ ...row, active: index === 0 })) }, { headers: { "cache-control": "no-store" } });
+    return Response.json({ credentials: rows.map((row, index) => ({ ...row, active: index === 0 })), managed: managedAiSummary() }, { headers: { "cache-control": "no-store" } });
   } catch (error) { return errorResponse(error); }
 }
 

@@ -118,6 +118,8 @@ export const analysisResultSchema = z.object({
   accessibility: z.array(z.object({ level: z.enum(["info", "warning"]), message: z.string(), sourceRegion: z.string().optional() })),
   sourceAssetId: z.string().min(1), analyzedAt: z.string().datetime().optional(),
   model: z.object({ provider: z.enum(providerIds), id: z.string() }).optional(),
+  promptVersion: z.string().optional(),
+  runMode: z.enum(["managed", "byok"]).optional(),
 });
 
 export type AnalysisResult = z.infer<typeof analysisResultSchema>;

@@ -124,6 +124,9 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
                 </div>
               )}
               {data.analysisError && <p className="analysis-warning">上次更新失败，当前展示的是此前保存的结果。</p>}
+              <div className="analysis-feedback">
+                {data.analysisFeedback ? <small>{data.analysisFeedback === "helpful" ? "✓ 已标记有帮助" : "✓ 已标记需改进"}</small> : <><small>这次拆解有帮助吗？</small><button onClick={() => action("feedback-analysis-helpful")}>有用</button><button onClick={() => action("feedback-analysis-needs-work")}>不准确</button></>}
+              </div>
               <button className="analysis-refresh" onClick={() => action("analyze")}>重新拆解这个参考</button>
             </>
           )}

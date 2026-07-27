@@ -1,10 +1,10 @@
 import { Buffer } from "node:buffer";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { analyzeWithProvider } from "@/packages/ai/src";
+import { ANALYSIS_PROMPT_VERSION, analyzeWithProvider } from "@/packages/ai/src";
 import { providerIds } from "@/packages/domain/src";
 import { ensureCoreTables, getDb } from "@/db";
-import { analyses, assets } from "@/db/schema";
+import { analyses, assets, events } from "@/db/schema";
 import { loadCredential } from "../_credentials";
 import { currentUser, errorResponse, HttpError, newId } from "../_lib";
 import { getAssetBucket } from "../_storage";
@@ -61,6 +61,7 @@ export async function POST(request: Request) {
     const user = currentUser(request);
     ownerId = user.id;
     const input = schema.parse(await request.json());
+    const startedAt = Date.now();
     await ensureCoreTables();
     const db = getDb();
     const [asset] = await db.select().from(assets)
@@ -119,13 +120,14 @@ export async function POST(request: Request) {
       const bytes = new Uint8Array(await new Response(object.body).arrayBuffer());
       imageDataUrl = "data:" + (metadata.contentType ?? "image/jpeg") + ";base64," + Buffer.from(bytes).toString("base64");
     }
-    const result = await analyzeWithProvider({
+    const analyzed = await analyzeWithProvider({
       assetId: asset.id,
       title: asset.title,
       text: asset.extractedText ?? undefined,
       imageDataUrl,
       computedStyles: metadata.styles,
     }, credential);
+    const result = { ...analyzed, promptVersion: ANALYSIS_PROMPT_VERSION, runMode: credential.runMode };
 
     await db.update(analyses).set({
       result,
@@ -135,6 +137,24 @@ export async function POST(request: Request) {
       updatedAt: new Date().toISOString(),
     }).where(eq(analyses.id, analysisId));
     await db.update(assets).set({ status: "ready" }).where(eq(assets.id, asset.id));
+    await db.insert(events).values({
+      id: newId("event"),
+      ownerId: user.id,
+      name: "ai.analysis.completed",
+      payload: {
+        analysisId,
+        assetId: asset.id,
+        assetKind: asset.kind,
+        provider: credential.provider,
+        model: credential.model,
+        promptVersion: ANALYSIS_PROMPT_VERSION,
+        runMode: credential.runMode,
+        latencyMs: Date.now() - startedAt,
+        componentCount: result.components.length,
+        isRerun: Boolean(existing),
+      },
+      createdAt: new Date().toISOString(),
+    });
     return Response.json({
       analysis: {
         id: analysisId,
@@ -142,6 +162,8 @@ export async function POST(request: Request) {
         status: "ready",
         provider: credential.provider,
         model: credential.model,
+        promptVersion: ANALYSIS_PROMPT_VERSION,
+        runMode: credential.runMode,
         result,
       },
     });

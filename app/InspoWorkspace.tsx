@@ -65,7 +65,17 @@ type RelationView = "hidden" | "selection" | "all";
 type ContextMenu = { kind: "node" | "board"; id: string; x: number; y: number };
 type DeleteRequest = { kind: "board" | "nodes"; ids: string[]; title: string; body: string };
 type AssistantScope = "selection" | "board";
-type AssistantMessage = { role: "user" | "assistant"; content: string };
+type AssistantMessage = {
+  id?: string;
+  role: "user" | "assistant";
+  content: string;
+  provider?: string;
+  model?: string;
+  promptVersion?: string;
+  runMode?: "managed" | "byok";
+  feedback?: "helpful" | "needs-work";
+};
+type ManagedAiState = { available: boolean; provider: ProviderId | null; model: string | null; supportsVision: boolean };
 
 function WorkspaceCanvas() {
   const [boards, setBoards] = useState<BoardSummary[]>([]);
@@ -99,6 +109,8 @@ function WorkspaceCanvas() {
   const [exportBusy, setExportBusy] = useState(false);
   const [exportComplete, setExportComplete] = useState(false);
   const [credentialState, setCredentialState] = useState<Array<{ provider: string; model: string; lastFour: string; supportsVision: boolean; active: boolean }>>([]);
+  const [managedAi, setManagedAi] = useState<ManagedAiState>({ available: false, provider: null, model: null, supportsVision: false });
+  const [aiUseByok, setAiUseByok] = useState(true);
   const [credentialForm, setCredentialForm] = useState<{ provider: ProviderId; apiKey: string; model: string; region: string }>({ provider: "openai", apiKey: "", model: providerCatalog.openai.models[0], region: "intl" });
   const [loadingCredential, setLoadingCredential] = useState(false);
   const [credentialBusyProvider, setCredentialBusyProvider] = useState<ProviderId | null>(null);
@@ -164,7 +176,10 @@ function WorkspaceCanvas() {
     });
   }, [edges, relationView, selectedIds]);
   const persistableSignature = useMemo(() => sceneSignature(nodes, edges, viewportState), [nodes, edges, viewportState]);
-  const connectedModelLabel = credentialState.find((item) => item.active)?.model ?? credentialState[0]?.model ?? "未连接";
+  const activeByokCredential = credentialState.find((item) => item.active) ?? credentialState[0];
+  const connectedModelLabel = managedAi.available && !aiUseByok
+    ? managedAi.model ?? "平台模型"
+    : activeByokCredential?.model ?? "未连接";
 
   useEffect(() => {
     signatureRef.current = persistableSignature;
@@ -183,9 +198,14 @@ function WorkspaceCanvas() {
   useEffect(() => {
     let active = true;
     void fetch("/api/ai-credentials", { cache: "no-store" })
-      .then(async (response) => response.ok ? response.json() : { credentials: [] })
-      .then((payload: { credentials?: typeof credentialState }) => {
-        if (active) setCredentialState(payload.credentials ?? []);
+      .then(async (response) => response.ok ? response.json() : { credentials: [], managed: { available: false, provider: null, model: null, supportsVision: false } })
+      .then((payload: { credentials?: typeof credentialState; managed?: ManagedAiState }) => {
+        if (!active) return;
+        const managed = payload.managed ?? { available: false, provider: null, model: null, supportsVision: false };
+        setCredentialState(payload.credentials ?? []);
+        setManagedAi(managed);
+        const preferred = window.localStorage.getItem("inspoatlas:ai-run-mode");
+        setAiUseByok(!managed.available || preferred === "byok");
       })
       .catch(() => undefined);
     return () => { active = false; };
@@ -369,6 +389,8 @@ function WorkspaceCanvas() {
         });
       }
       if (detail.action === "analyze") void analyze(detail.id);
+      if (detail.action === "feedback-analysis-helpful") void submitAnalysisFeedback(detail.id, "helpful");
+      if (detail.action === "feedback-analysis-needs-work") void submitAnalysisFeedback(detail.id, "needs-work", "inaccurate");
       if (detail.action === "toggle-analysis") toggleAnalysis(detail.id);
       if (detail.action === "show-details") {
         setSelectedIds([detail.id]);
@@ -820,7 +842,7 @@ function WorkspaceCanvas() {
     const response = await fetch("/api/analyses", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ assetId, mode: "replace" }),
+      body: JSON.stringify({ assetId, mode: "replace", ...(aiUseByok && activeByokCredential ? { provider: activeByokCredential.provider } : {}) }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -849,6 +871,11 @@ function WorkspaceCanvas() {
         colors: result.palette.map((color) => color.hex),
         tags: result.tags.slice(0, 8).map((tag) => tag.value),
         regions: result.components,
+        analysisProvider: payload.analysis.provider,
+        analysisModel: payload.analysis.model,
+        analysisPromptVersion: payload.analysis.promptVersion ?? result.promptVersion,
+        analysisRunMode: payload.analysis.runMode ?? result.runMode,
+        analysisFeedback: undefined,
       },
     } : item));
     notify("参考拆解完成");
@@ -879,6 +906,7 @@ function WorkspaceCanvas() {
         body: JSON.stringify({
           goal,
           question,
+          ...(aiUseByok && activeByokCredential ? { provider: activeByokCredential.provider } : {}),
           scope: assistantScope,
           selectedNodeIds: assistantScope === "selection" ? selectedIds : [],
           history: assistantMessages.slice(-6),
@@ -889,7 +917,15 @@ function WorkspaceCanvas() {
         if (response.status === 409) setModal("credentials");
         throw new Error(friendlyAnalysisError(payload.error));
       }
-      setAssistantMessages([...nextMessages, { role: "assistant", content: String(payload.answer || "暂时没有生成建议。") }]);
+      setAssistantMessages([...nextMessages, {
+        id: String(payload.id || crypto.randomUUID()),
+        role: "assistant",
+        content: String(payload.answer || "暂时没有生成建议。"),
+        provider: payload.provider,
+        model: payload.model,
+        promptVersion: payload.promptVersion,
+        runMode: payload.runMode,
+      }]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "设计助手暂时不可用";
       setAssistantMessages([...nextMessages, { role: "assistant", content: `未能完成：${message}` }]);
@@ -897,6 +933,57 @@ function WorkspaceCanvas() {
       setAssistantBusy(false);
     }
   }
+  async function submitAnalysisFeedback(nodeId: string, rating: "helpful" | "needs-work", reason?: "inaccurate" | "other") {
+    const node = nodes.find((item) => item.id === nodeId);
+    if (!node?.data.analysisId) return notify("还没有可评价的拆解结果");
+    const response = await fetch("/api/ai-feedback", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        feature: "analysis",
+        boardId,
+        targetId: node.data.analysisId,
+        rating,
+        ...(rating === "needs-work" ? { reason: reason ?? "other" } : {}),
+        provider: node.data.analysisProvider,
+        model: node.data.analysisModel,
+        promptVersion: node.data.analysisPromptVersion,
+        runMode: node.data.analysisRunMode,
+      }),
+    });
+    if (!response.ok) return notify("反馈暂时未保存，请稍后重试");
+    setNodes((current) => current.map((item) => item.id === nodeId ? { ...item, data: { ...item.data, analysisFeedback: rating } } : item));
+    notify(rating === "helpful" ? "已记录：这次拆解有帮助" : "已记录：这次结果需要改进");
+  }
+
+  async function submitAssistantFeedback(message: AssistantMessage, rating: "helpful" | "needs-work", reason?: "not-actionable" | "other") {
+    if (!message.id) return;
+    const response = await fetch("/api/ai-feedback", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        feature: "design-assistant",
+        boardId,
+        targetId: message.id,
+        rating,
+        ...(rating === "needs-work" ? { reason: reason ?? "other" } : {}),
+        provider: message.provider,
+        model: message.model,
+        promptVersion: message.promptVersion,
+        runMode: message.runMode,
+      }),
+    });
+    if (!response.ok) return notify("反馈暂时未保存，请稍后重试");
+    setAssistantMessages((current) => current.map((item) => item.id === message.id ? { ...item, feedback: rating } : item));
+    notify(rating === "helpful" ? "已记录：这条建议有帮助" : "已记录：这条建议需要改进");
+  }
+
+  function chooseAiRunMode(mode: "managed" | "byok") {
+    if (mode === "managed" && !managedAi.available) return;
+    setAiUseByok(mode === "byok");
+    window.localStorage.setItem("inspoatlas:ai-run-mode", mode);
+  }
+
   function toggleAnalysis(nodeId: string) {
     setNodes((current) => {
       const target = current.find((node) => node.id === nodeId);
@@ -1156,8 +1243,10 @@ function WorkspaceCanvas() {
   async function loadCredentials() {
     const response = await fetch("/api/ai-credentials", { cache: "no-store" });
     if (response.ok) {
-      const rows = ((await response.json()).credentials || []) as typeof credentialState;
+      const payload = await response.json() as { credentials?: typeof credentialState; managed?: ManagedAiState };
+      const rows = payload.credentials ?? [];
       setCredentialState(rows);
+      if (payload.managed) setManagedAi(payload.managed);
       const active = rows.find((item) => item.active) ?? rows[0];
       if (active && providerCatalog[active.provider as ProviderId]) {
         setCredentialForm({ provider: active.provider as ProviderId, apiKey: "", model: reconnectModel(active.provider as ProviderId, active.model), region: "intl" });
@@ -1405,8 +1494,8 @@ function WorkspaceCanvas() {
           ))}
         </nav>
         <div className="quota-card">
-          <div><span>模型服务</span><strong title={connectedModelLabel}>{connectedModelLabel}</strong></div>
-          <p>管理用于参考拆解、设计基准和一致性检查的模型服务。</p>
+          <div><span>{managedAi.available && !aiUseByok ? "平台 AI" : "实验模型"}</span><strong title={connectedModelLabel}>{connectedModelLabel}</strong></div>
+          <p>{managedAi.available && !aiUseByok ? "固定模型与提示词版本，结果计入正式质量评估。" : "使用你自己的 API，结果单独标记为实验数据。"}</p>
           <button onClick={() => void loadCredentials()}>管理模型服务</button>
         </div>
       </aside>
@@ -1643,7 +1732,7 @@ function WorkspaceCanvas() {
           </div>
           <div className="assistant-thread">
             {!assistantMessages.length && <div className="assistant-empty"><strong>先说明目标，再从参考中找方向</strong><p>我会引用画布中的具体卡片，比较可复用的视觉语言、结构和冲突，不会替你凭空决定。</p><div><button onClick={() => setAssistantQuestion("这些参考里，哪些视觉规律最适合我的设计目标？")}>提炼视觉规律</button><button onClick={() => setAssistantQuestion("请给出信息结构、组件和视觉风格的落地建议。")}>生成落地思路</button></div></div>}
-            {assistantMessages.map((message, index) => <article key={index} className={message.role}><span>{message.role === "assistant" ? "✦" : "我"}</span><p>{message.content}</p></article>)}
+            {assistantMessages.map((message, index) => <article key={message.id ?? index} className={message.role}><span>{message.role === "assistant" ? "✦" : "我"}</span><div className="assistant-message-content"><p>{message.content}</p>{message.role === "assistant" && message.id && !message.content.startsWith("未能完成：") && <div className="ai-feedback-row">{message.feedback ? <small>{message.feedback === "helpful" ? "✓ 已标记有帮助" : "✓ 已标记需改进"}</small> : <><small>这条建议有用吗？</small><button onClick={() => void submitAssistantFeedback(message, "helpful")}>有用</button><button onClick={() => void submitAssistantFeedback(message, "needs-work", "not-actionable")}>不落地</button></>}</div>}</div></article>)}
             {assistantBusy && <article className="assistant is-loading"><span>✦</span><p>正在结合目标与参考内容思考…</p></article>}
           </div>
           <form className="assistant-compose" onSubmit={(event) => { event.preventDefault(); void askDesignAssistant(); }}>
@@ -1688,7 +1777,21 @@ function WorkspaceCanvas() {
 
       {modal === "import" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal import-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">第 1 步 · 采集参考</span><h2>加入当前画布</h2><p>上传图片或整个灵感文件夹，也可以粘贴文字、输入网页地址。网页使用插件采集时会保存完整截图。</p><div className="import-choice"><button className="import-drop" onClick={() => fileInput.current?.click()}><span>⇧</span><strong>上传图片</strong><small>JPG、PNG、WebP · 单张最大 20 MB</small></button><button className="import-drop folder-drop" onClick={() => folderInput.current?.click()}><span>▱</span><strong>上传文件夹</strong><small>自动建立同名分组并排列图片</small></button></div><div className="url-entry"><input autoFocus value={urlValue} onChange={(event) => setUrlValue(event.target.value)} placeholder="公开 URL 或参考文字" /><button onClick={() => urlValue.trim() && void addAsset(urlValue.trim())}>加入</button></div></section></div>}
 
-      {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal model-service-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">模型服务</span><h2>管理分析服务</h2><p>Key 由服务端加密保存，页面只会读取末四位。点击已保存记录可重新验证并切换当前服务。</p>{credentialState.length > 0 && <><div className="credential-section-title"><span>已保存的服务</span><small>紫色标记为当前使用</small></div><div className="credential-list">{credentialState.map((item) => { const provider = item.provider as ProviderId; const catalog = providerCatalog[provider]; return <article key={item.provider} className={"credential-card" + (item.active ? " is-active" : "")}><button className="credential-card-main" disabled={credentialBusyProvider === provider} onClick={() => void activateCredential(provider, reconnectModel(provider, item.model))}><strong>{catalog?.label ?? item.provider}</strong><span>{item.model} · •••• {item.lastFour}</span><small>{credentialBusyProvider === provider ? "正在验证…" : provider === "moonshot" && item.model === "kimi-k2.5" ? "旧模型 · 点击迁移到 kimi-k3" : item.active ? "● 当前使用 · 点击重新验证" : "点击连接并设为当前"}</small></button><button className="credential-remove" onClick={() => setCredentialToDelete(provider)} aria-label={"删除 " + (catalog?.label ?? item.provider)}>×</button></article>; })}</div></>}<div className="credential-section-title"><span>{credentialState.some((item) => item.provider === credentialForm.provider) ? "更新当前平台" : "添加新平台"}</span><small>模型会影响视觉能力、速度和费用</small></div><div className="provider-picker"><label><span>开放平台</span><select value={credentialForm.provider} onChange={(event) => { const provider = event.target.value as ProviderId; const saved = credentialState.find((item) => item.provider === provider); setCredentialForm({ ...credentialForm, provider, model: saved?.model ?? providerCatalog[provider].models[0], apiKey: "" }); }}>{Object.entries(providerCatalog).map(([id, item]) => <option key={id} value={id}>{item.label}{item.supportsVision ? " · 图片与文字" : " · 仅文字"}</option>)}</select></label><div className="provider-summary"><div><strong>{selectedProvider.label}</strong><small>{selectedProvider.description}</small></div><a href={selectedProvider.platformUrl} target="_blank" rel="noreferrer">开放平台 ↗</a></div></div><div className="credential-form"><label><span>API Key{credentialState.some((item) => item.provider === credentialForm.provider) ? "（留空则使用已保存 Key）" : ""}</span><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value })} placeholder={credentialState.some((item) => item.provider === credentialForm.provider) ? "使用已保存的 Key" : "粘贴 API Key"} /></label><label><span>分析模型</span><input list="provider-model-options" value={credentialForm.model} onChange={(event) => setCredentialForm({ ...credentialForm, model: event.target.value })} placeholder={selectedProvider.models[0]} /><datalist id="provider-model-options">{selectedProvider.models.map((model) => <option key={model} value={model} />)}</datalist></label><button className="button primary" disabled={(!credentialForm.apiKey && !credentialState.some((item) => item.provider === credentialForm.provider)) || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "正在验证…" : credentialState.some((item) => item.provider === credentialForm.provider) && !credentialForm.apiKey ? "验证并更新" : "验证并保存"}</button></div><p className="credential-form-note">模型选择会影响图片理解能力、调用费用和输出速度。不了解时保留系统推荐即可。</p></section></div>}
+      {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal model-service-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">AI 设置</span><h2>选择 AI 运行方式</h2><p>正式体验由平台固定模型与提示词版本，便于持续优化；自带 API 保留给需要测试不同模型的高级用户。</p>
+        <div className="ai-mode-grid" role="group" aria-label="AI 运行方式">
+          <button className={!aiUseByok ? "is-active" : ""} disabled={!managedAi.available} onClick={() => chooseAiRunMode("managed")}>
+            <span>推荐</span><strong>平台托管 AI</strong><small>{managedAi.available ? `${managedAi.model} · 拆解与助手统一评测` : "尚未启用 · 公开版将按点数或套餐提供"}</small><em>{!aiUseByok ? "当前使用" : managedAi.available ? "切换" : "准备中"}</em>
+          </button>
+          <button className={aiUseByok ? "is-active" : ""} onClick={() => chooseAiRunMode("byok")}>
+            <span>高级实验</span><strong>使用自己的 API</strong><small>费用由模型平台收取，输出差异不计入正式质量口径</small><em>{aiUseByok ? "当前使用" : "切换"}</em>
+          </button>
+        </div>
+        <p className="ai-mode-note"><b>为什么分开？</b> 模型、提示词和输入结构固定后，才能判断问题来自提示词、模型能力还是产品定义。</p>
+        {credentialState.length > 0 && <><div className="credential-section-title"><span>高级实验模型</span><small>紫色标记为当前使用</small></div><div className="credential-list">{credentialState.map((item) => { const provider = item.provider as ProviderId; const catalog = providerCatalog[provider]; return <article key={item.provider} className={"credential-card" + (item.active ? " is-active" : "")}><button className="credential-card-main" disabled={credentialBusyProvider === provider} onClick={() => void activateCredential(provider, reconnectModel(provider, item.model))}><strong>{catalog?.label ?? item.provider}</strong><span>{item.model} · •••• {item.lastFour}</span><small>{credentialBusyProvider === provider ? "正在验证…" : provider === "moonshot" && item.model === "kimi-k2.5" ? "旧模型 · 点击迁移到 kimi-k3" : item.active ? "● 当前使用 · 点击重新验证" : "点击连接并设为当前"}</small></button><button className="credential-remove" onClick={() => setCredentialToDelete(provider)} aria-label={"删除 " + (catalog?.label ?? item.provider)}>×</button></article>; })}</div></>}
+        <div className="credential-section-title"><span>{credentialState.some((item) => item.provider === credentialForm.provider) ? "更新实验模型" : "添加实验模型"}</span><small>模型会影响视觉能力、速度和费用</small></div>
+        <div className="provider-picker"><label><span>开放平台</span><select value={credentialForm.provider} onChange={(event) => { const provider = event.target.value as ProviderId; const saved = credentialState.find((item) => item.provider === provider); setCredentialForm({ ...credentialForm, provider, model: saved?.model ?? providerCatalog[provider].models[0], apiKey: "" }); }}>{Object.entries(providerCatalog).map(([id, item]) => <option key={id} value={id}>{item.label}{item.supportsVision ? " · 图片与文字" : " · 仅文字"}</option>)}</select></label><div className="provider-summary"><div><strong>{selectedProvider.label}</strong><small>{selectedProvider.description}</small></div><a href={selectedProvider.platformUrl} target="_blank" rel="noreferrer">开放平台 ↗</a></div></div>
+        <div className="credential-form"><label><span>API Key{credentialState.some((item) => item.provider === credentialForm.provider) ? "（留空则使用已保存 Key）" : ""}</span><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value })} placeholder={credentialState.some((item) => item.provider === credentialForm.provider) ? "使用已保存的 Key" : "粘贴 API Key"} /></label><label><span>分析模型</span><input list="provider-model-options" value={credentialForm.model} onChange={(event) => setCredentialForm({ ...credentialForm, model: event.target.value })} placeholder={selectedProvider.models[0]} /><datalist id="provider-model-options">{selectedProvider.models.map((model) => <option key={model} value={model} />)}</datalist></label><button className="button primary" disabled={(!credentialForm.apiKey && !credentialState.some((item) => item.provider === credentialForm.provider)) || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "正在验证…" : credentialState.some((item) => item.provider === credentialForm.provider) && !credentialForm.apiKey ? "验证并更新" : "验证并保存"}</button></div><p className="credential-form-note">不了解模型差异时不必配置；平台托管模式启用后会自动选择经过场景评测的模型。</p>
+      </section></div>}
 
 
       {credentialToDelete && <div className="modal-backdrop"><section className="modal credential-delete-modal"><span className="step-kicker">删除模型服务</span><h2>删除 {providerCatalog[credentialToDelete].label}？</h2><p>保存的加密 Key 和模型设置会立即删除，之后需要重新添加才能使用。</p><div className="confirm-actions"><button className="button soft" onClick={() => setCredentialToDelete(null)}>取消</button><button className="button danger" onClick={() => void deleteCredential(credentialToDelete)}>删除</button></div></section></div>}
@@ -1769,6 +1872,10 @@ function mergeAnalysis(node: CanvasNode, analysis: Record<string, unknown>): Can
       colors: result.palette.map((color) => color.hex),
       tags: result.tags.slice(0, 8).map((tag) => tag.value),
       regions: result.components,
+      analysisProvider: result.model?.provider ?? String(analysis.provider || ""),
+      analysisModel: result.model?.id ?? String(analysis.model || ""),
+      analysisPromptVersion: result.promptVersion,
+      analysisRunMode: result.runMode,
     },
   };
 }

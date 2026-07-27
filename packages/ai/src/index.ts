@@ -3,6 +3,7 @@ import { analysisResultSchema, type AnalysisResult, type ProviderId } from "@ins
 
 export interface ProviderConfig { provider: ProviderId; apiKey: string; model: string; baseUrl: string; supportsVision: boolean; }
 export interface AnalyzeInput { assetId: string; title: string; text?: string; imageDataUrl?: string; computedStyles?: Record<string, unknown>[]; }
+export const ANALYSIS_PROMPT_VERSION = "analysis-v3";
 export interface TextMessage { role: "user" | "assistant"; content: string; }
 export const providerDefaults: Record<ProviderId, { model: string; baseUrl: string; supportsVision: boolean }> = {
   openai: { model: "gpt-5.2", baseUrl: "https://api.openai.com/v1", supportsVision: true },

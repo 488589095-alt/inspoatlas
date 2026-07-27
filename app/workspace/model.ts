@@ -22,6 +22,11 @@ export type CardData = Record<string, unknown> & {
   analysisSummary?: string;
   analysisExpanded?: boolean;
   analysisError?: string;
+  analysisProvider?: string;
+  analysisModel?: string;
+  analysisPromptVersion?: string;
+  analysisRunMode?: "managed" | "byok";
+  analysisFeedback?: "helpful" | "needs-work";
   preview?: boolean;
   principles?: string[];
   regions?: Array<{

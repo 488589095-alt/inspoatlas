@@ -1,4 +1,4 @@
-﻿/* Workspace V9: precise selection, quieter model settings, independent minimap and design assistant. */
+/* Workspace V9: precise selection, quieter model settings, independent minimap and design assistant. */
 
 .model-service-modal {
   width: min(640px, calc(100vw - 40px));
@@ -457,4 +457,88 @@
   .assistant-drawer {
     top: 72px;
   }
+}
+.ai-mode-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin: 4px 0 10px;
+}
+
+.ai-mode-grid > button {
+  position: relative;
+  display: grid;
+  min-height: 126px;
+  padding: 15px;
+  gap: 5px;
+  border: 1px solid rgba(83, 71, 97, .13);
+  border-radius: 15px;
+  text-align: left;
+  color: #4b4350;
+  background: #fff;
+  cursor: pointer;
+}
+
+.ai-mode-grid > button > span {
+  width: max-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #766382;
+  background: #f0eaf4;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.ai-mode-grid > button strong { font-size: 14px; }
+.ai-mode-grid > button small { color: #817885; font-size: 11px; line-height: 1.5; }
+.ai-mode-grid > button em { margin-top: auto; color: #725f80; font-size: 11px; font-style: normal; font-weight: 800; }
+.ai-mode-grid > button.is-active { border-color: #917ba4; box-shadow: 0 0 0 3px rgba(139, 119, 164, .11); background: #fcf9fd; }
+.ai-mode-grid > button:disabled { cursor: not-allowed; opacity: .58; }
+
+.model-service-modal .ai-mode-note {
+  margin: 0 0 22px;
+  padding: 10px 12px;
+  border-radius: 11px;
+  color: #706676;
+  background: #f5f2f6;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.analysis-feedback,
+.ai-feedback-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.analysis-feedback {
+  margin: 12px 0 8px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(83, 71, 97, .09);
+}
+
+.analysis-feedback small,
+.ai-feedback-row small {
+  margin-right: auto;
+  color: #837a88;
+  font-size: 10.5px;
+}
+
+.analysis-feedback button,
+.ai-feedback-row button {
+  padding: 4px 7px;
+  border: 1px solid rgba(83, 71, 97, .12);
+  border-radius: 7px;
+  color: #685d70;
+  background: #fff;
+  cursor: pointer;
+  font-size: 10.5px;
+}
+
+.assistant-message-content { min-width: 0; }
+.ai-feedback-row { margin-top: 6px; padding-left: 2px; }
+
+@media (max-width: 620px) {
+  .ai-mode-grid { grid-template-columns: 1fr; }
 }

@@ -46,6 +46,8 @@ export function ensureCoreTables(): Promise<void> {
       d1.prepare("CREATE TABLE IF NOT EXISTS confirmed_elements (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, board_id TEXT NOT NULL, asset_id TEXT NOT NULL, analysis_id TEXT NOT NULL, region_id TEXT NOT NULL, label TEXT NOT NULL, type TEXT NOT NULL, rect TEXT NOT NULL, object_key TEXT, metadata TEXT DEFAULT '{}' NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)"),
       d1.prepare("CREATE TABLE IF NOT EXISTS design_contracts (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, board_id TEXT NOT NULL UNIQUE, version INTEGER DEFAULT 1 NOT NULL, status TEXT DEFAULT 'draft' NOT NULL, content TEXT NOT NULL, provider TEXT, model TEXT, updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)"),
       d1.prepare("CREATE TABLE IF NOT EXISTS share_links (id TEXT PRIMARY KEY NOT NULL, board_id TEXT NOT NULL, owner_id TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, revoked_at TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)"),
+      d1.prepare("CREATE TABLE IF NOT EXISTS usage_ledger (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, action TEXT NOT NULL, units INTEGER NOT NULL, job_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)"),
+      d1.prepare("CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, name TEXT NOT NULL, payload TEXT DEFAULT '{}' NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)"),
     ]).then(async () => {
       await ensureColumns(d1, "relations", [
         ["layer", "TEXT NOT NULL DEFAULT 'association'"], ["status", "TEXT NOT NULL DEFAULT 'confirmed'"],

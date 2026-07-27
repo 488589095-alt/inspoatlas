@@ -1,13 +1,17 @@
-﻿import { and, eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { generateTextWithProvider, type TextMessage } from "@/packages/ai/src";
+import { providerIds } from "@/packages/domain/src";
 import { ensureCoreTables, getDb } from "@/db";
-import { analyses, assets, boards } from "@/db/schema";
+import { analyses, assets, boards, events } from "@/db/schema";
 import { loadCredential } from "../../../_credentials";
-import { currentUser, errorResponse, HttpError } from "../../../_lib";
+import { currentUser, errorResponse, HttpError, newId } from "../../../_lib";
+
+export const DESIGN_ASSISTANT_PROMPT_VERSION = "assistant-v2";
 
 const inputSchema = z.object({
   goal: z.string().trim().min(2).max(2_000),
+  provider: z.enum(providerIds).optional(),
   question: z.string().trim().min(1).max(2_000),
   scope: z.enum(["selection", "board"]).default("board"),
   selectedNodeIds: z.array(z.string()).max(100).default([]),
@@ -26,7 +30,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       .limit(1);
     if (!board) throw new HttpError(404, "画布不存在");
 
-    const credential = await loadCredential(user.id, undefined, false);
+    const credential = await loadCredential(user.id, input.provider, false);
     if (!credential) throw new HttpError(409, "请先添加一个可用的模型服务");
 
     const assetRows = await db.select().from(assets)
@@ -78,8 +82,37 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       ...input.history.map((item) => ({ role: item.role, content: item.content })),
       { role: "user", content: prompt },
     ];
+    const startedAt = Date.now();
     const answer = await generateTextWithProvider(messages, credential);
-    return Response.json({ answer, provider: credential.provider, model: credential.model });
+    const responseId = newId("assistant-turn");
+    await db.insert(events).values({
+      id: newId("event"),
+      ownerId: user.id,
+      name: "ai.assistant.completed",
+      payload: {
+        responseId,
+        boardId,
+        provider: credential.provider,
+        model: credential.model,
+        promptVersion: DESIGN_ASSISTANT_PROMPT_VERSION,
+        runMode: credential.runMode,
+        scope: input.scope,
+        selectedCount: input.selectedNodeIds.length,
+        referenceCount: scopedNodes.length,
+        historyCount: input.history.length,
+        responseCharacters: answer.length,
+        latencyMs: Date.now() - startedAt,
+      },
+      createdAt: new Date().toISOString(),
+    });
+    return Response.json({
+      id: responseId,
+      answer,
+      provider: credential.provider,
+      model: credential.model,
+      promptVersion: DESIGN_ASSISTANT_PROMPT_VERSION,
+      runMode: credential.runMode,
+    });
   } catch (error) {
     return errorResponse(error);
   }
