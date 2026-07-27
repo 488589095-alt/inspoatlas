@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertProviderConfig, decryptApiKey, encryptApiKey } from "../packages/ai/src/index.ts";
+import { assertProviderConfig, decryptApiKey, encryptApiKey, parseModelJson } from "../packages/ai/src/index.ts";
 import { providerCatalog, providerIds } from "../packages/domain/src/index.ts";
 
 test("BYOK Key 使用 AES-GCM 加密且可正确解密", async () => {
@@ -28,4 +28,15 @@ test("模型服务目录覆盖常用平台并提供官方入口", () => {
   assert.equal(providerCatalog.minimax.supportsVision, false);
   assert.equal(providerCatalog.moonshot.models[0], "kimi-k3");
   assert.ok(!providerCatalog.moonshot.models.includes("kimi-k2.5"));
+});
+test("模型 JSON 解析可处理思考标签、代码围栏和前后说明", () => {
+  assert.deepEqual(parseModelJson('<think>先分析</think>\n结果如下：\n```json\n{"summary":"包含 } 字符也不截断","items":[1,2]}\n```\n完成'), {
+    summary: "包含 } 字符也不截断",
+    items: [1, 2],
+  });
+  assert.deepEqual(parseModelJson('说明文字 {"ok":true,"nested":{"value":"x"}} 尾部文字'), {
+    ok: true,
+    nested: { value: "x" },
+  });
+  assert.throws(() => parseModelJson("不是 JSON"), /JSON 无法解析/);
 });

@@ -60,6 +60,7 @@ export function buildOrganizePreview(nodes: CanvasNode[], selectedIds: string[])
       rowHeight = 0;
     }
 
+    const analyzedCount = members.filter((node) => Boolean(node.data.analysisId || node.data.analysisSummary || node.data.principles?.length)).length;
     const group: CanvasNode = {
       id: groupId,
       type: "inspo",
@@ -67,7 +68,10 @@ export function buildOrganizePreview(nodes: CanvasNode[], selectedIds: string[])
       data: {
         kind: "group",
         title: definition.title,
-        body: `${members.length} 张参考 · ${definition.reason}`,
+        body: analyzedCount
+          ? `AI 根据 ${analyzedCount} 张卡片的拆解结果归纳 · ${definition.reason}`
+          : `根据卡片内容归纳 · ${definition.reason}`,
+        groupOrigin: analyzedCount ? "ai-assisted" : "smart",
         preview: true,
       },
       style: { width: groupWidth, height: groupHeight },

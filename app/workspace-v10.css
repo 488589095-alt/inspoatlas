@@ -1,0 +1,197 @@
+/* Workspace V10: calmer persistence, secondary relations, editable notes and resizable rails. */
+
+@media (min-width: 1051px) {
+  .workspace-shell {
+    grid-template-columns: var(--left-rail-width, 242px) minmax(0, 1fr) var(--right-rail-width, 322px);
+  }
+}
+
+.quota-card > div {
+  gap: 10px;
+}
+
+.quota-card strong {
+  min-width: 0;
+  max-width: 132px;
+  overflow: hidden;
+  color: #4e4556;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rail-resizer {
+  position: fixed;
+  z-index: 44;
+  top: 64px;
+  bottom: 0;
+  width: 9px;
+  touch-action: none;
+  cursor: col-resize;
+}
+
+.rail-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 4px;
+  width: 1px;
+  background: transparent;
+  transition: background .16s ease, box-shadow .16s ease;
+}
+
+.rail-resizer:hover::after,
+.workspace-shell.is-resizing .rail-resizer::after {
+  background: rgba(111, 91, 139, .62);
+  box-shadow: 0 0 0 2px rgba(129, 115, 180, .10);
+}
+
+.rail-resizer-left {
+  left: calc(var(--left-rail-width, 242px) - 4px);
+}
+
+.rail-resizer-right {
+  right: calc(var(--right-rail-width, 322px) - 4px);
+}
+
+.workspace-shell.focus-mode .rail-resizer {
+  display: none;
+}
+
+.canvas-area .react-flow__pane {
+  cursor: default;
+}
+
+.canvas-area.is-right-panning,
+.canvas-area.is-right-panning .react-flow__pane,
+.canvas-area.is-right-panning .react-flow__viewport {
+  cursor: grabbing !important;
+}
+
+.node-handle {
+  width: 18px !important;
+  height: 18px !important;
+  border: 5px solid rgba(255, 255, 255, .96) !important;
+  background: #75638f !important;
+  box-shadow: 0 0 0 1px rgba(83, 68, 103, .30), 0 3px 9px rgba(68, 51, 88, .20);
+  opacity: .16;
+  transition: opacity .15s ease, transform .15s ease, box-shadow .15s ease;
+}
+
+.node-handle.react-flow__handle-left {
+  left: -9px;
+}
+
+.node-handle.react-flow__handle-right {
+  right: -9px;
+}
+
+.canvas-card:hover .node-handle,
+.canvas-card.is-selected .node-handle,
+.node-handle.connecting,
+.node-handle.valid {
+  opacity: 1;
+}
+
+.node-handle:hover {
+  transform: scale(1.18);
+  box-shadow: 0 0 0 4px rgba(129, 115, 180, .16), 0 5px 12px rgba(68, 51, 88, .24);
+}
+
+.relation-view {
+  display: flex;
+  min-height: 38px;
+  padding: 0 10px 0 12px;
+  align-items: center;
+  gap: 6px;
+}
+
+.relation-view > span {
+  color: #807786;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.relation-view select {
+  min-height: 30px;
+  max-width: 92px;
+  border: 0;
+  outline: 0;
+  color: #514958;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.card-note {
+  background:
+    linear-gradient(145deg, rgba(255, 253, 235, .98), rgba(248, 235, 202, .94));
+  box-shadow: 0 14px 34px rgba(94, 76, 39, .13), 0 0 0 1px rgba(116, 91, 42, .06);
+}
+
+.card-note .card-content {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.card-note .note-body {
+  flex: 1;
+  min-height: 90px;
+  margin: 2px 0 0;
+  color: #5f553c;
+  font-size: 13px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.editable-body {
+  cursor: text;
+}
+
+.inline-body-input {
+  box-sizing: border-box;
+  border: 1px solid rgba(112, 91, 132, .24);
+  outline: 0;
+  color: inherit;
+  background: rgba(255, 255, 255, .78);
+  font: inherit;
+}
+
+.inline-body-input:focus {
+  border-color: #8f7aa9;
+  box-shadow: 0 0 0 3px rgba(129, 115, 180, .12);
+}
+
+textarea.inline-body-input.note-body {
+  width: 100%;
+  min-height: 110px;
+  padding: 9px 10px;
+  resize: none;
+  border-radius: 11px;
+  line-height: 1.65;
+}
+
+.group-label .group-description {
+  display: block;
+  overflow: hidden;
+  max-width: min(520px, calc(100% - 220px));
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.group-label input.group-description {
+  width: min(520px, 46vw);
+  min-height: 30px;
+  padding: 4px 8px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+@media (max-width: 1050px) {
+  .rail-resizer {
+    display: none;
+  }
+}

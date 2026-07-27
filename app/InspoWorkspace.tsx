@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   addEdge,
   applyNodeChanges,
@@ -16,6 +16,7 @@ import {
   useEdgesState,
   useNodesState,
   useReactFlow,
+  type Viewport,
 } from "@xyflow/react";
 import { providerCatalog, type AnalysisResult, type DesignContract, type ProviderId, type Relation, type RelationType } from "@/packages/domain/src";
 import { exportPurposeOptions } from "./exportOptions";
@@ -55,7 +56,7 @@ const defaultSize: Record<CardData["kind"], { width: number; height: number }> =
 const canvasSnapGrid: [number, number] = [8, 8];
 
 type WorkspaceModal = "import" | "credentials" | null;
-type RelationView = "hidden" | "selection" | "related" | "all";
+type RelationView = "hidden" | "selection" | "all";
 type ContextMenu = { kind: "node" | "board"; id: string; x: number; y: number };
 type DeleteRequest = { kind: "board" | "nodes"; ids: string[]; title: string; body: string };
 type AssistantScope = "selection" | "board";
@@ -100,24 +101,30 @@ function WorkspaceCanvas() {
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([]);
   const [assistantBusy, setAssistantBusy] = useState(false);
+  const [leftRailWidth, setLeftRailWidth] = useState(242);
+  const [rightRailWidth, setRightRailWidth] = useState(322);
+  const [resizingRail, setResizingRail] = useState<"left" | "right" | null>(null);
+  const [rightPanning, setRightPanning] = useState(false);
+  const [viewportState, setViewportState] = useState<Viewport>({ x: 0, y: 0, zoom: 1 });
   const version = useRef(1);
   const loading = useRef(true);
   const saveTimer = useRef<number | undefined>(undefined);
+  const draftTimer = useRef<number | undefined>(undefined);
+  const savedSignature = useRef("");
+  const signatureRef = useRef("");
   const history = useRef<Array<{ nodes: CanvasNode[]; edges: Edge[] }>>([]);
   const redoHistory = useRef<Array<{ nodes: CanvasNode[]; edges: Edge[] }>>([]);
   const syncedClips = useRef(new Set<string>());
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const edgesRef = useRef<Edge[]>([]);
-  const { fitView, getViewport, setViewport } = useReactFlow();
+  const { fitView, screenToFlowPosition, setViewport: setFlowViewport } = useReactFlow();
 
   useEffect(() => {
     edgesRef.current = edges;
   }, [edges]);
 
-  useEffect(() => {
-    if (selectedIds.length) setRightTab("asset");
-  }, [selectedIds]);
+
 
   const selectedNodes = useMemo(() => nodes.filter((node) => selectedIds.includes(node.id)), [nodes, selectedIds]);
   const selected = selectedNodes[0];
@@ -142,11 +149,47 @@ function WorkspaceCanvas() {
     const selectedSet = new Set(selectedIds);
     return edges.map((edge) => {
       let hidden = relationView === "hidden";
-      if (relationView === "selection") hidden ||= !(selectedSet.has(edge.source) && selectedSet.has(edge.target));
-      if (relationView === "related") hidden ||= !(selectedSet.has(edge.source) || selectedSet.has(edge.target));
+      if (relationView === "selection") hidden ||= !(selectedSet.has(edge.source) || selectedSet.has(edge.target));
       return { ...edge, hidden };
     });
   }, [edges, relationView, selectedIds]);
+  const persistableSignature = useMemo(() => sceneSignature(nodes, edges, viewportState), [nodes, edges, viewportState]);
+  const connectedModelLabel = credentialState.find((item) => item.active)?.model ?? credentialState[0]?.model ?? "未连接";
+
+  useEffect(() => {
+    signatureRef.current = persistableSignature;
+  }, [persistableSignature]);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const storedLeft = Number(window.localStorage.getItem("inspoatlas:left-rail-width"));
+      const storedRight = Number(window.localStorage.getItem("inspoatlas:right-rail-width"));
+      if (Number.isFinite(storedLeft) && storedLeft > 0) setLeftRailWidth(clamp(storedLeft, 190, 360));
+      if (Number.isFinite(storedRight) && storedRight > 0) setRightRailWidth(clamp(storedRight, 280, 460));
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/ai-credentials", { cache: "no-store" })
+      .then(async (response) => response.ok ? response.json() : { credentials: [] })
+      .then((payload: { credentials?: typeof credentialState }) => {
+        if (active) setCredentialState(payload.credentials ?? []);
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+
+  useEffect(() => {
+    const stopRightPan = () => setRightPanning(false);
+    window.addEventListener("pointerup", stopRightPan);
+    window.addEventListener("pointercancel", stopRightPan);
+    return () => {
+      window.removeEventListener("pointerup", stopRightPan);
+      window.removeEventListener("pointercancel", stopRightPan);
+    };
+  }, []);
 
   const notify = useCallback((message: string) => {
     setToast(message);
@@ -185,20 +228,26 @@ function WorkspaceCanvas() {
   }, []);
 
   useEffect(() => {
-    loadBoards().catch((error) => {
-      loading.current = false;
-      setBoardTitle("画布载入失败");
-      setSavedState("请刷新重试");
-      notify(error instanceof Error ? error.message : "画布载入失败");
+    const frame = window.requestAnimationFrame(() => {
+      void loadBoards().catch((error) => {
+        loading.current = false;
+        setBoardTitle("画布载入失败");
+        setSavedState("请刷新重试");
+        notify(error instanceof Error ? error.message : "画布载入失败");
+      });
     });
+    return () => window.cancelAnimationFrame(frame);
   }, [loadBoards, notify]);
 
   useEffect(() => {
     if (!boardId) return;
     let active = true;
     loading.current = true;
-    setSavedState("正在读取");
-    setOrganizePreview(null);
+    const statusFrame = window.requestAnimationFrame(() => {
+      if (!active) return;
+      setSavedState("正在读取");
+      setOrganizePreview(null);
+    });
     fetch("/api/boards/" + boardId, { cache: "no-store" }).then(async (response) => {
       if (!response.ok) throw new Error("画布读取失败");
       const { board } = await response.json();
@@ -207,12 +256,18 @@ function WorkspaceCanvas() {
       version.current = board.version;
       setBoardTitle(board.title);
       const draft = await readDraft<{ baseVersion: number; scene: typeof board.scene }>(boardId);
-      const recovered = draft && draft.baseVersion === board.version ? sceneToFlow(draft.scene) : flow;
+      const hasRecoverableDraft = Boolean(draft && draft.baseVersion === board.version);
+      const recovered = hasRecoverableDraft ? sceneToFlow(draft!.scene) : flow;
+      const serverViewport = flow.viewport ?? { x: 0, y: 0, zoom: 1 };
+      const recoveredViewport = recovered.viewport ?? serverViewport;
+      savedSignature.current = sceneSignature(flow.nodes, flow.edges, serverViewport);
+      signatureRef.current = sceneSignature(recovered.nodes, recovered.edges, recoveredViewport);
       setNodes(recovered.nodes);
       setEdges(recovered.edges);
+      setViewportState(recoveredViewport);
       setSelectedIds([]);
-      if (recovered.viewport) await setViewport(recovered.viewport);
-      setSavedState(draft && draft.baseVersion === board.version ? "已恢复本地草稿" : "已同步");
+      await setFlowViewport(recoveredViewport);
+      setSavedState(hasRecoverableDraft ? "已恢复本地草稿" : "已同步");
       loading.current = false;
       window.history.replaceState(null, "", "?board=" + encodeURIComponent(boardId));
       window.setTimeout(() => recovered.nodes.length && fitView({ padding: 0.18, duration: 300 }), 30);
@@ -228,15 +283,23 @@ function WorkspaceCanvas() {
           }));
         }).catch(() => undefined);
     }).catch((error) => notify(error.message));
-    return () => { active = false; };
-  }, [boardId, fitView, setEdges, setNodes, setViewport, notify]);
+    return () => { active = false; window.cancelAnimationFrame(statusFrame); };
+  }, [boardId, fitView, setEdges, setFlowViewport, setNodes, notify]);
 
   useEffect(() => {
-    if (!boardId || loading.current) return;
-    setSavedState("保存中…");
+    if (!boardId || loading.current || persistableSignature === savedSignature.current) return;
+    setSavedState("有未保存更改");
+    window.clearTimeout(draftTimer.current);
     window.clearTimeout(saveTimer.current);
+    const scene = flowToScene(nodes, edges, viewportState);
+    const signature = persistableSignature;
+
+    draftTimer.current = window.setTimeout(() => {
+      void saveDraft(boardId, { baseVersion: version.current, scene }).catch(() => undefined);
+    }, 700);
+
     saveTimer.current = window.setTimeout(async () => {
-      const scene = flowToScene(nodes, edges, getViewport());
+      setSavedState("保存中…");
       await saveDraft(boardId, { baseVersion: version.current, scene }).catch(() => undefined);
       try {
         const response = await fetch("/api/boards/" + boardId + "/scene", {
@@ -252,18 +315,39 @@ function WorkspaceCanvas() {
         if (!response.ok) throw new Error();
         const payload = await response.json();
         version.current = payload.version;
-        setSavedState("已自动保存");
+        savedSignature.current = signature;
+        if (signatureRef.current === signature) setSavedState("已自动保存");
       } catch {
-        setSavedState("离线草稿已保留");
+        if (signatureRef.current === signature) setSavedState("离线草稿已保留");
       }
-    }, 900);
-    return () => window.clearTimeout(saveTimer.current);
-  }, [nodes, edges, boardId, getViewport, notify]);
+    }, 3_200);
+    return () => {
+      window.clearTimeout(draftTimer.current);
+      window.clearTimeout(saveTimer.current);
+    };
+  }, [persistableSignature, nodes, edges, viewportState, boardId, notify]);
+
+  useEffect(() => {
+    if (!boardId || loading.current) return;
+    const preserveDraft = () => {
+      if (signatureRef.current === savedSignature.current) return;
+      const scene = flowToScene(nodes, edges, viewportState);
+      void saveDraft(boardId, { baseVersion: version.current, scene }).catch(() => undefined);
+    };
+    const onVisibilityChange = () => { if (document.visibilityState === "hidden") preserveDraft(); };
+    window.addEventListener("pagehide", preserveDraft);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("pagehide", preserveDraft);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [boardId, nodes, edges, viewportState]);
 
   useEffect(() => {
     const handler = (event: Event) => {
-      const detail = (event as CustomEvent<{ id: string; action: string; title?: string; x?: number; y?: number }>).detail;
+      const detail = (event as CustomEvent<{ id: string; action: string; title?: string; body?: string; x?: number; y?: number }>).detail;
       if (detail.action === "rename" && detail.title) return renameNode(detail.id, detail.title);
+      if (detail.action === "update-body" && typeof detail.body === "string") return updateNodeBody(detail.id, detail.body);
       if (detail.action === "menu") {
         setSelectedIds([detail.id]);
         setRightTab("asset");
@@ -388,6 +472,7 @@ function WorkspaceCanvas() {
         ? current
         : next
     ));
+    if (next.length) setRightTab("asset");
   }, []);
   const onNodeClick = useCallback(() => setRightTab("asset"), []);
   const onNodeContextMenu = useCallback((event: ReactMouseEvent, node: CanvasNode) => {
@@ -567,6 +652,67 @@ function WorkspaceCanvas() {
     notify(isUrl ? "网页来源卡已保存" : "文字参考已保存");
   }
 
+  function createNote() {
+    const id = "note-" + crypto.randomUUID();
+    const center = screenToFlowPosition({
+      x: leftRailWidth + Math.max(0, window.innerWidth - leftRailWidth - rightRailWidth) / 2,
+      y: 64 + Math.max(0, window.innerHeight - 64) / 2,
+    });
+    const note: CanvasNode = {
+      id,
+      type: "inspo",
+      position: { x: center.x - 145, y: center.y - 95 },
+      data: {
+        kind: "text",
+        title: "备注",
+        body: "单击这里写下备注",
+        note: true,
+      },
+      style: defaultSize.text,
+      zIndex: 10,
+    };
+    remember();
+    setNodes((current) => [...current, note]);
+    setSelectedIds([id]);
+    setRightTab("asset");
+    notify("已添加备注，单击正文即可编辑");
+  }
+
+  function startRailResize(side: "left" | "right", event: ReactPointerEvent<HTMLDivElement>) {
+    if (window.innerWidth <= 1050) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const startX = event.clientX;
+    const startWidth = side === "left" ? leftRailWidth : rightRailWidth;
+    let latestWidth = startWidth;
+    setResizingRail(side);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const delta = moveEvent.clientX - startX;
+      const minimum = side === "left" ? 190 : 280;
+      const hardMaximum = side === "left" ? 360 : 460;
+      const otherWidth = side === "left" ? rightRailWidth : leftRailWidth;
+      const availableMaximum = Math.max(minimum, window.innerWidth - otherWidth - 480);
+      latestWidth = clamp(startWidth + (side === "left" ? delta : -delta), minimum, Math.min(hardMaximum, availableMaximum));
+      if (side === "left") setLeftRailWidth(latestWidth);
+      else setRightRailWidth(latestWidth);
+    };
+    const onUp = () => {
+      setResizingRail(null);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.localStorage.setItem(`inspoatlas:${side}-rail-width`, String(Math.round(latestWidth)));
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      window.removeEventListener("pointercancel", onUp);
+    };
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+    window.addEventListener("pointercancel", onUp);
+  }
+
   async function addImages(input: File[] | FileList, asFolder = false) {
     const allFiles = Array.from(input);
     const files = allFiles.filter((file) => /^image\/(jpeg|png|webp)$/.test(file.type) && file.size <= 20 * 1024 * 1024);
@@ -620,7 +766,7 @@ function WorkspaceCanvas() {
         id: groupId,
         type: "inspo",
         position: { x: 96 + current.length * 12, y: 112 + current.length * 10 },
-        data: { kind: "group", title: rootFolder, body: `${uploaded.length} 张参考 · 拖动分组可整体移动` },
+        data: { kind: "group", title: rootFolder, body: `从“${rootFolder}”文件夹导入 · 单击修改说明` },
         style: { width: groupWidth, height: groupHeight },
         zIndex: 0,
       };
@@ -647,13 +793,10 @@ function WorkspaceCanvas() {
     notify(`已加入 ${uploaded.length} 张图片${rootFolder ? `，并建立“${rootFolder}”分组` : ""}${failed ? `，跳过 ${failed} 个不支持的文件` : ""}`);
   }
 
-  async function addImage(file: File) {
-    await addImages([file]);
-  }
 
   async function analyze(nodeId?: string, captureHistory = true) {
     const source = nodes.find((node) => node.id === (nodeId || selectedIds[0]));
-    if (!source || !sourceKinds.has(source.data.kind)) return notify("请选择一张原始素材");
+    if (!source || !isAnalyzableNode(source)) return notify("请选择一张原始素材");
     const assetId = source.data.assetId || source.id;
     if (captureHistory) remember();
     setNodes((current) => current.map((item) => ({
@@ -702,7 +845,7 @@ function WorkspaceCanvas() {
   }
 
   async function analyzeSelected() {
-    const ids = selectedNodes.filter((node) => sourceKinds.has(node.data.kind)).map((node) => node.id);
+    const ids = selectedNodes.filter(isAnalyzableNode).map((node) => node.id);
     if (!ids.length) return notify("所选内容中没有可分析的原始素材");
     remember();
     for (const id of ids) await analyze(id, false);
@@ -772,7 +915,7 @@ function WorkspaceCanvas() {
       id,
       type: "inspo",
       position: { x: minX - 36, y: minY - 62 },
-      data: { kind: "group", title: "新分组", body: `${chosen.length} 张卡片 · 拖动分组可整体移动` },
+      data: { kind: "group", title: "新分组", body: "单击添加分组说明" },
       style: {
         width: Math.max(380, maxX - minX + 72),
         height: Math.max(260, maxY - minY + 98),
@@ -819,7 +962,7 @@ function WorkspaceCanvas() {
       target.data.kind === "group" && nodes.some((node) => node.parentId === target.id),
     );
     const hasDerived = targets.some((target) =>
-      sourceKinds.has(target.data.kind) && Boolean(target.data.analysisId || target.data.analysisSummary || target.data.regions?.length),
+      isAnalyzableNode(target) && Boolean(target.data.analysisId || target.data.analysisSummary || target.data.regions?.length),
     );
     if (hasGroupMembers || hasDerived || targets.length > 1) {
       setDeleteRequest({
@@ -840,7 +983,7 @@ function WorkspaceCanvas() {
   function performDeleteNodes(ids: string[]) {
     const remove = new Set(ids);
     const groupTargets = nodes.filter((node) => remove.has(node.id) && node.data.kind === "group");
-    for (const source of nodes.filter((node) => remove.has(node.id) && sourceKinds.has(node.data.kind))) {
+    for (const source of nodes.filter((node) => remove.has(node.id) && isAnalyzableNode(node))) {
       nodes.filter((node) => node.data.sourceAssetId === (source.data.assetId || source.id)).forEach((node) => remove.add(node.id));
     }
     remember();
@@ -863,6 +1006,13 @@ function WorkspaceCanvas() {
     remember();
     setNodes((current) => current.map((item) => item.id === nodeId
       ? { ...item, data: { ...item.data, title } }
+      : item));
+  }
+
+  function updateNodeBody(nodeId: string, body: string) {
+    remember();
+    setNodes((current) => current.map((item) => item.id === nodeId
+      ? { ...item, data: { ...item.data, body } }
       : item));
   }
 
@@ -1064,7 +1214,7 @@ function WorkspaceCanvas() {
     setContextMenu(null);
     if (!node) return;
     if (action === "rename") window.dispatchEvent(new CustomEvent("inspo:rename-node", { detail: { id: node.id } }));
-    if (action === "analyze") void analyze(node.id);
+    if (action === "analyze" && isAnalyzableNode(node)) void analyze(node.id);
     if (action === "detach") detachNodes([node.id]);
     if (action === "delete") requestDeleteNodes([node.id]);
     if (action === "lock") togglePinned(node.id);
@@ -1144,7 +1294,8 @@ function WorkspaceCanvas() {
 
   return (
     <main
-      className={"workspace-shell" + (focusMode ? " focus-mode" : "")}
+      className={"workspace-shell" + (focusMode ? " focus-mode" : "") + (resizingRail ? " is-resizing" : "")}
+      style={{ "--left-rail-width": `${leftRailWidth}px`, "--right-rail-width": `${rightRailWidth}px` } as CSSProperties}
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
@@ -1232,13 +1383,14 @@ function WorkspaceCanvas() {
           ))}
         </nav>
         <div className="quota-card">
-          <div><span>模型服务</span><strong>{credentialState.length ? `已添加 ${credentialState.length} 项` : "未添加"}</strong></div>
+          <div><span>模型服务</span><strong title={connectedModelLabel}>{connectedModelLabel}</strong></div>
           <p>管理用于参考拆解、设计基准和一致性检查的模型服务。</p>
           <button onClick={() => void loadCredentials()}>管理模型服务</button>
         </div>
       </aside>
+      <div className="rail-resizer rail-resizer-left" role="separator" aria-label="调整左侧栏宽度" aria-orientation="vertical" onPointerDown={(event) => startRailResize("left", event)} />
 
-      <section className="canvas-area" aria-label="灵感无限画布">
+      <section className={"canvas-area" + (rightPanning ? " is-right-panning" : "")} aria-label="灵感无限画布" onPointerDownCapture={(event) => { if (event.button === 2) setRightPanning(true); }}>
         <div className={"canvas-search" + (searchExpanded ? "" : " is-collapsed")} title="按标题、标签、文字、来源、颜色和拆解结果查找">
           {!searchExpanded && <button className="search-toggle" onClick={() => setSearchExpanded(true)} aria-label="打开画布查找">⌕</button>}
           {searchExpanded && <span className="search-leading">⌕</span>}
@@ -1249,6 +1401,7 @@ function WorkspaceCanvas() {
         <div className="canvas-toolbar" role="toolbar" aria-label="画布工具">
           <button onClick={() => fileInput.current?.click()} title="从本地上传图片素材"><b>↑</b><small>上传</small></button>
           <button onClick={() => setModal("import")} title="添加网页、文字或文件夹"><b>＋</b><small>添加</small></button>
+          <button onClick={createNote} title="添加可原位编辑的画布备注"><b>✎</b><small>备注</small></button>
           <button onClick={() => createGroup()} title="新建分组"><b>▱</b><small>分组</small></button>
           <span />
           <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()} title="拆解所选参考"><b>✦</b><small>拆解</small></button>
@@ -1281,13 +1434,12 @@ function WorkspaceCanvas() {
           accept="image/jpeg,image/png,image/webp"
           onChange={(event) => event.target.files?.length && void addImages(event.target.files, true)}
         />
-        <label className="relation-view">
-          <span>连线显示</span>
+        <label className="relation-view" title="关联线只用于辅助整理，默认仅显示当前卡片相关关系">
+          <span>辅助关联</span>
           <select value={relationView} onChange={(event) => setRelationView(event.target.value as RelationView)}>
-            <option value="hidden">隐藏连线</option>
-            <option value="selection">只看当前卡片</option>
-            <option value="related">查看相关卡片</option>
-            <option value="all">显示全部连线</option>
+            <option value="selection">当前相关</option>
+            <option value="hidden">全部隐藏</option>
+            <option value="all">显示全部</option>
           </select>
         </label>
         <ReactFlow
@@ -1302,6 +1454,7 @@ function WorkspaceCanvas() {
           onNodeContextMenu={onNodeContextMenu}
           onPaneClick={onPaneClick}
           onNodeDragStop={onNodeDragStop}
+          onMoveEnd={(_, viewport) => setViewportState(viewport)}
           selectionOnDrag={!organizePreview}
           selectionMode={SelectionMode.Full}
           multiSelectionKeyCode={["Shift", "Control", "Meta"]}
@@ -1309,6 +1462,7 @@ function WorkspaceCanvas() {
           deleteKeyCode={null}
           nodesDraggable={!organizePreview}
           nodesConnectable={!organizePreview}
+          connectionRadius={32}
           elementsSelectable={!organizePreview}
           fitView
           minZoom={0.14}
@@ -1337,6 +1491,7 @@ function WorkspaceCanvas() {
           </aside>
         )}
       </section>
+      <div className="rail-resizer rail-resizer-right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" onPointerDown={(event) => startRailResize("right", event)} />
 
       <aside className="inspector">
         <div className="inspector-tabs">
@@ -1356,9 +1511,9 @@ function WorkspaceCanvas() {
             <>
               <section className="inspect-title">
                 <span className={"inspect-icon " + selected.data.kind}>◫</span>
-                <div><small>{selected.data.kind === "group" ? "分组" : "参考卡片"}</small><h2>{selected.data.title}</h2></div>
+                <div><small>{selected.data.kind === "group" ? "分组" : selected.data.note ? "备注" : "参考卡片"}</small><h2>{selected.data.title}</h2></div>
               </section>
-              {sourceKinds.has(selected.data.kind) && <button className="analyze-button" onClick={() => void analyze(selected.id)} disabled={selected.data.status === "processing"}>✦ {selected.data.analysisSummary ? "重新拆解这个参考" : "拆解这个参考"}<small>使用已连接模型</small></button>}
+              {isAnalyzableNode(selected) && <button className="analyze-button" onClick={() => void analyze(selected.id)} disabled={selected.data.status === "processing"}>✦ {selected.data.analysisSummary ? "重新拆解这个参考" : "拆解这个参考"}<small>使用已连接模型</small></button>}
               {!!selected.data.colors?.length && <section className="inspect-block"><div className="block-heading"><h3>颜色参考</h3><button onClick={() => navigator.clipboard.writeText(selected.data.colors?.join(", ") || "")}>复制全部</button></div><div className="palette-list">{selected.data.colors.map((color) => <button key={color} onClick={() => navigator.clipboard.writeText(color)}><i style={{ background: color }} /><span>颜色</span><code>{color}</code></button>)}</div></section>}
               {!!selected.data.principles?.length && <section className="inspect-block"><h3>可复用的设计要点</h3><ol className="principle-list">{selected.data.principles.map((item) => <li key={item}>{item}</li>)}</ol></section>}
               {!!selected.data.regions?.length && <section className="inspect-block"><div className="block-heading"><h3>检测到的元素</h3><small>确认后才会导出</small></div><div className="region-list">{selected.data.regions.map((region) => <div key={region.id}><span className="region-preview">{region.type}</span><div><strong>{region.label}</strong><small>{region.confirmed ? "已经确认" : "等待确认"}</small></div><button disabled={region.confirmed} onClick={() => void confirmRegion(region)}>{region.confirmed ? "已确认" : "确认使用"}</button></div>)}</div></section>}
@@ -1414,7 +1569,7 @@ function WorkspaceCanvas() {
         return (
           <div className="node-action-menu" style={{ left: contextMenu.x, top: contextMenu.y }} onPointerDown={(event) => event.stopPropagation()}>
             <button onClick={() => handleNodeMenu("rename")}>重命名</button>
-            {sourceKinds.has(node.data.kind) && <button onClick={() => handleNodeMenu("analyze")}>{node.data.analysisSummary ? "重新拆解" : "拆解参考"}</button>}
+            {isAnalyzableNode(node) && <button onClick={() => handleNodeMenu("analyze")}>{node.data.analysisSummary ? "重新拆解" : "拆解参考"}</button>}
             {node.data.sourceUrl && <button onClick={() => handleNodeMenu("open")}>打开来源</button>}
             {node.data.kind === "group" && <button onClick={() => handleNodeMenu("select-children")}>选择组内卡片</button>}
             {node.parentId && <button onClick={() => handleNodeMenu("detach")}>移出分组</button>}
@@ -1452,6 +1607,18 @@ function WorkspaceCanvas() {
       {toast && <div className="toast"><span>✓</span>{toast}</div>}
     </main>
   );
+}
+
+function sceneSignature(nodes: CanvasNode[], edges: Edge[], viewport: Viewport) {
+  return JSON.stringify(flowToScene(nodes, edges, viewport));
+}
+
+function isAnalyzableNode(node: CanvasNode) {
+  return sourceKinds.has(node.data.kind) && !node.data.note && Boolean(node.data.assetId);
+}
+
+function clamp(value: number, minimum: number, maximum: number) {
+  return Math.min(maximum, Math.max(minimum, value));
 }
 
 function reconnectModel(provider: ProviderId, model?: string) {
@@ -1521,7 +1688,7 @@ function friendlyAnalysisError(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return "拆解失败，请重试。";
   const message = value.trim();
   if (/aborted|aborterror|timed? out|timeout/i.test(message)) return "视觉分析用时超过当前限制。系统已保留素材，请重试；若仍超时，可先缩小截图或更换响应更快的视觉模型。";
-  if (/invalid_(?:type|value)|expected|zod|too_(?:big|small)|\[\s*\{/i.test(message) || message.length > 260) {
+  if (/JSON 无法解析|invalid_(?:type|value)|expected|zod|too_(?:big|small)|\[\s*\{/i.test(message) || message.length > 260) {
     return "模型返回的分析格式不完整，系统已保留原素材。请重试；若持续失败，请在 AI 设置中更换支持结构化输出的模型。";
   }
   return message;

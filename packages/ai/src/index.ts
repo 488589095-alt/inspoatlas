@@ -99,36 +99,54 @@ export async function generateTextWithProvider(messages: TextMessage[], config: 
 async function requestJson(messages: Array<Record<string, unknown>>, config: ProviderConfig) {
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 240_000);
   try {
-    if (config.provider === "anthropic") {
-      const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/messages", {
-        method: "POST",
-        signal: controller.signal,
-        headers: {
-          "content-type": "application/json",
-          "x-api-key": config.apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: config.model,
-          max_tokens: 3_500,
-          messages: toAnthropicMessages(messages),
-        }),
+    const requestRaw = async (requestMessages: Array<Record<string, unknown>>) => {
+      if (config.provider === "anthropic") {
+        const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/messages", {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            "content-type": "application/json",
+            "x-api-key": config.apiKey,
+            "anthropic-version": "2023-06-01",
+          },
+          body: JSON.stringify({
+            model: config.model,
+            max_tokens: 3_500,
+            messages: toAnthropicMessages(requestMessages),
+          }),
+        });
+        if (!response.ok) throw await providerRequestError(response, config);
+        const payload = await response.json() as { content?: Array<{ type?: string; text?: string }> };
+        const raw = payload.content?.find((item) => item.type === "text")?.text;
+        if (!raw) throw new Error("模型没有返回分析结果");
+        return raw;
+      }
+
+      const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/chat/completions", {
+        method: "POST", signal: controller.signal, headers: { "content-type": "application/json", authorization: "Bearer " + config.apiKey },
+        body: JSON.stringify({ model: config.model, messages: requestMessages, max_tokens: 3_500, response_format: { type: "json_object" } }),
       });
       if (!response.ok) throw await providerRequestError(response, config);
-      const payload = await response.json() as { content?: Array<{ type?: string; text?: string }> };
-      const raw = payload.content?.find((item) => item.type === "text")?.text;
+      const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+      const raw = payload.choices?.[0]?.message?.content;
       if (!raw) throw new Error("模型没有返回分析结果");
-      return safeJson(raw);
-    }
+      return raw;
+    };
 
-    const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/chat/completions", {
-      method: "POST", signal: controller.signal, headers: { "content-type": "application/json", authorization: "Bearer " + config.apiKey },
-      body: JSON.stringify({ model: config.model, messages, max_tokens: 3_500, response_format: { type: "json_object" } }),
-    });
-    if (!response.ok) throw await providerRequestError(response, config);
-    const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const raw = payload.choices?.[0]?.message?.content; if (!raw) throw new Error("模型没有返回分析结果");
-    return safeJson(raw);
+    const raw = await requestRaw(messages);
+    try {
+      return parseModelJson(raw);
+    } catch {
+      const repairedRaw = await requestRaw([{
+        role: "user",
+        content: [
+          "把下面内容修复为一个可被 JSON.parse 读取的 JSON 对象。",
+          "保留原字段和值，不要解释，不要使用 Markdown，不要添加 JSON 之外的文字。",
+          raw.slice(0, 28_000),
+        ].join("\n\n"),
+      }]);
+      return parseModelJson(repairedRaw);
+    }
   } catch (error) {
     if (isAbortError(error)) throw new Error("视觉分析响应超时，请重试或更换响应更快的视觉模型。");
     throw error;
@@ -355,9 +373,55 @@ function normalizeHex(value: unknown) {
   return "";
 }
 
-function safeJson(value: string): unknown {
-  const cleaned = value.replace(/^\x60\x60\x60(?:json)?/i, "").replace(/\x60\x60\x60$/, "").trim();
-  try { return JSON.parse(cleaned); } catch { throw new Error("模型返回的 JSON 无法解析"); }
+export function parseModelJson(value: string): unknown {
+  const cleaned = value
+    .replace(/^\uFEFF/, "")
+    .replace(/<think>[\s\S]*?<\/think>/gi, "")
+    .trim();
+  const fenced = [...cleaned.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)].map((match) => match[1].trim());
+  const extracted = extractBalancedJson(cleaned);
+  const candidates = [cleaned, ...fenced, extracted].filter((candidate): candidate is string => Boolean(candidate));
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (typeof parsed === "string") {
+        try { return JSON.parse(parsed); } catch { continue; }
+      }
+      return parsed;
+    } catch {
+      // Try the next safe extraction strategy.
+    }
+  }
+  throw new Error("模型返回的 JSON 无法解析");
+}
+
+function extractBalancedJson(value: string) {
+  const start = value.search(/[\[{]/);
+  if (start < 0) return "";
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < value.length; index += 1) {
+    const character = value[index];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (character === "\\") escaped = true;
+      else if (character === "\"") inString = false;
+      continue;
+    }
+    if (character === "\"") {
+      inString = true;
+      continue;
+    }
+    if (character === "{" || character === "[") stack.push(character);
+    if (character === "}" || character === "]") {
+      const opening = stack.pop();
+      if ((character === "}" && opening !== "{") || (character === "]" && opening !== "[")) return "";
+      if (!stack.length) return value.slice(start, index + 1);
+    }
+  }
+  return "";
 }
 export async function encryptApiKey(apiKey: string, hexKey: string) {
   const keyBytes = fromHex(hexKey); if (keyBytes.length !== 32) throw new Error("AI_CREDENTIAL_KEY 必须为 32 字节十六进制密钥");

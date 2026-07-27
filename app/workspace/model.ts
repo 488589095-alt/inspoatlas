@@ -1,4 +1,4 @@
-﻿import type { Edge, Node, Viewport } from "@xyflow/react";
+import type { Edge, Node, Viewport } from "@xyflow/react";
 import type { BoardSceneV2, Relation } from "@/packages/domain/src";
 
 export type CardKind = "image" | "web" | "text" | "analysis" | "element" | "group";
@@ -6,6 +6,7 @@ export type CardData = Record<string, unknown> & {
   kind: CardKind;
   title: string;
   body?: string;
+  note?: boolean;
   imageUrl?: string;
   screenshotPartCount?: number;
   sourceUrl?: string;

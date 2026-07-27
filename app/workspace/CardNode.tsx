@@ -29,23 +29,23 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
         <div className="group-label">
           <span>分组</span>
           <InlineTitle id={id} value={data.title} className="group-title" />
-          <small>{String(data.body ?? "拖动分组可一起移动内部卡片")}</small>
+          <InlineBody id={id} value={String(data.body ?? "单击添加分组说明")} className="group-description" placeholder="添加分组说明" />
         </div>
         <button className="node-menu nodrag" aria-label="分组操作" onClick={(event) => { event.stopPropagation(); action("menu", event); }}>•••</button>
       </section>
     );
   }
 
-  const isSource = sourceKinds.has(data.kind);
+  const isSource = sourceKinds.has(data.kind) && !data.note;
   const hasAnalysis = Boolean(data.analysisSummary || data.analysisId || data.status === "processing" || data.analysisError);
 
   return (
-    <article className={"canvas-card card-" + data.kind + (selected ? " is-selected" : "") + (data.preview ? " is-preview" : "")}>
+    <article className={"canvas-card card-" + (data.note ? "note" : data.kind) + (selected ? " is-selected" : "") + (data.preview ? " is-preview" : "")}>
       <NodeResizer minWidth={200} minHeight={130} isVisible={selected} />
       <div className="card-surface">
-        <Handle type="target" position={Position.Left} className="node-handle" />
+        <Handle type="target" position={Position.Left} className="node-handle" title="连接到这张卡片" />
         <header className="card-head">
-          <span className="card-kind">{labels[data.kind]}</span>
+          <span className="card-kind">{data.note ? "备注" : labels[data.kind]}</span>
           <button className="node-menu nodrag" aria-label="卡片操作" onClick={(event) => { event.stopPropagation(); action("menu", event); }}>•••</button>
         </header>
         {data.imageUrl && (
@@ -72,7 +72,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
         <div className="card-content">
           <InlineTitle id={id} value={data.title} />
           {data.sourceUrl && <a href={data.sourceUrl} target="_blank" rel="noreferrer" className="nodrag">{safeHost(data.sourceUrl)} ↗</a>}
-          {data.body && (data.kind === "web" ? <div className="card-body-scroll nodrag nowheel"><p>{data.body}</p></div> : <p>{data.body}</p>)}
+          {data.note ? <InlineBody id={id} value={data.body ?? ""} className="note-body" placeholder="写下备注…" multiline /> : data.body && (data.kind === "web" ? <div className="card-body-scroll nodrag nowheel"><p>{data.body}</p></div> : <p>{data.body}</p>)}
           {!!data.colors?.length && <div className="color-row">{data.colors.slice(0, 7).map((color) => <span key={color} title={color} style={{ background: color }} />)}</div>}
           {!!data.tags?.length && <div className="tag-row">{data.tags.slice(0, 8).map((tag) => <span key={tag}>{tag}</span>)}</div>}
         </div>
@@ -86,7 +86,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
             <small>{data.analysisExpanded ? "收起" : hasAnalysis ? "展开" : "开始"}</small>
           </button>
         )}
-        <Handle type="source" position={Position.Right} className="node-handle" />
+        <Handle type="source" position={Position.Right} className="node-handle" title="拖动建立辅助关联" />
       </div>
 
       {isSource && data.analysisExpanded && (
@@ -136,15 +136,14 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
 function InlineTitle({ id, value, className = "" }: { id: string; value: string; className?: string }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(value);
-  useEffect(() => { if (!editing) setDraft(value); }, [editing, value]);
   useEffect(() => {
     const startEditing = (event: Event) => {
       const detail = (event as CustomEvent<{ id: string }>).detail;
-      if (detail.id === id) setEditing(true);
+      if (detail.id === id) { setDraft(value); setEditing(true); }
     };
     window.addEventListener("inspo:rename-node", startEditing);
     return () => window.removeEventListener("inspo:rename-node", startEditing);
-  }, [id]);
+  }, [id, value]);
 
   const commit = () => {
     const title = draft.trim();
@@ -174,12 +173,47 @@ function InlineTitle({ id, value, className = "" }: { id: string; value: string;
   }
 
   const Tag = className ? "strong" : "h3";
-  return <Tag className={className} onDoubleClick={(event) => { event.stopPropagation(); setEditing(true); }}>{value}</Tag>;
+  return <Tag className={className} onDoubleClick={(event) => { event.stopPropagation(); setDraft(value); setEditing(true); }}>{value}</Tag>;
 }
 
+function InlineBody({ id, value, className = "", placeholder, multiline = false }: { id: string; value: string; className?: string; placeholder: string; multiline?: boolean }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+
+  const commit = () => {
+    const body = draft.trim();
+    setEditing(false);
+    if (body !== value) {
+      window.dispatchEvent(new CustomEvent("inspo:node-action", { detail: { id, action: "update-body", body } }));
+    }
+  };
+
+  if (editing) {
+    const shared = {
+      autoFocus: true,
+      value: draft,
+      placeholder,
+      className: `inline-body-input nodrag ${className}`,
+      onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setDraft(event.target.value),
+      onBlur: commit,
+      onKeyDown: (event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+        event.stopPropagation();
+        if (event.key === "Escape") { setDraft(value); setEditing(false); }
+        if (!multiline && event.key === "Enter") commit();
+        if (multiline && event.key === "Enter" && (event.metaKey || event.ctrlKey)) commit();
+      },
+    };
+    return multiline ? <textarea {...shared} rows={5} /> : <input {...shared} />;
+  }
+
+  const text = value || placeholder;
+  return multiline
+    ? <p className={`editable-body nodrag ${className}`} onClick={(event) => { event.stopPropagation(); setDraft(value); setEditing(true); }}>{text}</p>
+    : <small className={`editable-body nodrag ${className}`} onClick={(event) => { event.stopPropagation(); setDraft(value); setEditing(true); }}>{text}</small>;
+}
 function displayAnalysisError(value: string | undefined) {
   if (!value) return "拆解失败，请重试。";
-  if (/invalid_(?:type|value)|expected|zod|too_(?:big|small)|\[\s*\{/i.test(value) || value.length > 260) {
+  if (/JSON 无法解析|invalid_(?:type|value)|expected|zod|too_(?:big|small)|\[\s*\{/i.test(value) || value.length > 260) {
     return "模型返回的分析格式不完整。请重试；若持续失败，请在 AI 设置中更换支持结构化输出的模型。";
   }
   return value;
