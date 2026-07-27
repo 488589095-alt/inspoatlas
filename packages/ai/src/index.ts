@@ -6,7 +6,7 @@ export interface AnalyzeInput { assetId: string; title: string; text?: string; i
 export const ANALYSIS_PROMPT_VERSION = "analysis-v3";
 export interface TextMessage { role: "user" | "assistant"; content: string; }
 export const providerDefaults: Record<ProviderId, { model: string; baseUrl: string; supportsVision: boolean }> = {
-  openai: { model: "gpt-5.2", baseUrl: "https://api.openai.com/v1", supportsVision: true },
+  openai: { model: "gpt-5.6-terra", baseUrl: "https://api.openai.com/v1", supportsVision: true },
   anthropic: { model: "claude-sonnet-4-20250514", baseUrl: "https://api.anthropic.com/v1", supportsVision: true },
   gemini: { model: "gemini-3.6-flash", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", supportsVision: true },
   qwen: { model: "qwen3.6-flash", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", supportsVision: true },
@@ -51,7 +51,7 @@ export async function analyzeWithProvider(input: AnalyzeInput, config: ProviderC
   const repairedRaw = await requestJson(repairMessages, config);
   const repaired = analysisResultSchema.safeParse(normalizeAnalysisPayload(repairedRaw, input.assetId));
   if (!repaired.success) {
-    throw new Error("模型返回的结构与设计分析格式不兼容。请重试；若持续失败，请在 AI 设置中更换支持结构化输出的模型。");
+    throw new Error("模型返回的结构与设计分析格式不兼容。请重试；若持续失败，请重新连接 AI 服务。");
   }
   return { ...repaired.data, analyzedAt: new Date().toISOString(), model: { provider: config.provider, id: config.model } };
 }
@@ -82,7 +82,7 @@ export async function generateTextWithProvider(messages: TextMessage[], config: 
       method: "POST",
       signal: controller.signal,
       headers: { "content-type": "application/json", authorization: "Bearer " + config.apiKey },
-      body: JSON.stringify({ model: config.model, messages, max_tokens: 2_200 }),
+      body: JSON.stringify({ model: config.model, messages, ...(config.provider === "openai" ? { max_completion_tokens: 4_000, reasoning_effort: "low" } : { max_tokens: 2_200 }) }),
     });
     if (!response.ok) throw await providerRequestError(response, config);
     const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
@@ -125,7 +125,7 @@ async function requestJson(messages: Array<Record<string, unknown>>, config: Pro
 
       const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/chat/completions", {
         method: "POST", signal: controller.signal, headers: { "content-type": "application/json", authorization: "Bearer " + config.apiKey },
-        body: JSON.stringify({ model: config.model, messages: requestMessages, max_tokens: 3_500, response_format: { type: "json_object" } }),
+        body: JSON.stringify({ model: config.model, messages: requestMessages, ...(config.provider === "openai" ? { max_completion_tokens: 8_000, reasoning_effort: "low" } : { max_tokens: 3_500 }), response_format: { type: "json_object" } }),
       });
       if (!response.ok) throw await providerRequestError(response, config);
       const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
@@ -149,7 +149,7 @@ async function requestJson(messages: Array<Record<string, unknown>>, config: Pro
       return parseModelJson(repairedRaw);
     }
   } catch (error) {
-    if (isAbortError(error)) throw new Error("视觉分析响应超时，请重试或更换响应更快的视觉模型。");
+    if (isAbortError(error)) throw new Error("拆解超时，请重试。");
     throw error;
   } finally { clearTimeout(timer); }
 }

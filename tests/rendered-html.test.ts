@@ -10,7 +10,7 @@ test("产品页面指向真实工作台且没有固定 AI 演示回答", async (
   assert.match(page, /InspoWorkspace/);
   assert.match(workspace, /\/api\/analyses/);
   assert.match(workspace, /\/api\/boards/);
-  assert.match(workspace, /设计基准/);
+  assert.match(workspace, /设计方案/);
   assert.doesNotMatch(workspace, /设计系统合同/);
   assert.doesNotMatch(workspace, /该素材通过单一视觉焦点/);
   assert.doesNotMatch(workspace, /问问这张画布/);

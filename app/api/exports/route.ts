@@ -12,14 +12,14 @@ export async function POST(request: Request) {
     const [board] = await db.select().from(boards).where(and(eq(boards.id, input.boardId), eq(boards.ownerId, user.id))).limit(1);
     if (!board) throw new HttpError(404, "画布不存在");
     const [stored] = await db.select().from(designContracts).where(and(eq(designContracts.boardId, board.id), eq(designContracts.ownerId, user.id))).limit(1);
-    if (!stored || stored.status !== "confirmed") throw new HttpError(409, "请先生成并确认设计系统合同");
+    if (!stored || stored.status !== "confirmed") throw new HttpError(409, "请先保存设计方案");
     const contract = designContractSchema.parse(stored.content);
     const sourceRows = await db.select().from(assets).where(and(eq(assets.boardId, board.id), eq(assets.ownerId, user.id)));
     const elements = await db.select().from(confirmedElements).where(and(eq(confirmedElements.boardId, board.id), eq(confirmedElements.ownerId, user.id)));
     const context: ExportContext = { purpose: input.purpose, goal: input.goal, destination: input.destination, title: contract.title, version: stored.version };
     const taskFiles = { ...buildFiles(input.purpose, contract, stored.version, sourceRows, elements), ...destinationFiles(context, contract) };
     const manifest = JSON.stringify({ schemaVersion: 1, ...context, files: Object.keys(taskFiles), generatedAt: new Date().toISOString() }, null, 2);
-    const files = { "START_HERE.html": startHereHtml(context, Object.keys(taskFiles)), "manifest.json": manifest, ...taskFiles };
+    const files = { "使用说明.txt": usageText(context), "manifest.json": manifest, ...taskFiles };
     const archive = zipSync(Object.fromEntries(Object.entries(files).map(([name, body]) => [name, strToU8(body)])), { level: 6 });
     return new Response(archive, {
       headers: {
@@ -52,7 +52,7 @@ const destinationGuides: Record<string, { label: string; summary: string; next: 
   "figma-design": {
     label: "Figma Design",
     summary: "把确认后的设计规则和元素带进 Figma 继续编辑。",
-    next: "打开目标 Figma 文件，运行 InspoAtlas Bridge，再选择 figma-import.json。批量模板请同时查看 figma/template-slots.json。",
+    next: "解压后在 Figma Desktop 中导入 figma-plugin/manifest.json，运行插件并选择 figma-import.json。",
     primary: "figma-import.json",
   },
   "coding-ai": {
@@ -123,26 +123,31 @@ function destinationFiles(context: ExportContext, contract: DesignContract): Rec
   return {};
 }
 
-function startHereHtml(context: ExportContext, files: string[]) {
+function usageText(context: ExportContext) {
   const destination = destinationGuides[context.destination || "coding-ai"] ?? destinationGuides["coding-ai"];
   const goal = goalLabels[context.goal || "recreate"] || "继续设计";
-  const fileList = files.map((file) => "<li><code>" + escapeHtml(file) + "</code></li>").join("");
-  const primaryExists = files.includes(destination.primary);
-  const primaryLink = primaryExists
-    ? '<a class="primary" href="' + encodeURI(destination.primary) + '">打开第一步文件</a>'
-    : "";
-  return '<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>' + escapeHtml(context.title) + ' · 从这里开始</title><style>' +
-    ':root{font-family:Inter,"PingFang SC","Microsoft YaHei",sans-serif;color:#353039;background:#f3f0f7}*{box-sizing:border-box}body{margin:0;padding:40px 20px}.shell{max-width:840px;margin:auto}.kicker{color:#806ca1;font-size:12px;font-weight:800;letter-spacing:.12em}h1{margin:8px 0 10px;font-size:34px}p{color:#706875;line-height:1.7}.card{margin-top:18px;padding:22px;border:1px solid #e2dce7;border-radius:20px;background:#fff;box-shadow:0 18px 50px rgba(70,52,88,.08)}.route{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:center}.route div{padding:15px;border-radius:14px;background:#f7f4fa}.route small{display:block;color:#958c9b}.route strong{display:block;margin-top:5px}.arrow{color:#8b75a7}.next{padding:16px;border-radius:14px;background:#eee8f5;color:#51465b}.primary{display:inline-block;margin-top:14px;padding:11px 16px;border-radius:12px;color:#fff;background:#725e91;text-decoration:none;font-weight:700}details{margin-top:18px}summary{cursor:pointer;font-weight:700}code{color:#675574}li{margin:7px 0}@media(max-width:640px){body{padding:24px 14px}.route{grid-template-columns:1fr}.arrow{transform:rotate(90deg);text-align:center}h1{font-size:28px}}' +
-    '</style></head><body><main class="shell"><span class="kicker">INSPOATLAS · 从这里开始</span><h1>' + escapeHtml(context.title) + '</h1><p>这个页面会告诉你这次导出是什么、下一步做什么。你不需要先理解包里的 JSON 或 Markdown。</p>' +
-    '<section class="card"><div class="route"><div><small>你想完成</small><strong>' + escapeHtml(goal) + '</strong></div><span class="arrow">→</span><div><small>接下来使用</small><strong>' + escapeHtml(destination.label) + '</strong></div></div><p>' + escapeHtml(destination.summary) + '</p><div class="next"><strong>下一步</strong><p>' + escapeHtml(destination.next) + '</p></div>' + primaryLink + '</section>' +
-    '<details class="card"><summary>查看包内文件</summary><ul>' + fileList + '</ul></details>' +
-    '<p>合同版本 ' + context.version + ' · 关键结论应回到 sources.json 核验。推断项在确认前不要当作正式规范。</p></main></body></html>';
+  return [
+    context.title,
+    "",
+    "目标：" + goal,
+    "使用：" + destination.label,
+    "",
+    destination.summary,
+    "",
+    "下一步：",
+    destination.next,
+    "",
+    "设计方案版本：" + context.version,
+    "重要：颜色、字体、组件和结构仍需在最终工具中核对来源。",
+  ].join("\n");
 }
 
-function escapeHtml(value: string) {
-  return value.replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[char] || char);
+function figmaPluginFiles(): Record<string, string> {
+  const manifest = JSON.stringify({ name: "InspoAtlas Importer", id: "1629456193847000001", api: "1.0.0", main: "code.js", ui: "ui.html", editorType: ["figma"], documentAccess: "dynamic-page", networkAccess: { allowedDomains: ["none"] } }, null, 2);
+  const ui = `<!doctype html><html><meta charset="utf-8"><style>body{font:12px Inter,sans-serif;margin:0;padding:16px;color:#242229}h2{font-size:16px;margin:0 0 8px}p{color:#706a75;line-height:1.5}input{width:100%;margin:12px 0}button{width:100%;min-height:36px;border:0;border-radius:8px;background:#725e91;color:white;font-weight:700}small{display:block;margin-top:10px;color:#8b848e}</style><body><h2>导入 InspoAtlas 方案</h2><p>选择导出包根目录里的 figma-import.json。</p><input id="file" type="file" accept="application/json"><button id="run" disabled>导入</button><small id="status"></small><script>let data;const file=document.querySelector('#file'),run=document.querySelector('#run'),status=document.querySelector('#status');file.onchange=async()=>{try{data=JSON.parse(await file.files[0].text());run.disabled=false;status.textContent='文件已读取';}catch(e){status.textContent='JSON 无法读取';}};run.onclick=()=>{run.disabled=true;status.textContent='正在创建…';parent.postMessage({pluginMessage:{type:'import',data}},'*')};onmessage=(event)=>{status.textContent=event.data.pluginMessage?.message||'';run.disabled=false};</script></body></html>`;
+  const code = `figma.showUI(__html__,{width:340,height:250});function rgb(hex){const v=hex.replace('#','');return{r:parseInt(v.slice(0,2),16)/255,g:parseInt(v.slice(2,4),16)/255,b:parseInt(v.slice(4,6),16)/255}}figma.ui.onmessage=async(msg)=>{if(msg.type!=='import')return;try{const d=msg.data||{};const vars=d.variables||{};const collection=figma.variables.createVariableCollection('InspoAtlas');const mode=collection.defaultModeId;for(const item of vars.colors||[]){const variable=figma.variables.createVariable(item.name,collection,'COLOR');variable.setValueForMode(mode,rgb(item.value))}for(const [i,value] of (vars.spacing||[]).entries()){const variable=figma.variables.createVariable('spacing/'+(i+1),collection,'FLOAT');variable.setValueForMode(mode,value)}for(const [i,value] of (vars.radii||[]).entries()){const variable=figma.variables.createVariable('radius/'+(i+1),collection,'FLOAT');variable.setValueForMode(mode,value)}await figma.loadFontAsync({family:'Inter',style:'Regular'});await figma.loadFontAsync({family:'Inter',style:'Semi Bold'});const system=figma.createFrame();system.name=d.title||'InspoAtlas Design System';system.layoutMode='VERTICAL';system.itemSpacing=24;system.paddingTop=32;system.paddingRight=32;system.paddingBottom=32;system.paddingLeft=32;system.resize(720,Math.max(300,120+(d.components||[]).length*110));for(const item of d.components||[]){const component=figma.createComponent();component.name=item.name;component.layoutMode='VERTICAL';component.itemSpacing=8;component.paddingTop=16;component.paddingRight=16;component.paddingBottom=16;component.paddingLeft=16;component.resize(640,80);const title=figma.createText();title.fontName={family:'Inter',style:'Semi Bold'};title.characters=item.name;component.appendChild(title);const note=figma.createText();note.fontName={family:'Inter',style:'Regular'};note.characters=(item.rules||[]).join(' · ')||'请根据参考继续完善';component.appendChild(note);system.appendChild(component)}figma.currentPage.appendChild(system);figma.currentPage.selection=[system];figma.viewport.scrollAndZoomIntoView([system]);figma.ui.postMessage({message:'导入完成：已创建变量和组件草稿'});}catch(error){figma.ui.postMessage({message:'导入失败：'+String(error&&error.message||error)})}};`;
+  return { "figma-plugin/manifest.json": manifest, "figma-plugin/ui.html": ui, "figma-plugin/code.js": code };
 }
-
 function buildFiles(purpose: ExportPurpose, contract: DesignContract, version: number, sourceRows: AssetRow[], elements: ElementRow[]): Record<string, string> {
   const sourceMap = sourceRows.map((item) => ({
     assetId: item.id, title: item.title, kind: item.kind, sourceUrl: item.sourceUrl,
@@ -171,9 +176,10 @@ function buildFiles(purpose: ExportPurpose, contract: DesignContract, version: n
   };
   if (purpose === "figma-bridge") return {
     ...common, "tokens.json": tokens,
-    "figma-import.json": JSON.stringify({ schemaVersion: 2, contractVersion: version, title: contract.title, variables: contract.tokens, components: elements.map((item) => ({ id: item.id, name: item.label, type: item.type, editable: Boolean((item.metadata as Record<string, unknown>)?.computedStyle), sourceAssetId: item.assetId, rect: item.rect, evidenceState: (item.metadata as Record<string, unknown>)?.computedStyle ? "实测" : "图片证据" })) }, null, 2),
-    "FIGMA_IMPORT.md": "# Figma Bridge\n\n1. 在 Figma Desktop 运行 InspoAtlas Bridge。\n2. 选择 figma-import.json。\n3. 插件使用异步 Variables API 创建颜色、间距与圆角变量。\n4. 有计算样式证据的网页元素创建 Auto Layout 组件；只有图片证据的元素创建带来源说明的裁切图层。\n5. 逐项核验字体、交互状态和响应式行为后再发布组件。\n\n本包不伪装为原生 .fig 文件。",
-    "elements/README.md": "# 已确认元素\n\n" + (elements.length ? elements.map((item) => "- " + item.label + " · " + item.type + " · 来源 " + item.assetId).join("\n") : "没有已确认元素；Figma Bridge 不会生成猜测组件。"),
+    "figma-import.json": JSON.stringify({ schemaVersion: 2, contractVersion: version, title: contract.title, variables: contract.tokens, components: contract.components.map((item, index) => ({ id: "component-" + (index + 1), name: item.name, rules: item.rules, sourceAssetIds: item.sourceAssetIds })) }, null, 2),
+    "FIGMA_IMPORT.md": "# 导入 Figma\n\n1. 解压整个文件夹。\n2. 在 Figma Desktop 选择 Plugins → Development → Import plugin from manifest。\n3. 选择 figma-plugin/manifest.json。\n4. 运行 InspoAtlas Importer，选择 figma-import.json。\n5. 插件会创建变量和组件草稿；完成后核对字体、交互状态和响应式。\n\nFigma 不提供把任意 JSON 直接写成官方 .fig 文件的公共接口，因此这里使用官方 Plugin API。",
+    "components/README.md": "# 组件草稿\n\n" + (contract.components.length ? contract.components.map((item) => "- " + item.name + " · " + item.rules.join("；")).join("\n") : "当前方案没有组件。"),
+    ...figmaPluginFiles(),
   };
   return {
     ...common,

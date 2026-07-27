@@ -35,7 +35,7 @@ export const providerCatalog: Record<ProviderId, {
     label: "OpenAI",
     description: "适合网页、图片和文字拆解",
     platformUrl: "https://platform.openai.com/api-keys",
-    models: ["gpt-5.2", "gpt-5.1", "gpt-5-mini", "gpt-4.1"],
+    models: ["gpt-5.6-terra"],
     supportsVision: true,
   },
   anthropic: {
@@ -167,7 +167,7 @@ export const exportFilesByPurpose: Record<ExportPurpose, string[]> = {
   "web-rebuild": ["DESIGN.md", "STRUCTURE.md", "MAPPING.md", "IMPLEMENTATION_PROMPT.md", "tokens/tokens.json", "tokens/variables.css", "components.md", "STRUCTURE_QA.md", "DESIGN_QA.md", "sources.json"],
   "visual-remix": ["IMAGE_PROMPT.md", "PROMPT_VARIANTS.md", "NEGATIVE_PROMPT.md", "palette.json", "composition.md", "sources.json"],
   "campaign-system": ["DESIGN.md", "CAMPAIGN_SYSTEM.md", "PAGE_BRIEF_TEMPLATE.md", "content-schema.json", "components.md", "QA_CHECKLIST.md", "tokens/tokens.json", "tokens/variables.css", "sources.json"],
-  "figma-bridge": ["DESIGN.md", "figma-import.json", "FIGMA_IMPORT.md", "tokens.json", "sources.json", "elements/README.md"],
+  "figma-bridge": ["DESIGN.md", "figma-import.json", "FIGMA_IMPORT.md", "tokens.json", "sources.json", "components/README.md", "figma-plugin/manifest.json", "figma-plugin/code.js", "figma-plugin/ui.html"],
 };
 export interface DesignPackage { id: string; boardId: string; purpose: ExportPurpose; files: string[]; sourceAssetIds: string[]; generatedAt: string; }
 

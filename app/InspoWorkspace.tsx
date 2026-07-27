@@ -18,7 +18,7 @@ import {
   useReactFlow,
   type Viewport,
 } from "@xyflow/react";
-import { providerCatalog, type AnalysisResult, type DesignContract, type ProviderId, type Relation, type RelationType } from "@/packages/domain/src";
+import { providerCatalog, type AnalysisResult, type DesignContract, type ProviderId, type Relation } from "@/packages/domain/src";
 import {
   exportDestinationsByGoal,
   productionGoalOptions,
@@ -31,7 +31,6 @@ import { buildOrganizePreview, type OrganizePreview } from "./workspace/organize
 import {
   flowToScene,
   readDraft,
-  relationLabel,
   saveDraft,
   sceneToFlow,
   type BoardSummary,
@@ -43,13 +42,6 @@ import "./export.css";
 
 const nodeTypes = { inspo: CardNode };
 const sourceKinds = new Set(["image", "web", "text"]);
-const relationChoices: Array<{ type: RelationType; label: string }> = [
-  { type: "similar-style", label: "相似风格" },
-  { type: "same-component", label: "相同结构" },
-  { type: "complements", label: "可组合使用" },
-  { type: "contrasts", label: "对比参考" },
-  { type: "same-project", label: "同一项目" },
-];
 const defaultSize: Record<CardData["kind"], { width: number; height: number }> = {
   image: { width: 300, height: 340 },
   web: { width: 320, height: 280 },
@@ -95,7 +87,6 @@ function WorkspaceCanvas() {
   const [modal, setModal] = useState<WorkspaceModal>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
   const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
-  const [connection, setConnection] = useState<Connection | null>(null);
   const [toast, setToast] = useState("");
   const [urlValue, setUrlValue] = useState("");
   const [organizePreview, setOrganizePreview] = useState<OrganizePreview | null>(null);
@@ -110,10 +101,8 @@ function WorkspaceCanvas() {
   const [exportComplete, setExportComplete] = useState(false);
   const [credentialState, setCredentialState] = useState<Array<{ provider: string; model: string; lastFour: string; supportsVision: boolean; active: boolean }>>([]);
   const [managedAi, setManagedAi] = useState<ManagedAiState>({ available: false, provider: null, model: null, supportsVision: false });
-  const [aiUseByok, setAiUseByok] = useState(true);
   const [credentialForm, setCredentialForm] = useState<{ provider: ProviderId; apiKey: string; model: string; region: string }>({ provider: "openai", apiKey: "", model: providerCatalog.openai.models[0], region: "intl" });
   const [loadingCredential, setLoadingCredential] = useState(false);
-  const [credentialBusyProvider, setCredentialBusyProvider] = useState<ProviderId | null>(null);
   const [credentialToDelete, setCredentialToDelete] = useState<ProviderId | null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantScope, setAssistantScope] = useState<AssistantScope>("board");
@@ -150,7 +139,6 @@ function WorkspaceCanvas() {
   const selected = selectedNodes[0];
   const exportDestinations = exportDestinationsByGoal[productionGoal];
   const activeDestination = exportDestinations.find((item) => item.id === exportDestination) ?? exportDestinations[0];
-  const selectedProvider = providerCatalog[credentialForm.provider];
   const visibleNodes = useMemo(() => {
     const base = organizePreview?.nodes ?? nodes;
     const term = search.trim().toLowerCase();
@@ -176,10 +164,8 @@ function WorkspaceCanvas() {
     });
   }, [edges, relationView, selectedIds]);
   const persistableSignature = useMemo(() => sceneSignature(nodes, edges, viewportState), [nodes, edges, viewportState]);
-  const activeByokCredential = credentialState.find((item) => item.active) ?? credentialState[0];
-  const connectedModelLabel = managedAi.available && !aiUseByok
-    ? managedAi.model ?? "平台模型"
-    : activeByokCredential?.model ?? "未连接";
+  const openAiCredential = credentialState.find((item) => item.provider === "openai");
+  const connectedModelLabel = "GPT-5.6 Terra";
 
   useEffect(() => {
     signatureRef.current = persistableSignature;
@@ -204,8 +190,6 @@ function WorkspaceCanvas() {
         const managed = payload.managed ?? { available: false, provider: null, model: null, supportsVision: false };
         setCredentialState(payload.credentials ?? []);
         setManagedAi(managed);
-        const preferred = window.localStorage.getItem("inspoatlas:ai-run-mode");
-        setAiUseByok(!managed.available || preferred === "byok");
       })
       .catch(() => undefined);
     return () => { active = false; };
@@ -496,7 +480,30 @@ function WorkspaceCanvas() {
     setNodes((current) => applyNodeChanges(changes, current));
   }, [setNodes]);
 
-  const onConnect = useCallback((value: Connection) => setConnection(value), []);
+  function onConnect(value: Connection) {
+    if (!value.source || !value.target || value.source === value.target) return;
+    if (edges.some((edge) => edge.source === value.source && edge.target === value.target)) return notify("这两张卡片已经连接");
+    remember();
+    const relation: Relation = {
+      id: crypto.randomUUID(),
+      sourceId: value.source,
+      targetId: value.target,
+      type: "complements",
+      layer: "association",
+      status: "confirmed",
+      origin: "human",
+    };
+    setEdges((current) => addEdge({
+      ...value,
+      id: relation.id,
+      type: "smoothstep",
+      label: "关联",
+      data: relation,
+      zIndex: 0,
+      style: { stroke: "#8f7da4", strokeWidth: 2 },
+    }, current));
+    notify("已连接");
+  }
   const onSelectionChange = useCallback(({ nodes: selection }: { nodes: CanvasNode[] }) => {
     const next = selection.map((node) => node.id);
     setSelectedIds((current) => (
@@ -560,30 +567,6 @@ function WorkspaceCanvas() {
       });
     });
   }, [setNodes]);
-
-  function confirmConnection(type: RelationType) {
-    if (!connection?.source || !connection.target) return;
-    remember();
-    const relation: Relation = {
-      id: crypto.randomUUID(),
-      sourceId: connection.source,
-      targetId: connection.target,
-      type,
-      layer: "association",
-      status: "confirmed",
-      origin: "human",
-    };
-    setEdges((current) => addEdge({
-      ...connection,
-      id: relation.id,
-      type: "smoothstep",
-      label: relationLabel[type],
-      data: relation,
-      zIndex: 0,
-      style: { stroke: "#9b8aaa", strokeWidth: 1.6 },
-    }, current));
-    setConnection(null);
-  }
 
   async function createBoard(sourceBoardId?: string) {
     const response = await fetch("/api/boards", {
@@ -842,7 +825,7 @@ function WorkspaceCanvas() {
     const response = await fetch("/api/analyses", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ assetId, mode: "replace", ...(aiUseByok && activeByokCredential ? { provider: activeByokCredential.provider } : {}) }),
+      body: JSON.stringify({ assetId, mode: "replace", ...(!managedAi.available ? { provider: "openai" } : {}) }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -906,7 +889,7 @@ function WorkspaceCanvas() {
         body: JSON.stringify({
           goal,
           question,
-          ...(aiUseByok && activeByokCredential ? { provider: activeByokCredential.provider } : {}),
+          ...(!managedAi.available ? { provider: "openai" } : {}),
           scope: assistantScope,
           selectedNodeIds: assistantScope === "selection" ? selectedIds : [],
           history: assistantMessages.slice(-6),
@@ -976,12 +959,6 @@ function WorkspaceCanvas() {
     if (!response.ok) return notify("反馈暂时未保存，请稍后重试");
     setAssistantMessages((current) => current.map((item) => item.id === message.id ? { ...item, feedback: rating } : item));
     notify(rating === "helpful" ? "已记录：这条建议有帮助" : "已记录：这条建议需要改进");
-  }
-
-  function chooseAiRunMode(mode: "managed" | "byok") {
-    if (mode === "managed" && !managedAi.available) return;
-    setAiUseByok(mode === "byok");
-    window.localStorage.setItem("inspoatlas:ai-run-mode", mode);
   }
 
   function toggleAnalysis(nodeId: string) {
@@ -1193,12 +1170,28 @@ function WorkspaceCanvas() {
 
   async function previewBaseline() {
     setContractBusy(true);
-    const response = await fetch("/api/boards/" + boardId + "/contracts/preview", { method: "POST" });
+    const selectedAssetIds = selectedNodes.filter(isAnalyzableNode).map((node) => String(node.data.assetId));
+    const response = await fetch("/api/boards/" + boardId + "/contracts/preview", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(selectedAssetIds.length ? { assetIds: selectedAssetIds } : {}),
+    });
     const payload = await response.json().catch(() => ({}));
     setContractBusy(false);
-    if (!response.ok) return notify(payload.error || "请先完成至少一次真实拆解");
+    if (!response.ok) return notify(payload.error || "请先拆解至少一张参考");
     setContract(payload.contract);
     setRightTab("baseline");
+  }
+
+  function removeContractItem(section: "principles" | "colors" | "spacing" | "radii" | "components", index: number) {
+    setContract((current) => {
+      if (!current) return current;
+      if (section === "principles") return { ...current, principles: current.principles.filter((_, itemIndex) => itemIndex !== index) };
+      if (section === "components") return { ...current, components: current.components.filter((_, itemIndex) => itemIndex !== index) };
+      if (section === "colors") return { ...current, tokens: { ...current.tokens, colors: current.tokens.colors.filter((_, itemIndex) => itemIndex !== index) } };
+      if (section === "spacing") return { ...current, tokens: { ...current.tokens, spacing: current.tokens.spacing.filter((_, itemIndex) => itemIndex !== index) } };
+      return { ...current, tokens: { ...current.tokens, radii: current.tokens.radii.filter((_, itemIndex) => itemIndex !== index) } };
+    });
   }
 
   async function confirmBaseline() {
@@ -1208,7 +1201,7 @@ function WorkspaceCanvas() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ contract }),
     });
-    notify(response.ok ? "设计基准已保存" : "设计基准保存失败");
+    notify(response.ok ? "设计方案已保存" : "设计方案保存失败");
   }
 
   async function exportPackage() {
@@ -1226,7 +1219,7 @@ function WorkspaceCanvas() {
     });
     if (!response.ok) {
       setExportBusy(false);
-      return notify((await response.json().catch(() => ({}))).error || "请先确认设计基准");
+      return notify((await response.json().catch(() => ({}))).error || "请先保存设计方案");
     }
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
@@ -1237,7 +1230,7 @@ function WorkspaceCanvas() {
     URL.revokeObjectURL(url);
     setExportBusy(false);
     setExportComplete(true);
-    notify("任务已准备好，下载后先打开 START_HERE.html");
+    notify("已下载，解压后查看使用说明.txt");
   }
 
   async function loadCredentials() {
@@ -1247,10 +1240,9 @@ function WorkspaceCanvas() {
       const rows = payload.credentials ?? [];
       setCredentialState(rows);
       if (payload.managed) setManagedAi(payload.managed);
-      const active = rows.find((item) => item.active) ?? rows[0];
-      if (active && providerCatalog[active.provider as ProviderId]) {
-        setCredentialForm({ provider: active.provider as ProviderId, apiKey: "", model: reconnectModel(active.provider as ProviderId, active.model), region: "intl" });
-      }
+      const openai = rows.find((item) => item.provider === "openai");
+      setCredentialForm({ provider: "openai", apiKey: "", model: providerCatalog.openai.models[0], region: "intl" });
+      if (openai) setCredentialForm((value) => ({ ...value, apiKey: "" }));
     }
     setModal("credentials");
   }
@@ -1269,20 +1261,6 @@ function WorkspaceCanvas() {
     setCredentialForm((value) => ({ ...value, apiKey: "" }));
     await loadCredentials();
     notify(existing && !credentialForm.apiKey ? "已使用保存的 Key 更新模型" : "模型服务已验证并保存");
-  }
-
-  async function activateCredential(provider: ProviderId, model?: string) {
-    setCredentialBusyProvider(provider);
-    const response = await fetch("/api/ai-credentials", {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ provider, model: reconnectModel(provider, model) }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    setCredentialBusyProvider(null);
-    if (!response.ok) return notify(payload.error || "模型服务连接失败");
-    await loadCredentials();
-    notify("已切换当前模型服务");
   }
 
   async function deleteCredential(provider: ProviderId) {
@@ -1334,73 +1312,6 @@ function WorkspaceCanvas() {
       setNodes((current) => current.map((item) => ({ ...item, selected: childIds.includes(item.id) })));
     }
     if (action === "open" && node.data.sourceUrl) window.open(node.data.sourceUrl, "_blank", "noopener");
-  }
-
-  async function confirmRegion(region: NonNullable<CardData["regions"]>[number]) {
-    if (!selected?.data.analysisId || !selected.data.assetId || !region.rect) return notify("此候选缺少可调整区域");
-    const form = new FormData();
-    form.set("label", region.label);
-    form.set("type", region.type);
-    form.set("rect", JSON.stringify(region.rect));
-    const response = await fetch("/api/analyses/" + selected.data.analysisId + "/regions/" + region.id, {
-      method: "PATCH",
-      body: form,
-    });
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) return notify(payload.error || "确认失败");
-    const id = "element-" + region.id + "-" + selected.data.assetId;
-    remember();
-    setNodes((current) => [
-      ...current.map((node) => node.id === selected.id ? {
-        ...node,
-        data: {
-          ...node.data,
-          regions: node.data.regions?.map((item) => item.id === region.id
-            ? { ...item, confirmed: true }
-            : item),
-        },
-      } : node),
-      ...(current.some((node) => node.id === id) ? [] : [{
-        id,
-        type: "inspo",
-        parentId: selected.parentId,
-        extent: selected.parentId ? "parent" as const : undefined,
-        position: {
-          x: selected.position.x + nodeWidth(selected) + 44,
-          y: selected.position.y,
-        },
-        data: {
-          kind: "element" as const,
-          title: region.label,
-          body: `${region.type} · 已确认可复用元素`,
-          sourceAssetId: selected.data.assetId,
-          tags: ["确认元素"],
-          imageUrl: payload.element?.contentUrl,
-        },
-        style: defaultSize.element,
-        zIndex: 10,
-      }]),
-    ]);
-    const relation: Relation = {
-      id: "element-edge-" + id,
-      sourceId: selected.id,
-      targetId: id,
-      type: "element-of",
-      layer: "provenance",
-      status: "confirmed",
-      origin: "human",
-    };
-    setEdges((current) => current.some((edge) => edge.id === relation.id) ? current : [...current, {
-      id: relation.id,
-      source: relation.sourceId,
-      target: id,
-      type: "smoothstep",
-      label: "来自素材",
-      data: relation,
-      zIndex: 0,
-      style: { stroke: "#64576f", strokeWidth: 2 },
-    }]);
-    notify("元素已确认，可用于导出");
   }
 
   return (
@@ -1494,12 +1405,12 @@ function WorkspaceCanvas() {
           ))}
         </nav>
         <div className="quota-card">
-          <div><span>{managedAi.available && !aiUseByok ? "平台 AI" : "实验模型"}</span><strong title={connectedModelLabel}>{connectedModelLabel}</strong></div>
-          <p>{managedAi.available && !aiUseByok ? "固定模型与提示词版本，结果计入正式质量评估。" : "使用你自己的 API，结果单独标记为实验数据。"}</p>
-          <button onClick={() => void loadCredentials()}>管理模型服务</button>
+          <div><span>AI 服务</span><strong title={connectedModelLabel}>{connectedModelLabel}</strong></div>
+          <p>拆解与设计助手统一使用这个模型。</p>
+          <button onClick={() => void loadCredentials()}>AI 设置</button>
         </div>
       </aside>
-      <div className="rail-resizer rail-resizer-left" role="separator" aria-label="调整左侧栏宽度" aria-orientation="vertical" onPointerDown={(event) => startRailResize("left", event)} />
+      <div className="rail-resizer rail-resizer-left" role="separator" aria-label="调整左侧栏宽度" aria-orientation="vertical" title="拖动调整左栏宽度" onDoubleClick={() => setLeftRailWidth(242)} onPointerDown={(event) => startRailResize("left", event)} />
 
       <section className={"canvas-area" + (rightPanning ? " is-right-panning" : "")} aria-label="灵感无限画布" onPointerDownCapture={(event) => { if (event.button === 2) setRightPanning(true); }}>
         <div className={"canvas-search" + (searchExpanded ? "" : " is-collapsed")} title="按标题、标签、文字、来源、颜色和拆解结果查找">
@@ -1546,11 +1457,11 @@ function WorkspaceCanvas() {
           onChange={(event) => event.target.files?.length && void addImages(event.target.files, true)}
         />
         <label className="relation-view" title="关联线只用于辅助整理，默认仅显示当前卡片相关关系">
-          <span>辅助关联</span>
+          <span>连线</span>
           <select value={relationView} onChange={(event) => setRelationView(event.target.value as RelationView)}>
-            <option value="selection">当前相关</option>
-            <option value="hidden">全部隐藏</option>
-            <option value="all">显示全部</option>
+            <option value="selection">所选卡片</option>
+            <option value="hidden">隐藏</option>
+            <option value="all">全部</option>
           </select>
         </label>
         <ReactFlow
@@ -1573,7 +1484,7 @@ function WorkspaceCanvas() {
           deleteKeyCode={null}
           nodesDraggable={!organizePreview}
           nodesConnectable={!organizePreview}
-          connectionRadius={32}
+          connectionRadius={48}
           elementsSelectable={!organizePreview}
           fitView
           minZoom={0.14}
@@ -1602,13 +1513,13 @@ function WorkspaceCanvas() {
           </aside>
         )}
       </section>
-      <div className="rail-resizer rail-resizer-right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" onPointerDown={(event) => startRailResize("right", event)} />
+      <div className="rail-resizer rail-resizer-right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" title="拖动调整右栏宽度" onDoubleClick={() => setRightRailWidth(322)} onPointerDown={(event) => startRailResize("right", event)} />
 
       <aside className="inspector">
         <div className="inspector-tabs">
-          <button className={rightTab === "asset" ? "active" : ""} onClick={() => setRightTab("asset")}>素材</button>
-          <button className={rightTab === "baseline" ? "active" : ""} onClick={() => setRightTab("baseline")}>设计基准</button>
-          <button className={rightTab === "export" ? "active" : ""} onClick={() => setRightTab("export")}>导出</button>
+          <button className={rightTab === "asset" ? "active" : ""} onClick={() => setRightTab("asset")}>参考</button>
+          <button className={rightTab === "baseline" ? "active" : ""} onClick={() => setRightTab("baseline")}>方案</button>
+          <button className={rightTab === "export" ? "active" : ""} onClick={() => setRightTab("export")}>输出</button>
         </div>
         {rightTab === "asset" ? (
           selectedIds.length > 1 ? (
@@ -1627,22 +1538,29 @@ function WorkspaceCanvas() {
               {isAnalyzableNode(selected) && <button className="analyze-button" onClick={() => void analyze(selected.id)} disabled={selected.data.status === "processing"}>✦ {selected.data.analysisSummary ? "重新拆解这个参考" : "拆解这个参考"}<small>使用已连接模型</small></button>}
               {!!selected.data.colors?.length && <section className="inspect-block"><div className="block-heading"><h3>颜色参考</h3><button onClick={() => navigator.clipboard.writeText(selected.data.colors?.join(", ") || "")}>复制全部</button></div><div className="palette-list">{selected.data.colors.map((color) => <button key={color} onClick={() => navigator.clipboard.writeText(color)}><i style={{ background: color }} /><span>颜色</span><code>{color}</code></button>)}</div></section>}
               {!!selected.data.principles?.length && <section className="inspect-block"><h3>可复用的设计要点</h3><ol className="principle-list">{selected.data.principles.map((item) => <li key={item}>{item}</li>)}</ol></section>}
-              {!!selected.data.regions?.length && <section className="inspect-block"><div className="block-heading"><h3>检测到的元素</h3><small>确认后才会导出</small></div><div className="region-list">{selected.data.regions.map((region) => <div key={region.id}><span className="region-preview">{region.type}</span><div><strong>{region.label}</strong><small>{region.confirmed ? "已经确认" : "等待确认"}</small></div><button disabled={region.confirmed} onClick={() => void confirmRegion(region)}>{region.confirmed ? "已确认" : "确认使用"}</button></div>)}</div></section>}
+              {!!selected.data.regions?.length && <section className="inspect-block"><div className="block-heading"><h3>识别到的组件</h3><small>生成方案时自动汇总</small></div><div className="region-list simple">{selected.data.regions.map((region) => <div key={region.id}><span className="region-preview">{region.type}</span><div><strong>{region.label}</strong><small>{Math.round((region.confidence ?? 0) * 100)}% 可信</small></div></div>)}</div></section>}
             </>
           ) : <div className="empty-inspector"><strong>从画布开始</strong><p>拖动空白处框选多张卡片，或选择一张参考查看拆解结果。</p></div>
         ) : rightTab === "baseline" ? (
           <section className="contract-panel">
-            <span className="step-kicker">设计基准工作区</span>
-            <h2>把多份参考合并成可复用规则</h2>
-            <p>比较颜色、排版、组件和风格差异，确认后再进入导出工作区。</p>
-            <button className="analyze-button" onClick={() => void previewBaseline()} disabled={contractBusy}>✦ {contractBusy ? "正在整理…" : "生成设计基准"}</button>
-            {contract && <div className="contract-content"><h3>{contract.title}</h3><h4>必须保持的设计原则</h4><ol>{contract.principles.map((item) => <li key={item}>{item}</li>)}</ol><h4>颜色</h4><div className="contract-swatches">{contract.tokens.colors.map((item) => <span key={item.name} title={item.name} style={{ background: item.value }} />)}</div>{!!contract.conflicts.length && <div className="contract-warning"><strong>需要你决定</strong>{contract.conflicts.map((item) => <p key={item}>{item}</p>)}</div>}<button className="button primary wide" onClick={() => void confirmBaseline()}>确认这套设计基准</button></div>}
-          </section>
-        ) : (
+            <span className="step-kicker">第 2 步</span><h2>设计方案</h2>
+            <p>汇总已拆解的参考。选中卡片后只汇总所选；未选择时使用全部已拆解参考。</p>
+            <button className="analyze-button" onClick={() => void previewBaseline()} disabled={contractBusy}>✦ {contractBusy ? "正在汇总…" : selectedNodes.some(isAnalyzableNode) ? `汇总所选 ${selectedNodes.filter(isAnalyzableNode).length} 张` : "汇总全部参考"}</button>
+            {contract && <div className="contract-content">
+              <div className="contract-title"><div><h3>{contract.title}</h3><small>{contract.sourceAssetIds.length} 张参考</small></div><span>点 × 移除不采用的内容</span></div>
+              <h4>设计原则</h4><div className="contract-items">{contract.principles.map((item, index) => <div key={item}><span>{item}</span><button onClick={() => removeContractItem("principles", index)} aria-label="移除设计原则">×</button></div>)}</div>
+              {!!contract.tokens.colors.length && <><h4>颜色</h4><div className="contract-items compact">{contract.tokens.colors.map((item, index) => <div key={item.name}><i style={{ background: item.value }} /><span>{item.value}</span><button onClick={() => removeContractItem("colors", index)} aria-label="移除颜色">×</button></div>)}</div></>}
+              {!!contract.tokens.spacing.length && <><h4>间距</h4><div className="contract-items compact">{contract.tokens.spacing.map((item, index) => <div key={`${item}-${index}`}><span>{item}px</span><button onClick={() => removeContractItem("spacing", index)} aria-label="移除间距">×</button></div>)}</div></>}
+              {!!contract.tokens.radii.length && <><h4>圆角</h4><div className="contract-items compact">{contract.tokens.radii.map((item, index) => <div key={`${item}-${index}`}><span>{item}px</span><button onClick={() => removeContractItem("radii", index)} aria-label="移除圆角">×</button></div>)}</div></>}
+              {!!contract.components.length && <><h4>组件</h4><div className="contract-items">{contract.components.map((item, index) => <div key={item.name}><span><b>{item.name}</b>{item.rules[0] && <small>{item.rules[0]}</small>}</span><button onClick={() => removeContractItem("components", index)} aria-label="移除组件">×</button></div>)}</div></>}
+              {!!contract.conflicts.length && <div className="contract-warning"><strong>需要确认</strong>{contract.conflicts.map((item) => <p key={item}>{item}</p>)}</div>}
+              <button className="button primary wide" onClick={() => void confirmBaseline()}>保存设计方案</button>
+            </div>}
+          </section>        ) : (
           <section className="export-panel export-flow">
-            <span className="step-kicker">下一步工作区</span>
-            <h2>从参考走到可用结果</h2>
-            <p>先选想完成的事情，再选要在哪个工具继续。系统只准备这条路径真正需要的内容。</p>
+            <span className="step-kicker">第 3 步</span>
+            <h2>输出</h2>
+            <p>选择用途和接下来使用的工具。</p>
 
             <div className="export-progress" aria-label="导出步骤">
               <span className="is-active"><i>1</i>想做什么</span>
@@ -1709,7 +1627,7 @@ function WorkspaceCanvas() {
             {exportComplete && (
               <div className="export-receipt" role="status">
                 <span>✓</span>
-                <div><strong>已经下载</strong><small>解压后先打开 START_HERE.html，它会告诉你下一步点哪里、复制什么。</small></div>
+                <div><strong>已下载</strong><small>解压后查看“使用说明.txt”。Figma 包内含可导入的本地插件。</small></div>
               </div>
             )}
           </section>
@@ -1773,28 +1691,14 @@ function WorkspaceCanvas() {
 
       {deleteRequest && <div className="modal-backdrop"><section className="modal confirm-modal"><span className="confirm-icon">⌫</span><h2>{deleteRequest.title}</h2><p>{deleteRequest.body}</p><footer><button className="button soft" onClick={() => setDeleteRequest(null)}>取消</button><button className="button danger-fill" onClick={() => deleteRequest.kind === "board" ? void performDeleteBoard(deleteRequest.ids[0]) : performDeleteNodes(deleteRequest.ids)}>确认删除</button></footer></section></div>}
 
-      {connection && <div className="modal-backdrop"><section className="modal relation-modal"><button className="modal-close" onClick={() => setConnection(null)}>×</button><span className="step-kicker">建立关联</span><h2>这两张参考如何一起使用？</h2><p>关系应帮助后续查找和整理，不是为了把画布连满。</p><div className="relation-options">{relationChoices.map((item) => <button key={item.type} onClick={() => confirmConnection(item.type)}>{item.label}</button>)}</div></section></div>}
-
       {modal === "import" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal import-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">第 1 步 · 采集参考</span><h2>加入当前画布</h2><p>上传图片或整个灵感文件夹，也可以粘贴文字、输入网页地址。网页使用插件采集时会保存完整截图。</p><div className="import-choice"><button className="import-drop" onClick={() => fileInput.current?.click()}><span>⇧</span><strong>上传图片</strong><small>JPG、PNG、WebP · 单张最大 20 MB</small></button><button className="import-drop folder-drop" onClick={() => folderInput.current?.click()}><span>▱</span><strong>上传文件夹</strong><small>自动建立同名分组并排列图片</small></button></div><div className="url-entry"><input autoFocus value={urlValue} onChange={(event) => setUrlValue(event.target.value)} placeholder="公开 URL 或参考文字" /><button onClick={() => urlValue.trim() && void addAsset(urlValue.trim())}>加入</button></div></section></div>}
 
-      {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal model-service-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">AI 设置</span><h2>选择 AI 运行方式</h2><p>正式体验由平台固定模型与提示词版本，便于持续优化；自带 API 保留给需要测试不同模型的高级用户。</p>
-        <div className="ai-mode-grid" role="group" aria-label="AI 运行方式">
-          <button className={!aiUseByok ? "is-active" : ""} disabled={!managedAi.available} onClick={() => chooseAiRunMode("managed")}>
-            <span>推荐</span><strong>平台托管 AI</strong><small>{managedAi.available ? `${managedAi.model} · 拆解与助手统一评测` : "尚未启用 · 公开版将按点数或套餐提供"}</small><em>{!aiUseByok ? "当前使用" : managedAi.available ? "切换" : "准备中"}</em>
-          </button>
-          <button className={aiUseByok ? "is-active" : ""} onClick={() => chooseAiRunMode("byok")}>
-            <span>高级实验</span><strong>使用自己的 API</strong><small>费用由模型平台收取，输出差异不计入正式质量口径</small><em>{aiUseByok ? "当前使用" : "切换"}</em>
-          </button>
-        </div>
-        <p className="ai-mode-note"><b>为什么分开？</b> 模型、提示词和输入结构固定后，才能判断问题来自提示词、模型能力还是产品定义。</p>
-        {credentialState.length > 0 && <><div className="credential-section-title"><span>高级实验模型</span><small>紫色标记为当前使用</small></div><div className="credential-list">{credentialState.map((item) => { const provider = item.provider as ProviderId; const catalog = providerCatalog[provider]; return <article key={item.provider} className={"credential-card" + (item.active ? " is-active" : "")}><button className="credential-card-main" disabled={credentialBusyProvider === provider} onClick={() => void activateCredential(provider, reconnectModel(provider, item.model))}><strong>{catalog?.label ?? item.provider}</strong><span>{item.model} · •••• {item.lastFour}</span><small>{credentialBusyProvider === provider ? "正在验证…" : provider === "moonshot" && item.model === "kimi-k2.5" ? "旧模型 · 点击迁移到 kimi-k3" : item.active ? "● 当前使用 · 点击重新验证" : "点击连接并设为当前"}</small></button><button className="credential-remove" onClick={() => setCredentialToDelete(provider)} aria-label={"删除 " + (catalog?.label ?? item.provider)}>×</button></article>; })}</div></>}
-        <div className="credential-section-title"><span>{credentialState.some((item) => item.provider === credentialForm.provider) ? "更新实验模型" : "添加实验模型"}</span><small>模型会影响视觉能力、速度和费用</small></div>
-        <div className="provider-picker"><label><span>开放平台</span><select value={credentialForm.provider} onChange={(event) => { const provider = event.target.value as ProviderId; const saved = credentialState.find((item) => item.provider === provider); setCredentialForm({ ...credentialForm, provider, model: saved?.model ?? providerCatalog[provider].models[0], apiKey: "" }); }}>{Object.entries(providerCatalog).map(([id, item]) => <option key={id} value={id}>{item.label}{item.supportsVision ? " · 图片与文字" : " · 仅文字"}</option>)}</select></label><div className="provider-summary"><div><strong>{selectedProvider.label}</strong><small>{selectedProvider.description}</small></div><a href={selectedProvider.platformUrl} target="_blank" rel="noreferrer">开放平台 ↗</a></div></div>
-        <div className="credential-form"><label><span>API Key{credentialState.some((item) => item.provider === credentialForm.provider) ? "（留空则使用已保存 Key）" : ""}</span><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value })} placeholder={credentialState.some((item) => item.provider === credentialForm.provider) ? "使用已保存的 Key" : "粘贴 API Key"} /></label><label><span>分析模型</span><input list="provider-model-options" value={credentialForm.model} onChange={(event) => setCredentialForm({ ...credentialForm, model: event.target.value })} placeholder={selectedProvider.models[0]} /><datalist id="provider-model-options">{selectedProvider.models.map((model) => <option key={model} value={model} />)}</datalist></label><button className="button primary" disabled={(!credentialForm.apiKey && !credentialState.some((item) => item.provider === credentialForm.provider)) || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "正在验证…" : credentialState.some((item) => item.provider === credentialForm.provider) && !credentialForm.apiKey ? "验证并更新" : "验证并保存"}</button></div><p className="credential-form-note">不了解模型差异时不必配置；平台托管模式启用后会自动选择经过场景评测的模型。</p>
+      {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal model-service-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">AI 设置</span><h2>GPT-5.6 Terra</h2><p>网页、图片拆解和设计助手统一使用此模型。产品会固定模型与提示词版本，便于比较每次更新是否真的更好。</p>
+        <div className="model-fixed-card"><div><span>{managedAi.available || openAiCredential ? "已连接" : "尚未连接"}</span><strong>GPT-5.6 Terra</strong></div><small>{managedAi.available ? "可直接使用" : openAiCredential ? `OpenAI Key · •••• ${openAiCredential.lastFour}` : "粘贴 OpenAI API Key 后即可使用"}</small></div>
+        {!managedAi.available && <div className="credential-form"><label><span>OpenAI API Key</span><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value, provider: "openai", model: providerCatalog.openai.models[0] })} placeholder={openAiCredential ? "留空则使用已保存 Key" : "粘贴 API Key"} /></label><div className="credential-actions"><a href={providerCatalog.openai.platformUrl} target="_blank" rel="noreferrer">获取 API Key ↗</a><button className="button primary" disabled={(!credentialForm.apiKey && !openAiCredential) || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "正在验证…" : openAiCredential && !credentialForm.apiKey ? "重新验证" : "连接"}</button></div></div>}
+        {!managedAi.available && openAiCredential && <button className="credential-remove-link" onClick={() => setCredentialToDelete("openai")}>移除已保存的 API Key</button>}
       </section></div>}
-
-
-      {credentialToDelete && <div className="modal-backdrop"><section className="modal credential-delete-modal"><span className="step-kicker">删除模型服务</span><h2>删除 {providerCatalog[credentialToDelete].label}？</h2><p>保存的加密 Key 和模型设置会立即删除，之后需要重新添加才能使用。</p><div className="confirm-actions"><button className="button soft" onClick={() => setCredentialToDelete(null)}>取消</button><button className="button danger" onClick={() => void deleteCredential(credentialToDelete)}>删除</button></div></section></div>}
+      {credentialToDelete && <div className="modal-backdrop"><section className="modal credential-delete-modal"><span className="step-kicker">删除模型服务</span><h2>移除 OpenAI API Key？</h2><p>移除后将无法使用拆解与设计助手，重新连接即可恢复。</p><div className="confirm-actions"><button className="button soft" onClick={() => setCredentialToDelete(null)}>取消</button><button className="button danger" onClick={() => void deleteCredential(credentialToDelete)}>删除</button></div></section></div>}
 
       {toast && <div className="toast"><span>✓</span>{toast}</div>}
     </main>
@@ -1811,11 +1715,6 @@ function isAnalyzableNode(node: CanvasNode) {
 
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
-}
-
-function reconnectModel(provider: ProviderId, model?: string) {
-  if (provider === "moonshot" && model === "kimi-k2.5") return "kimi-k3";
-  return model || providerCatalog[provider].models[0];
 }
 
 function miniMapNodeColor(node: CanvasNode) {

@@ -2,21 +2,22 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("正式平台模式与 BYOK 实验模式分开运行", async () => {
-  const [credentials, route, workspace] = await Promise.all([
+test("产品固定模型，运行方式不暴露给普通用户", async () => {
+  const [credentials, route, workspace, ai, domain] = await Promise.all([
     readFile(new URL("../app/api/_credentials.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/api/ai-credentials/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/InspoWorkspace.tsx", import.meta.url), "utf8"),
+    readFile(new URL("../packages/ai/src/index.ts", import.meta.url), "utf8"),
+    readFile(new URL("../packages/domain/src/index.ts", import.meta.url), "utf8"),
   ]);
   assert.match(credentials, /runMode: "managed"/);
   assert.match(credentials, /runMode: "byok"/);
-  assert.match(credentials, /MANAGED_AI_PROVIDER/);
   assert.match(route, /managedAiSummary/);
-  assert.match(workspace, /平台托管 AI/);
-  assert.match(workspace, /高级实验/);
-  assert.match(workspace, /inspoatlas:ai-run-mode/);
+  assert.match(workspace, /GPT-5\.6 Terra/);
+  assert.doesNotMatch(workspace, /平台托管 AI|高级实验|inspoatlas:ai-run-mode/);
+  assert.match(ai, /gpt-5\.6-terra/);
+  assert.match(domain, /models: \["gpt-5\.6-terra"\]/);
 });
-
 test("拆解与设计助手记录版本、运行方式和行为事件", async () => {
   const [analysis, assistant, ai] = await Promise.all([
     readFile(new URL("../app/api/analyses/route.ts", import.meta.url), "utf8"),

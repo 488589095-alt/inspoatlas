@@ -14,8 +14,8 @@ test("多选、自动分组、画布查找、文件夹导入与真实账号入�
   assert.match(workspace, /ratio >= 0\.42/);
   assert.match(workspace, /双击原位修改画布名称/);
   assert.doesNotMatch(workspace, /className="workspace-modes"/);
-  assert.match(workspace, /设计基准工作区/);
-  assert.match(workspace, /导出工作区/);
+  assert.match(workspace, /<h2>设计方案<\/h2>/);
+  assert.match(workspace, /<h2>输出<\/h2>/);
   assert.match(workspace, /is-search-match/);
   assert.match(workspace, /webkitdirectory/);
   assert.match(workspace, /addImages\(event\.target\.files, true\)/);

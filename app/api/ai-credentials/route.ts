@@ -33,7 +33,7 @@ export async function POST(request: Request) {
   try {
     const user = currentUser(request); const input = schema.parse(await request.json()); await ensureCoreTables();
     const defaults = providerDefaults[input.provider];
-    const config: ProviderConfig = { provider: input.provider, apiKey: input.apiKey, model: input.model ?? defaults.model, baseUrl: input.baseUrl ?? defaults.baseUrl, supportsVision: defaults.supportsVision };
+    const config: ProviderConfig = { provider: input.provider, apiKey: input.apiKey, model: input.provider === "openai" ? defaults.model : input.model ?? defaults.model, baseUrl: input.baseUrl ?? defaults.baseUrl, supportsVision: defaults.supportsVision };
     await testProvider(config);
     const encrypted = await encryptApiKey(input.apiKey, credentialMasterKey());
     const now = new Date().toISOString();
@@ -56,7 +56,7 @@ export async function PATCH(request: Request) {
     const config: ProviderConfig = {
       provider: row.provider,
       apiKey: await decryptApiKey({ ciphertext: row.ciphertext, iv: row.iv, authTag: row.authTag }, credentialMasterKey()),
-      model: input.model ?? row.model,
+      model: input.provider === "openai" ? providerDefaults.openai.model : input.model ?? row.model,
       baseUrl: row.baseUrl,
       supportsVision: row.supportsVision,
     };

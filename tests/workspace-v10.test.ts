@@ -18,12 +18,13 @@ test("辅助连线默认只显示当前相关且连接热区更大", async () =>
     readFile(new URL("../app/workspace/CardNode.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/workspace-v10.css", import.meta.url), "utf8"),
   ]);
-  assert.match(workspace, /辅助关联/);
+  assert.match(workspace, /<span>连线<\/span>/);
   assert.match(workspace, /selectedSet\.has\(edge\.source\) \|\| selectedSet\.has\(edge\.target\)/);
-  assert.match(workspace, /connectionRadius=\{32\}/);
-  assert.doesNotMatch(workspace, /value="related"/);
-  assert.match(card, /连接到这张卡片/);
-  assert.match(styles, /width: 18px !important/);
+  assert.match(workspace, /connectionRadius=\{48\}/);
+  assert.match(workspace, /type: "complements"/);
+  assert.doesNotMatch(workspace, /relation-modal/);
+  assert.match(card, /拖到这里完成连接/);
+  assert.match(styles, /width: 24px !important/);
   assert.match(styles, /cursor: grabbing !important/);
 });
 

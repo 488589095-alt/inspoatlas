@@ -64,7 +64,7 @@ export function sceneToFlow(scene: BoardSceneV2): { nodes: CanvasNode[]; edges: 
     });
   }
 
-  const nodes = scene.nodes.filter((item) => item.kind !== "analysis").map((item): CanvasNode => {
+  const nodes = scene.nodes.filter((item) => item.kind !== "analysis" && item.kind !== "element").map((item): CanvasNode => {
     const assetId = String(item.data.assetId || item.id);
     return {
       id: item.id,
@@ -138,7 +138,7 @@ export const relationLabel: Record<string, string> = {
   "contract-derived-from": "支持这条规则",
   "similar-style": "相似风格",
   "same-component": "相同结构",
-  complements: "可组合使用",
+  complements: "关联",
   contrasts: "对比参考",
   "same-project": "同一项目",
 };

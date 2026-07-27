@@ -46,10 +46,10 @@ export const exportDestinationsByGoal: Record<ProductionGoal, Array<{
       purpose: "figma-bridge",
       icon: "◇",
       title: "在 Figma 里继续编辑",
-      description: "准备变量、组件草稿、来源和导入说明，适合后续人工细化。",
+      description: "生成变量和组件草稿，并附带可在 Figma Desktop 运行的导入插件。",
       deliverable: "Figma 导入包",
       action: "准备 Figma 导入",
-      nextStep: "下载后在 Figma 中运行 InspoAtlas Bridge，选择包内的 figma-import.json。",
+      nextStep: "解压后在 Figma Desktop 导入包内插件，再选择 figma-import.json。",
       recommended: true,
     },
     {
@@ -60,7 +60,7 @@ export const exportDestinationsByGoal: Record<ProductionGoal, Array<{
       description: "生成结构、设计规范、实现提示词和两轮检查清单。",
       deliverable: "编码 AI 任务",
       action: "生成编码任务",
-      nextStep: "把 START_HERE.html 中的任务交给 Codex、Claude Code 或 Cursor。",
+      nextStep: "打开“使用说明.txt”，把 COPY_TO_AI.txt 交给 Codex、Claude Code 或 Cursor。",
     },
   ],
   explore: [
@@ -109,7 +109,7 @@ export const exportDestinationsByGoal: Record<ProductionGoal, Array<{
       description: "生成母版、内容区规则、组件矩阵和每次活动需要填写的内容表。",
       deliverable: "Figma 模板系统",
       action: "生成模板系统",
-      nextStep: "先在 Figma 建立母版，再用内容槽位替换标题、图片、权益和 CTA。",
+      nextStep: "用包内插件建立变量和组件草稿，再按内容区规则完成母版。",
       recommended: true,
       glossary: {
         term: "什么是可替换内容区（Slots）？",

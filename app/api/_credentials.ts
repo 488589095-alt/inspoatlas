@@ -46,7 +46,7 @@ export function managedAiSummary() {
   return {
     available: Boolean(values.MANAGED_AI_API_KEY),
     provider,
-    model: values.MANAGED_AI_MODEL ?? defaults.model,
+    model: defaults.model,
     supportsVision: defaults.supportsVision,
   };
 }
@@ -59,7 +59,7 @@ function managedCredential(needsVision: boolean): LoadedCredential | null {
   const config: LoadedCredential = {
     provider: summary.provider,
     apiKey: values.MANAGED_AI_API_KEY,
-    model: summary.model ?? defaults.model,
+    model: defaults.model,
     baseUrl: values.MANAGED_AI_BASE_URL ?? defaults.baseUrl,
     supportsVision: defaults.supportsVision,
     runMode: "managed",
@@ -75,5 +75,5 @@ export async function loadCredential(ownerId: string, provider?: string, needsVi
   const row = rows.find((item) => (!provider || item.provider === provider) && (!needsVision || item.supportsVision));
   if (!row) return null;
   const apiKey = await decryptApiKey({ ciphertext: row.ciphertext, iv: row.iv, authTag: row.authTag }, credentialMasterKey());
-  return { provider: row.provider, apiKey, model: row.model, baseUrl: row.baseUrl, supportsVision: row.supportsVision, runMode: "byok" } satisfies LoadedCredential;
+  return { provider: row.provider, apiKey, model: row.provider === "openai" ? providerDefaults.openai.model : row.model, baseUrl: row.baseUrl, supportsVision: row.supportsVision, runMode: "byok" } satisfies LoadedCredential;
 }

@@ -43,7 +43,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
     <article className={"canvas-card card-" + (data.note ? "note" : data.kind) + (selected ? " is-selected" : "") + (data.preview ? " is-preview" : "")}>
       <NodeResizer minWidth={200} minHeight={130} isVisible={selected} />
       <div className="card-surface">
-        <Handle type="target" position={Position.Left} className="node-handle" title="连接到这张卡片" />
+        <Handle type="target" position={Position.Left} className="node-handle" title="拖到这里完成连接" />
         <header className="card-head">
           <span className="card-kind">{data.note ? "备注" : labels[data.kind]}</span>
           <button className="node-menu nodrag" aria-label="卡片操作" onClick={(event) => { event.stopPropagation(); action("menu", event); }}>•••</button>
@@ -86,7 +86,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
             <small>{data.analysisExpanded ? "收起" : hasAnalysis ? "展开" : "开始"}</small>
           </button>
         )}
-        <Handle type="source" position={Position.Right} className="node-handle" title="拖动建立辅助关联" />
+        <Handle type="source" position={Position.Right} className="node-handle" title="拖动连接卡片" />
       </div>
 
       {isSource && data.analysisExpanded && (
@@ -119,7 +119,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
               )}
               {!!data.regions?.length && (
                 <div className="analysis-section analysis-elements">
-                  <div><h4>检测到的元素</h4><small>{data.regions.length} 个候选，确认后才能导出</small></div>
+                  <div><h4>识别到的组件</h4><small>{data.regions.length} 项，会自动进入设计方案</small></div>
                   <button onClick={() => action("show-details")}>在右侧查看</button>
                 </div>
               )}

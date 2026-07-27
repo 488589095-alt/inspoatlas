@@ -24,6 +24,7 @@ export function buildOrganizePreview(nodes: CanvasNode[], selectedIds: string[])
     !node.parentId &&
     node.data.kind !== "group" &&
     node.data.kind !== "analysis" &&
+    node.data.kind !== "element" &&
     !node.data.pinned &&
     (!selectionScope || selected.has(node.id)),
   );
@@ -135,7 +136,7 @@ function layoutMembers(members: CanvasNode[], parentId: string) {
         extent: "parent",
         position: { x, y },
         selected: false,
-        data: { ...node.data, preview: true },
+        data: { ...node.data, analysisExpanded: false, preview: true },
         zIndex: 10,
       });
     });
@@ -145,9 +146,9 @@ function layoutMembers(members: CanvasNode[], parentId: string) {
 }
 
 function nodeWidth(node: CanvasNode) {
-  return Number(node.measured?.width ?? node.width ?? node.style?.width ?? 286);
+  return Number(node.style?.width ?? node.width ?? 286);
 }
 
 function nodeHeight(node: CanvasNode) {
-  return Number(node.measured?.height ?? node.height ?? node.style?.height ?? 180);
+  return Number(node.style?.height ?? node.height ?? 180);
 }

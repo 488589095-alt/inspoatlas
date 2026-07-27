@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-test("模型凭据可安全复用、切换和删除", async () => {
+test("固定 OpenAI 模型凭据可安全复用和删除", async () => {
   const [route, workspace, ai, domain] = await Promise.all([
     readFile(new URL("../app/api/ai-credentials/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/InspoWorkspace.tsx", import.meta.url), "utf8"),
@@ -14,11 +14,10 @@ test("模型凭据可安全复用、切换和删除", async () => {
   assert.match(route, /decryptApiKey/);
   assert.match(route, /active: index === 0/);
   assert.match(route, /export async function DELETE/);
-  assert.match(workspace, /activateCredential/);
   assert.match(workspace, /deleteCredential/);
-  assert.match(workspace, /使用已保存的 Key/);
+  assert.match(workspace, /留空则使用已保存 Key/);
   assert.match(workspace, /credentialToDelete/);
-  assert.match(workspace, /reconnectModel/);
+  assert.match(workspace, /GPT-5\.6 Terra/);
   assert.match(domain, /models: \["kimi-k3", "kimi-k2\.6"/);
   assert.doesNotMatch(ai, /messages, temperature:/);
   assert.match(ai, /Kimi API Key 无效/);
