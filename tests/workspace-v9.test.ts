@@ -44,7 +44,7 @@ test("网页正文可滚动且无截图素材不再发起图片请求", async ()
   assert.match(styles, /overflow-y: auto/);
 });
 
-test("方向助手独立于固定流程并能把建议放回画布", async () => {
+test("设计助手独立于固定流程并能把建议放回画布", async () => {
   const [workspace, route, ai, styles] = await Promise.all([
     readFile(new URL("../app/InspoWorkspace.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/boards/[id]/design-assistant/route.ts", import.meta.url), "utf8"),
@@ -52,6 +52,8 @@ test("方向助手独立于固定流程并能把建议放回画布", async () =>
     readFile(new URL("../app/workspace-v11.css", import.meta.url), "utf8"),
   ]);
   assert.match(workspace, /className="canvas-director"/);
+  assert.match(workspace, /className=\{"assistant-orb"/);
+  assert.match(workspace, /设计助手/);
   assert.match(workspace, /设计目标/);
   assert.match(workspace, /assistantScope === "selection"/);
   assert.match(workspace, /全部参考/);

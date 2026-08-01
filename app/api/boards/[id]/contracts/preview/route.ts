@@ -14,10 +14,12 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const sourceAssets = await db.select({ id: assets.id }).from(assets).where(and(eq(assets.boardId, id), eq(assets.ownerId, user.id)));
     if (!sourceAssets.length) throw new HttpError(409, "请先导入并分析素材");
     const rows = await db.select().from(analyses).where(and(eq(analyses.ownerId, user.id), inArray(analyses.assetId, sourceAssets.map((item) => item.id))));
+    const requested = new Set(input.assetIds ?? []);
     const ready = rows.flatMap((row) => {
+      if (requested.size && !requested.has(row.assetId)) return [];
       const parsed = analysisResultSchema.safeParse(row.result); return parsed.success ? [{ assetId: row.assetId, result: parsed.data }] : [];
     });
-    if (!ready.length) throw new HttpError(409, "至少拆解一张参考后才能生成设计方案");
+    if (!ready.length) throw new HttpError(409, requested.size ? "所选卡片还没有可用的拆解结果" : "至少拆解一张参考后才能生成设计方案");
     return Response.json({ contract: buildContract(board.title, ready) });
   } catch (error) { return errorResponse(error); }
 }

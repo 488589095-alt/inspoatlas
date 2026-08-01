@@ -36,7 +36,49 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
     );
   }
 
-  const isSource = sourceKinds.has(data.kind) && !data.note;
+  if (data.workflowStage === "analysis") {
+    const busy = data.status === "processing";
+    return (
+      <article className={"canvas-card workflow-card analysis-workflow-card" + (selected ? " is-selected" : "") + (busy ? " is-processing" : "")}>
+        <NodeResizer minWidth={260} minHeight={170} isVisible={selected} />
+        <Handle id="input" type="target" position={Position.Left} className="node-handle node-port-input nodrag" title="连接来源" />
+        <Handle id="output" type="source" position={Position.Right} className="node-handle node-port-output nodrag" title="拖出并整合为方案" />
+        <div className="card-surface">
+          <header className="card-head"><span className="card-kind">拆解</span><button className="node-menu nodrag" aria-label="拆解卡操作" onClick={(event) => { event.stopPropagation(); action("menu", event); }}>•••</button></header>
+          <div className="workflow-card-content">
+            <small>来自 {String(data.sourceTitle || "参考卡片")}</small>
+            <InlineTitle id={id} value={data.title} />
+            {busy ? <div className="workflow-processing"><i /><span>正在读取版式、视觉和组件</span></div> : <p>{data.analysisSummary || data.analysisError || "等待拆解结果"}</p>}
+            {!busy && <div className="workflow-card-details">
+              {!!data.principles?.length && <><b>可复用要点</b><ul>{data.principles.slice(0, 4).map((item) => <li key={item}>{item}</li>)}</ul></>}
+              {!!data.colors?.length && <div className="workflow-colors">{data.colors.slice(0, 7).map((color) => <i key={color} style={{ background: color }} title={color} />)}</div>}
+            </div>}
+          </div>
+          <footer className="workflow-card-footer"><span>{busy ? "拆解中" : "可多选后整合"}</span><small>拖动右侧 ＋ 继续</small></footer>
+        </div>
+      </article>
+    );
+  }
+
+  if (data.workflowStage === "contract") {
+    const contract = data.contract;
+    return (
+      <article className={"canvas-card workflow-card contract-workflow-card" + (selected ? " is-selected" : "")}>
+        <NodeResizer minWidth={280} minHeight={190} isVisible={selected} />
+        <Handle id="input" type="target" position={Position.Left} className="node-handle node-port-input nodrag" title="连接拆解结果" />
+        <Handle id="output" type="source" position={Position.Right} className="node-handle node-port-output nodrag" title="拖出并选择输出" />
+        <button className="contract-card-button nodrag" onClick={(event) => { event.stopPropagation(); action("open-export"); }}>
+          <span className="card-kind">方案</span>
+          <InlineTitle id={id} value={data.title} />
+          <small>{contract?.sourceAssetIds.length || 0} 张参考 · {contract?.components.length || 0} 个组件</small>
+          <p>{contract?.principles.slice(0, 2).join("；") || "打开后检查方案并选择输出方式"}</p>
+          <b>打开输出选项 <span>→</span></b>
+        </button>
+      </article>
+    );
+  }
+
+  const isSource = sourceKinds.has(data.kind) && !data.note && Boolean(data.assetId);
   const hasAnalysis = Boolean(data.analysisSummary || data.analysisId || data.status === "processing" || data.analysisError);
 
   return (
@@ -87,7 +129,6 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
             <small>{data.analysisExpanded ? "收起" : hasAnalysis ? "展开" : "开始"}</small>
           </button>
         )}
-        <Handle type="source" position={Position.Right} className="node-handle" title="拖动连接卡片" />
       </div>
 
       {isSource && data.analysisExpanded && (

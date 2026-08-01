@@ -26,6 +26,7 @@ import {
   type ProductionGoal,
 } from "./exportOptions";
 import { CardNode } from "./workspace/CardNode";
+import { RelationEdge } from "./workspace/RelationEdge";
 import { UserMenu } from "./workspace/UserMenu";
 import { buildOrganizePreview, type OrganizePreview } from "./workspace/organize";
 import {
@@ -41,6 +42,7 @@ import "@xyflow/react/dist/style.css";
 import "./export.css";
 
 const nodeTypes = { inspo: CardNode };
+const edgeTypes = { relation: RelationEdge };
 const sourceKinds = new Set(["image", "web", "text"]);
 const defaultSize: Record<CardData["kind"], { width: number; height: number }> = {
   image: { width: 300, height: 340 },
@@ -54,6 +56,8 @@ const canvasSnapGrid: [number, number] = [8, 8];
 
 type WorkspaceModal = "import" | "credentials" | null;
 type RelationView = "hidden" | "selection" | "all";
+type SearchKind = "all" | "image" | "web" | "text" | "analysis" | "contract" | "group";
+type NextStepMenu = { sourceId: string; x: number; y: number };
 type ContextMenu = { kind: "node" | "board"; id: string; x: number; y: number };
 type DeleteRequest = { kind: "board" | "nodes"; ids: string[]; title: string; body: string };
 type AssistantScope = "selection" | "board";
@@ -68,6 +72,15 @@ type AssistantMessage = {
   feedback?: "helpful" | "needs-work";
 };
 type ManagedAiState = { available: boolean; provider: ProviderId | null; model: string | null; supportsVision: boolean };
+const searchKindOptions: Array<{ id: SearchKind; label: string; icon: string }> = [
+  { id: "all", label: "全部", icon: "⌕" },
+  { id: "image", label: "图片", icon: "▧" },
+  { id: "web", label: "网页", icon: "◎" },
+  { id: "text", label: "文字", icon: "≡" },
+  { id: "analysis", label: "拆解", icon: "✦" },
+  { id: "contract", label: "方案", icon: "◇" },
+  { id: "group", label: "分组", icon: "▱" },
+];
 
 function WorkspaceCanvas() {
   const [boards, setBoards] = useState<BoardSummary[]>([]);
@@ -78,6 +91,7 @@ function WorkspaceCanvas() {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [search, setSearch] = useState("");
   const [searchExpanded, setSearchExpanded] = useState(false);
+  const [searchKind, setSearchKind] = useState<SearchKind>("all");
   const [searchCursor, setSearchCursor] = useState(0);
   const [showMiniMap, setShowMiniMap] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
@@ -95,6 +109,9 @@ function WorkspaceCanvas() {
   const [boardDraft, setBoardDraft] = useState("");
   const [contract, setContract] = useState<DesignContract | null>(null);
   const [contractBusy, setContractBusy] = useState(false);
+  const [contractSourceNodeIds, setContractSourceNodeIds] = useState<string[]>([]);
+  const [workflowOverlay, setWorkflowOverlay] = useState<"contract" | "export" | null>(null);
+  const [nextStepMenu, setNextStepMenu] = useState<NextStepMenu | null>(null);
   const [productionGoal, setProductionGoal] = useState<ProductionGoal>("recreate");
   const [exportDestination, setExportDestination] = useState<ExportDestination>("figma-design");
   const [exportBusy, setExportBusy] = useState(false);
@@ -130,11 +147,26 @@ function WorkspaceCanvas() {
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
   const edgesRef = useRef<Edge[]>([]);
+  const connectionSourceRef = useRef<string | null>(null);
+  const connectionCompletedRef = useRef(false);
   const { fitView, screenToFlowPosition, setViewport: setFlowViewport } = useReactFlow();
 
   useEffect(() => {
     edgesRef.current = edges;
   }, [edges]);
+
+  useEffect(() => {
+    const editEdgeLabel = (event: Event) => {
+      const detail = (event as CustomEvent<{ id: string; label: string }>).detail;
+      setEdges((current) => current.map((edge) => edge.id === detail.id ? {
+        ...edge,
+        label: detail.label,
+        data: { ...(edge.data ?? {}), explanation: detail.label },
+      } : edge));
+    };
+    window.addEventListener("inspo:edge-label", editEdgeLabel);
+    return () => window.removeEventListener("inspo:edge-label", editEdgeLabel);
+  }, [setEdges]);
 
 
 
@@ -142,22 +174,24 @@ function WorkspaceCanvas() {
   const selected = selectedNodes[0];
   const exportDestinations = exportDestinationsByGoal[productionGoal];
   const activeDestination = exportDestinations.find((item) => item.id === exportDestination) ?? exportDestinations[0];
+  const searchResults = useMemo(() => {
+    const term = search.trim().toLowerCase();
+    return nodes.filter((node) => nodeMatchesSearchKind(node, searchKind) && (!term || nodeMatchesQuery(node, term)));
+  }, [nodes, search, searchKind]);
   const visibleNodes = useMemo(() => {
     const base = organizePreview?.nodes ?? nodes;
     const term = search.trim().toLowerCase();
+    const activeSearch = searchExpanded && Boolean(term || searchKind !== "all");
     return base.map((node) => {
       const cleanClass = (node.className ?? "").replace(/\s*is-search-(?:match|dim)/g, "");
-      if (!term || node.data.kind === "group") {
+      if (!activeSearch) {
         return cleanClass === (node.className ?? "") ? node : { ...node, className: cleanClass };
       }
-      const searchClass = nodeMatchesQuery(node, term) ? "is-search-match" : "is-search-dim";
+      const searchClass = nodeMatchesSearchKind(node, searchKind) && (!term || nodeMatchesQuery(node, term)) ? "is-search-match" : "is-search-dim";
       return { ...node, className: `${cleanClass} ${searchClass}`.trim() };
     });
-  }, [nodes, organizePreview, search]);
-  const searchMatchIds = useMemo(
-    () => search.trim() ? visibleNodes.filter((node) => node.data.kind !== "group" && node.className?.includes("is-search-match")).map((node) => node.id) : [],
-    [search, visibleNodes],
-  );
+  }, [nodes, organizePreview, search, searchExpanded, searchKind]);
+  const searchMatchIds = useMemo(() => searchResults.map((node) => node.id), [searchResults]);
   const visibleEdges = useMemo(() => {
     const selectedSet = new Set(selectedIds);
     return edges.map((edge) => {
@@ -293,11 +327,43 @@ function WorkspaceCanvas() {
         .then(async (analysisResponse) => analysisResponse.ok ? analysisResponse.json() : { analyses: [] })
         .then((payload: { analyses?: Array<Record<string, unknown>> }) => {
           if (!active || !payload.analyses?.length) return;
-          setNodes((current) => current.map((node) => {
-            const assetId = String(node.data.assetId || node.id);
-            const analysis = payload.analyses?.find((item) => item.assetId === assetId);
-            return analysis ? mergeAnalysis(node, analysis) : node;
-          }));
+          setNodes((current) => {
+            const updated = current.map((node) => {
+              const assetId = String(node.data.assetId || node.id);
+              const analysis = payload.analyses?.find((item) => item.assetId === assetId);
+              return analysis ? mergeAnalysis(node, analysis) : node;
+            });
+            const additions = payload.analyses!.flatMap((analysis) => {
+              const assetId = String(analysis.assetId || "");
+              const id = "analysis-card-" + assetId;
+              if (!assetId || updated.some((node) => node.id === id)) return [];
+              const source = updated.find((node) => String(node.data.assetId || "") === assetId);
+              if (!source) return [];
+              const absolute = absoluteNodePosition(updated, source);
+              const card = mergeAnalysis({
+                id,
+                type: "inspo",
+                position: { x: absolute.x + nodeWidth(source) + 104, y: absolute.y },
+                data: { kind: "analysis", workflowStage: "analysis", title: `拆解 · ${source.data.title}`, sourceAssetId: assetId, sourceTitle: source.data.title, tags: ["拆解结果"] },
+                style: defaultSize.analysis,
+                zIndex: 10,
+              }, analysis);
+              return [{ ...card, data: { ...card.data, body: card.data.analysisSummary } }];
+            });
+            return [...updated, ...additions];
+          });
+          setEdges((current) => {
+            const additions = payload.analyses!.flatMap((analysis) => {
+              const assetId = String(analysis.assetId || "");
+              const sourceId = assetId;
+              const targetId = "analysis-card-" + assetId;
+              if (!sourceId || current.some((edge) => edge.source === sourceId && edge.target === targetId)) return [];
+              const id = "analysis-link-" + assetId;
+              const relation: Relation = { id, sourceId, targetId, type: "analysis-of", layer: "provenance", status: "confirmed", origin: "system", explanation: "拆解为" };
+              return [{ id, source: sourceId, target: targetId, type: "relation", label: relation.explanation, data: relation, style: { stroke: "#62569a", strokeWidth: 2 } } as Edge];
+            });
+            return [...current, ...additions];
+          });
         }).catch(() => undefined);
     }).catch((error) => notify(error.message));
     return () => { active = false; window.cancelAnimationFrame(statusFrame); };
@@ -383,6 +449,12 @@ function WorkspaceCanvas() {
         setSelectedIds([detail.id]);
         setRightTab("asset");
       }
+      if (detail.action === "open-export") {
+        const node = nodes.find((item) => item.id === detail.id);
+        if (node?.data.contract) setContract(node.data.contract);
+        setSelectedIds([detail.id]);
+        setWorkflowOverlay("export");
+      }
     };
     window.addEventListener("inspo:node-action", handler);
     return () => window.removeEventListener("inspo:node-action", handler);
@@ -416,6 +488,10 @@ function WorkspaceCanvas() {
       if (event.key === "Escape") {
         setFocusMode(false);
         setContextMenu(null);
+        setNextStepMenu(null);
+        setWorkflowOverlay(null);
+        setSearchExpanded(false);
+        setAssistantOpen(false);
         setSelectedIds([]);
         setNodes((current) => current.map((node) => ({ ...node, selected: false })));
       }
@@ -485,6 +561,7 @@ function WorkspaceCanvas() {
 
   function onConnect(value: Connection) {
     if (!value.source || !value.target || value.source === value.target) return;
+    connectionCompletedRef.current = true;
     if (edges.some((edge) => edge.source === value.source && edge.target === value.target)) return notify("这两张卡片已经连接");
     remember();
     const relation: Relation = {
@@ -495,17 +572,51 @@ function WorkspaceCanvas() {
       layer: "association",
       status: "confirmed",
       origin: "human",
+      explanation: "关联",
     };
     setEdges((current) => addEdge({
       ...value,
       id: relation.id,
-      type: "smoothstep",
+      type: "relation",
       label: "关联",
       data: relation,
       zIndex: 0,
       style: { stroke: "#8f7da4", strokeWidth: 2 },
     }, current));
     notify("已连接");
+  }
+
+  function finishConnection(event: MouseEvent | TouchEvent) {
+    setConnecting(false);
+    const sourceId = connectionSourceRef.current;
+    const completed = connectionCompletedRef.current;
+    connectionSourceRef.current = null;
+    window.setTimeout(() => { connectionCompletedRef.current = false; }, 0);
+    if (!sourceId || completed) return;
+    const point = "changedTouches" in event ? event.changedTouches[0] : event;
+    setNextStepMenu({
+      sourceId,
+      x: clamp(point?.clientX ?? window.innerWidth / 2, 180, window.innerWidth - 260),
+      y: clamp(point?.clientY ?? window.innerHeight / 2, 120, window.innerHeight - 260),
+    });
+  }
+
+  function runNextStep(action: "analyze" | "contract" | "export") {
+    const menu = nextStepMenu;
+    if (!menu) return;
+    const node = nodes.find((item) => item.id === menu.sourceId);
+    setNextStepMenu(null);
+    if (!node) return;
+    if (action === "analyze") return void analyze(node.id);
+    if (action === "contract") {
+      const selectedAnalysisIds = nodes
+        .filter((item) => selectedIds.includes(item.id) && item.data.workflowStage === "analysis" && item.data.status === "ready")
+        .map((item) => item.id);
+      const ids = selectedAnalysisIds.includes(node.id) ? selectedAnalysisIds : [node.id];
+      return void previewBaseline(ids);
+    }
+    if (node.data.contract) setContract(node.data.contract);
+    setWorkflowOverlay("export");
   }
   const onSelectionChange = useCallback(({ nodes: selection }: { nodes: CanvasNode[] }) => {
     const next = selection.map((node) => node.id);
@@ -523,7 +634,7 @@ function WorkspaceCanvas() {
     setSelectedIds((current) => current.length === 1 && current[0] === node.id ? current : [node.id]);
     setContextMenu({ kind: "node", id: node.id, x: event.clientX, y: event.clientY });
   }, []);
-  const onPaneClick = useCallback(() => setContextMenu(null), []);
+  const onPaneClick = useCallback(() => { setContextMenu(null); setNextStepMenu(null); setSearchExpanded(false); }, []);
   const onNodeDragStop = useCallback((_: unknown, movedNode: CanvasNode) => {
     if (movedNode.data.kind === "group" || movedNode.parentId) return;
     setNodes((current) => {
@@ -820,15 +931,47 @@ function WorkspaceCanvas() {
     const source = nodes.find((node) => node.id === (nodeId || selectedIds[0]));
     if (!source || !isAnalyzableNode(source)) return notify("请选择一张原始素材");
     const assetId = source.data.assetId || source.id;
+    const analysisCardId = "analysis-card-" + assetId;
     if (captureHistory) remember();
-    setNodes((current) => current.map((item) => ({
-      ...item,
-      data: {
-        ...item.data,
-        analysisExpanded: item.id === source.id,
-        ...(item.id === source.id ? { status: "processing", analysisError: undefined } : {}),
-      },
-    })));
+    setNodes((current) => {
+      const liveSource = current.find((item) => item.id === source.id) ?? source;
+      const absolute = absoluteNodePosition(current, liveSource);
+      const updated = current.map((item) => ({
+        ...item,
+        data: {
+          ...item.data,
+          analysisExpanded: false,
+          ...(item.id === source.id ? { status: "processing", analysisError: undefined } : {}),
+          ...(item.id === analysisCardId ? { status: "processing", analysisError: undefined } : {}),
+        },
+      }));
+      if (updated.some((item) => item.id === analysisCardId)) return updated;
+      return [...updated, {
+        id: analysisCardId,
+        type: "inspo",
+        position: { x: absolute.x + nodeWidth(liveSource) + 104, y: absolute.y },
+        data: {
+          kind: "analysis",
+          workflowStage: "analysis",
+          title: `拆解 · ${source.data.title}`,
+          sourceAssetId: String(assetId),
+          sourceTitle: source.data.title,
+          status: "processing",
+          tags: ["拆解结果"],
+        },
+        style: defaultSize.analysis,
+        zIndex: 10,
+      }];
+    });
+    setEdges((current) => current.some((edge) => edge.source === source.id && edge.target === analysisCardId) ? current : addEdge({
+      id: "analysis-link-" + assetId,
+      source: source.id,
+      target: analysisCardId,
+      type: "relation",
+      label: "拆解为",
+      data: { id: "analysis-link-" + assetId, sourceId: source.id, targetId: analysisCardId, type: "analysis-of", layer: "provenance", status: "confirmed", origin: "system", explanation: "拆解为" } satisfies Relation,
+      style: { stroke: "#62569a", strokeWidth: 2 },
+    }, current));
     const response = await fetch("/api/analyses", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -836,30 +979,27 @@ function WorkspaceCanvas() {
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
-      setNodes((current) => current.map((item) => item.id === source.id ? {
+      setNodes((current) => current.map((item) => item.id === source.id || item.id === analysisCardId ? {
         ...item,
-        data: {
-          ...item.data,
-          status: item.data.analysisSummary ? "ready" : "failed",
-          analysisError: friendlyAnalysisError(payload.error),
-        },
+        data: { ...item.data, status: item.data.analysisSummary ? "ready" : "failed", analysisError: friendlyAnalysisError(payload.error) },
       } : item));
       if (response.status === 409) setModal("credentials");
       return notify(friendlyAnalysisError(payload.error));
     }
     const result = payload.analysis.result as AnalysisResult;
-    setNodes((current) => current.map((item) => item.id === source.id ? {
+    setNodes((current) => current.map((item) => item.id === source.id || item.id === analysisCardId ? {
       ...item,
       data: {
         ...item.data,
         analysisId: payload.analysis.id,
         analysisSummary: result.summary,
-        analysisExpanded: true,
+        body: item.id === analysisCardId ? result.summary : item.data.body,
+        analysisExpanded: false,
         analysisError: undefined,
         status: "ready",
         principles: result.principles,
         colors: result.palette.map((color) => color.hex),
-        tags: result.tags.slice(0, 8).map((tag) => tag.value),
+        tags: item.id === analysisCardId ? ["拆解结果", ...result.tags.slice(0, 5).map((tag) => tag.value)] : result.tags.slice(0, 8).map((tag) => tag.value),
         regions: result.components,
         analysisProvider: payload.analysis.provider,
         analysisModel: payload.analysis.model,
@@ -868,6 +1008,7 @@ function WorkspaceCanvas() {
         analysisFeedback: undefined,
       },
     } : item));
+    setSelectedIds([analysisCardId]);
     notify("参考拆解完成");
   }
 
@@ -1175,9 +1316,14 @@ function WorkspaceCanvas() {
     setEdges(snapshot.edges);
   }
 
-  async function previewBaseline() {
+  async function previewBaseline(sourceNodeIds?: string[]) {
     setContractBusy(true);
-    const selectedAssetIds = selectedNodes.filter(isAnalyzableNode).map((node) => String(node.data.assetId));
+    const candidates = sourceNodeIds?.length ? nodes.filter((node) => sourceNodeIds.includes(node.id)) : selectedNodes;
+    const selectedAssetIds = [...new Set(candidates.flatMap((node) => {
+      if (node.data.workflowStage === "analysis" && node.data.sourceAssetId) return [String(node.data.sourceAssetId)];
+      if (isAnalyzableNode(node) && node.data.assetId) return [String(node.data.assetId)];
+      return [];
+    }))];
     const response = await fetch("/api/boards/" + boardId + "/contracts/preview", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -1187,6 +1333,10 @@ function WorkspaceCanvas() {
     setContractBusy(false);
     if (!response.ok) return notify(payload.error || "请先拆解至少一张参考");
     setContract(payload.contract);
+    const directAnalysisIds = candidates.filter((node) => node.data.workflowStage === "analysis").map((node) => node.id);
+    const matchingAnalysisIds = nodes.filter((node) => node.data.workflowStage === "analysis" && selectedAssetIds.includes(String(node.data.sourceAssetId || ""))).map((node) => node.id);
+    setContractSourceNodeIds(directAnalysisIds.length ? directAnalysisIds : matchingAnalysisIds);
+    setWorkflowOverlay("contract");
     setRightTab("baseline");
   }
 
@@ -1208,7 +1358,35 @@ function WorkspaceCanvas() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ contract }),
     });
-    notify(response.ok ? "设计方案已保存" : "设计方案保存失败");
+    if (!response.ok) return notify("设计方案保存失败");
+    const contractCardId = "contract-card-current";
+    setNodes((current) => {
+      const existing = current.find((node) => node.id === contractCardId);
+      const sources = current.filter((node) => contractSourceNodeIds.includes(node.id));
+      const right = sources.length ? Math.max(...sources.map((node) => absoluteNodePosition(current, node).x + nodeWidth(node))) : 360;
+      const top = sources.length ? Math.min(...sources.map((node) => absoluteNodePosition(current, node).y)) : 180;
+      const card: CanvasNode = {
+        id: contractCardId,
+        type: "inspo",
+        position: existing?.position ?? { x: right + 120, y: top },
+        data: { kind: "text", workflowStage: "contract", title: contract.title, contract, tags: ["设计方案"] },
+        style: existing?.style ?? { width: 360, height: 250 },
+        zIndex: 10,
+      };
+      return existing ? current.map((node) => node.id === contractCardId ? card : node) : [...current, card];
+    });
+    setEdges((current) => {
+      const additions = contractSourceNodeIds.flatMap((sourceId) => {
+        if (current.some((edge) => edge.source === sourceId && edge.target === contractCardId)) return [];
+        const id = `contract-link-${sourceId}`;
+        const relation: Relation = { id, sourceId, targetId: contractCardId, type: "contract-derived-from", layer: "provenance", status: "confirmed", origin: "human", explanation: "整合为方案" };
+        return [{ id, source: sourceId, target: contractCardId, type: "relation", label: relation.explanation, data: relation, style: { stroke: "#62569a", strokeWidth: 2 } } as Edge];
+      });
+      return [...current, ...additions];
+    });
+    setWorkflowOverlay(null);
+    setSelectedIds([contractCardId]);
+    notify("设计方案已放到画布");
   }
 
   async function exportPackage(format: "quick" | "full" = "full") {
@@ -1291,18 +1469,19 @@ function WorkspaceCanvas() {
     void fitView({ nodes: [{ id }], padding: 0.55, minZoom: 0.85, maxZoom: 1.25, duration: 360 });
   }
 
+  function focusSearchNode(id: string) {
+    const index = searchMatchIds.indexOf(id);
+    setSearchCursor(Math.max(0, index));
+    setNodes((current) => current.map((node) => ({ ...node, selected: node.id === id })));
+    setSelectedIds([id]);
+    setRightTab("asset");
+    setSearchExpanded(false);
+    void fitView({ nodes: [{ id }], padding: 0.55, minZoom: 0.85, maxZoom: 1.25, duration: 360 });
+  }
+
   function handleSearchChange(value: string) {
     setSearch(value);
     setSearchCursor(0);
-    const term = value.trim().toLowerCase();
-    if (!term) return;
-    const match = nodes.find((node) => node.data.kind !== "group" && nodeMatchesQuery(node, term));
-    if (match) window.setTimeout(() => {
-      setNodes((current) => current.map((node) => ({ ...node, selected: node.id === match.id })));
-      setSelectedIds([match.id]);
-      setRightTab("asset");
-      void fitView({ nodes: [{ id: match.id }], padding: 0.55, minZoom: 0.85, maxZoom: 1.25, duration: 360 });
-    }, 40);
   }
 
   function handleNodeMenu(action: string) {
@@ -1361,7 +1540,6 @@ function WorkspaceCanvas() {
         <div className="top-actions">
           <button className="button ghost" onClick={undo} title="撤销">↶</button>
           <button className="button ghost" onClick={redo} title="重做">↷</button>
-          <button className={"button soft assistant-top-button" + (assistantOpen ? " active" : "")} onClick={() => { setAssistantScope(selectedIds.length ? "selection" : "board"); setAssistantOpen((value) => !value); }}>方向助手</button>
           <button className={"button soft focus-top-button" + (focusMode ? " active" : "")} onClick={() => setFocusMode((value) => !value)}>{focusMode ? "退出专注" : "专注模式"}</button>
           <UserMenu />
         </div>
@@ -1422,12 +1600,17 @@ function WorkspaceCanvas() {
       <div className="rail-resizer rail-resizer-left" role="separator" aria-label="调整左侧栏宽度" aria-orientation="vertical" title="拖动调整左栏宽度" onDoubleClick={() => setLeftRailWidth(242)} onPointerDown={(event) => startRailResize("left", event)} />
 
       <section className={"canvas-area" + (rightPanning ? " is-right-panning" : "")} aria-label="灵感无限画布" onPointerDownCapture={(event) => { if (event.button === 2) setRightPanning(true); }}>
-        <div className={"canvas-search" + (searchExpanded ? "" : " is-collapsed")} title="按标题、标签、文字、来源、颜色和拆解结果查找">
-          {!searchExpanded && <button className="search-toggle" onClick={() => setSearchExpanded(true)} aria-label="打开画布查找">⌕</button>}
-          {searchExpanded && <span className="search-leading">⌕</span>}
-          {searchExpanded && <input type="search" value={search} onChange={(event) => handleSearchChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); focusSearchMatch(searchCursor + (event.shiftKey ? -1 : 1)); } }} placeholder="查找标题、标签、颜色…" autoFocus />}
-          {searchExpanded && <div className="search-result-nav"><button disabled={!searchMatchIds.length} onClick={() => focusSearchMatch(searchCursor - 1)} aria-label="上一个结果">‹</button><small>{search ? searchMatchIds.length ? (searchCursor + 1) + "/" + searchMatchIds.length : "0 项" : "画布"}</small><button disabled={!searchMatchIds.length} onClick={() => focusSearchMatch(searchCursor + 1)} aria-label="下一个结果">›</button></div>}
-          {searchExpanded && <button className="search-close" onClick={() => { setSearch(""); setSearchExpanded(false); }} aria-label="关闭画布查找">×</button>}
+        <div className={"canvas-search node-search" + (searchExpanded ? " is-open" : " is-collapsed")}>
+          {!searchExpanded && <button className="search-toggle" onClick={() => setSearchExpanded(true)} aria-label="搜索画布节点">⌕</button>}
+          {searchExpanded && <div className="node-search-panel nodrag nowheel">
+            <header><span>⌕</span><input type="search" value={search} onChange={(event) => handleSearchChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && searchMatchIds.length) { event.preventDefault(); focusSearchMatch(searchCursor + (event.shiftKey ? -1 : 1)); } }} placeholder="搜索节点…" autoFocus /><button onClick={() => setSearchExpanded(false)} aria-label="关闭节点搜索">×</button></header>
+            <div className="node-search-kinds" role="tablist" aria-label="节点类型">
+              {searchKindOptions.map((option) => <button key={option.id} className={searchKind === option.id ? "active" : ""} onClick={() => { setSearchKind(option.id); setSearchCursor(0); }}>{option.icon}<span>{option.label}</span></button>)}
+            </div>
+            <div className="node-search-results">
+              {searchResults.length ? searchResults.slice(0, 80).map((node) => <button key={node.id} className={selectedIds.includes(node.id) ? "active" : ""} onClick={() => focusSearchNode(node.id)}><i>{nodeSearchIcon(node)}</i><span><strong>{node.data.title}</strong><small>{nodeSearchSummary(node)}</small></span><b>定位</b></button>) : <p>没有符合条件的节点</p>}
+            </div>
+          </div>}
         </div>
         <div className="canvas-toolbar" role="toolbar" aria-label="画布工具">
           <button onClick={() => fileInput.current?.click()} title="从本地上传图片素材"><b>↑</b><small>上传</small></button>
@@ -1445,7 +1628,8 @@ function WorkspaceCanvas() {
           <div className="multi-toolbar">
             <strong>{selectedIds.length} 项</strong>
             <button onClick={() => createGroup()}>组成分组</button>
-            <button onClick={() => void analyzeSelected()}>批量拆解</button>
+            {selectedNodes.some(isAnalyzableNode) && <button onClick={() => void analyzeSelected()}>批量拆解</button>}
+            {selectedNodes.filter((node) => node.data.workflowStage === "analysis" && node.data.status === "ready").length > 1 && <button className="is-primary" onClick={() => void previewBaseline(selectedNodes.filter((node) => node.data.workflowStage === "analysis").map((node) => node.id))}>整合为方案</button>}
             <button onClick={() => alignSelected("left")}>左对齐</button>
             <button onClick={() => alignSelected("top")}>顶对齐</button>
             <button onClick={() => alignSelected("horizontal")}>水平等距</button>
@@ -1478,11 +1662,12 @@ function WorkspaceCanvas() {
           nodes={visibleNodes}
           edges={visibleEdges}
           nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
           onNodesChange={organizePreview ? undefined : onNodesChange}
           onEdgesChange={organizePreview ? undefined : onEdgesChange}
           onConnect={organizePreview ? undefined : onConnect}
-          onConnectStart={() => setConnecting(true)}
-          onConnectEnd={() => setConnecting(false)}
+          onConnectStart={(_, params) => { setConnecting(true); connectionSourceRef.current = params.handleType === "source" ? params.nodeId : null; connectionCompletedRef.current = false; }}
+          onConnectEnd={(event) => finishConnection(event)}
           onSelectionChange={onSelectionChange}
           onNodeClick={onNodeClick}
           onNodeContextMenu={onNodeContextMenu}
@@ -1512,6 +1697,7 @@ function WorkspaceCanvas() {
           {showMiniMap && <MiniMap pannable zoomable nodeColor={miniMapNodeColor} maskColor="rgba(246,243,248,.58)" ariaLabel="画布缩略图" />}
         </ReactFlow>
         <button className={"minimap-toggle" + (showMiniMap ? " is-open" : "")} onClick={() => setShowMiniMap((value) => !value)} title={showMiniMap ? "收起缩略图" : "打开缩略图"} aria-label={showMiniMap ? "收起缩略图" : "打开缩略图"}>▣</button>
+        <button className={"assistant-orb" + (assistantOpen ? " is-open" : "")} onClick={() => { setAssistantScope(selectedIds.length ? "selection" : "board"); setAssistantOpen((value) => !value); }} title="打开设计助手" aria-label={assistantOpen ? "关闭设计助手" : "打开设计助手"}><span>✦</span></button>
         {focusMode && <button className="focus-exit-button" onClick={() => setFocusMode(false)}>退出专注 <kbd>Esc</kbd></button>}
 
         {organizePreview && (
@@ -1526,13 +1712,56 @@ function WorkspaceCanvas() {
           </aside>
         )}
 
+        {nextStepMenu && (() => {
+          const node = nodes.find((item) => item.id === nextStepMenu.sourceId);
+          if (!node) return null;
+          const selectedAnalysisCount = nodes.filter((item) => selectedIds.includes(item.id) && item.data.workflowStage === "analysis" && item.data.status === "ready").length;
+          return <aside className="next-step-menu" style={{ left: nextStepMenu.x, top: nextStepMenu.y }}>
+            <header><span>下一步</span><button onClick={() => setNextStepMenu(null)}>×</button></header>
+            {isAnalyzableNode(node) && <button onClick={() => runNextStep("analyze")}><i>✦</i><span><strong>{node.data.analysisId ? "重新拆解" : "拆解参考"}</strong><small>提取版式、视觉规则和组件</small></span><b>→</b></button>}
+            {node.data.workflowStage === "analysis" && <button onClick={() => runNextStep("contract")}><i>◇</i><span><strong>{selectedAnalysisCount > 1 ? `整合所选 ${selectedAnalysisCount} 张拆解` : "整合为方案"}</strong><small>合并共同点，标出冲突与取舍</small></span><b>→</b></button>}
+            {node.data.workflowStage === "contract" && <button onClick={() => runNextStep("export")}><i>↗</i><span><strong>选择输出方式</strong><small>按用途准备 Figma、开发或生图文件</small></span><b>→</b></button>}
+          </aside>;
+        })()}
+
+        {workflowOverlay === "contract" && contract && (
+          <div className="workflow-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setWorkflowOverlay(null); }}>
+            <section className="workflow-dialog contract-dialog">
+              <header><div><small>整合拆解</small><h2>{contract.title}</h2><p>{contract.sourceAssetIds.length} 张参考将合并为一套可编辑方案。</p></div><button onClick={() => setWorkflowOverlay(null)}>×</button></header>
+              <div className="contract-content">
+                <div className="contract-title"><div><h3>采用内容</h3><small>点 × 移除不采用的内容</small></div></div>
+                <h4>设计原则</h4><div className="contract-items">{contract.principles.map((item, index) => <div key={item}><span>{item}</span><button onClick={() => removeContractItem("principles", index)}>×</button></div>)}</div>
+                {!!contract.tokens.colors.length && <><h4>颜色</h4><div className="contract-items compact">{contract.tokens.colors.map((item, index) => <div key={item.name}><i style={{ background: item.value }} /><span>{item.value}</span><button onClick={() => removeContractItem("colors", index)}>×</button></div>)}</div></>}
+                {!!contract.components.length && <><h4>组件</h4><div className="contract-items">{contract.components.map((item, index) => <div key={item.name}><span><b>{item.name}</b>{item.rules[0] && <small>{item.rules[0]}</small>}</span><button onClick={() => removeContractItem("components", index)}>×</button></div>)}</div></>}
+                {!!contract.conflicts.length && <div className="contract-warning"><strong>需要取舍</strong>{contract.conflicts.map((item) => <p key={item}>{item}</p>)}</div>}
+              </div>
+              <footer><button className="button soft" onClick={() => setWorkflowOverlay(null)}>返回画布</button><button className="button primary" onClick={() => void confirmBaseline()}>保存为方案卡</button></footer>
+            </section>
+          </div>
+        )}
+
+        {workflowOverlay === "export" && contract && (
+          <div className="workflow-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setWorkflowOverlay(null); }}>
+            <section className="workflow-dialog export-dialog">
+              <header><div><small>方案输出</small><h2>{contract.title}</h2><p>先选用途，再选接下来使用的工具。</p></div><button onClick={() => setWorkflowOverlay(null)}>×</button></header>
+              <div className="export-dialog-grid">
+                <div><h3>想得到什么</h3><div className="export-goal-list">{productionGoalOptions.map((option) => <button key={option.id} className={productionGoal === option.id ? "is-active" : ""} onClick={() => { setProductionGoal(option.id); setExportDestination(exportDestinationsByGoal[option.id][0].id); setExportComplete(false); }}><i>{option.step}</i><div><strong>{option.title}</strong><small>{option.description}</small></div><span>{productionGoal === option.id ? "✓" : "›"}</span></button>)}</div></div>
+                <div><h3>接下来在哪里工作</h3><div className="export-destination-list">{exportDestinations.map((option) => <button key={option.id} className={activeDestination.id === option.id ? "is-active" : ""} onClick={() => { setExportDestination(option.id); setExportComplete(false); }}><span className="destination-icon">{option.icon}</span><div><strong>{option.title}</strong><small>{option.description}</small></div><i>{activeDestination.id === option.id ? "✓" : "›"}</i></button>)}</div></div>
+              </div>
+              <div className="export-result-preview"><span>将为你准备</span><strong>{activeDestination.deliverable}</strong><p>{activeDestination.nextStep}</p></div>
+              <footer><button className="button soft" onClick={() => setWorkflowOverlay(null)}>返回画布</button><button className="button primary" onClick={() => void exportPackage(activeDestination.id === "figma-design" ? "quick" : "full")} disabled={exportBusy}>{exportBusy ? "正在准备…" : activeDestination.action}</button></footer>
+              {exportComplete && <div className="export-receipt" role="status"><span>✓</span><div><strong>已下载</strong><small>{exportComplete === "quick" ? "直接拖进 Figma 即可继续编辑。" : "解压后按使用说明继续。"}</small></div></div>}
+            </section>
+          </div>
+        )}
+
         {assistantOpen && !organizePreview && (
-          <aside className="canvas-director" aria-label="方向助手">
+          <aside className="canvas-director" aria-label="设计助手">
             <header>
-              <div><small>方向助手</small><h2>用参考做取舍</h2></div>
-              <button onClick={() => setAssistantOpen(false)} aria-label="关闭方向助手">×</button>
+              <div><small>设计助手</small><h2>一起理清设计决定</h2></div>
+              <button onClick={() => setAssistantOpen(false)} aria-label="关闭设计助手">×</button>
             </header>
-            <p>说明这次要做什么。助手会对照画布里的参考给建议，不会替你改动画布。</p>
+            <p>描述目标或问题，也可以先选中几张卡片再提问。</p>
             <label className="direction-goal">
               <span>设计目标</span>
               <textarea value={assistantGoal} onChange={(event) => setAssistantGoal(event.target.value)} placeholder="例如：做一套户外品牌夏季活动页，年轻但不幼稚，后续还要批量换主题。" />
@@ -1573,15 +1802,16 @@ function WorkspaceCanvas() {
           selectedIds.length > 1 ? (
             <section className="multi-inspector">
               <small>已选择</small><h2>{selectedIds.length} 张卡片</h2>
-              <p>可以一起移动、建立分组、批量拆解、对齐或整理。右键其中一张卡片可处理单项。</p>
-              <button className="analyze-button" onClick={() => void analyzeSelected()}>✦ 批量拆解所选参考</button>
+              <p>可以一起移动、分组、对齐或整理；选择多个拆解结果时可整合为一套方案。</p>
+              {selectedNodes.some(isAnalyzableNode) && <button className="analyze-button" onClick={() => void analyzeSelected()}>✦ 批量拆解所选参考</button>}
+              {selectedNodes.filter((node) => node.data.workflowStage === "analysis" && node.data.status === "ready").length > 1 && <button className="analyze-button" onClick={() => void previewBaseline(selectedNodes.filter((node) => node.data.workflowStage === "analysis").map((node) => node.id))}>◇ 整合所选拆解</button>}
               <button className="button soft wide" onClick={previewOrganize}>整理所选卡片</button>
             </section>
           ) : selected ? (
             <>
               <section className="inspect-title">
                 <span className={"inspect-icon " + selected.data.kind}>◫</span>
-                <div><small>{selected.data.kind === "group" ? "分组" : selected.data.note ? "备注" : "参考卡片"}</small><h2>{selected.data.title}</h2></div>
+                <div><small>{selected.data.kind === "group" ? "分组" : selected.data.workflowStage === "analysis" ? "拆解结果" : selected.data.workflowStage === "contract" ? "设计方案" : selected.data.note ? "备注" : "参考卡片"}</small><h2>{selected.data.title}</h2></div>
               </section>
               {isAnalyzableNode(selected) && <button className="analyze-button" onClick={() => void analyze(selected.id)} disabled={selected.data.status === "processing"}>✦ {selected.data.analysisSummary ? "重新拆解这个参考" : "拆解这个参考"}<small>使用已连接模型</small></button>}
               {!!selected.data.colors?.length && <section className="inspect-block"><div className="block-heading"><h3>颜色参考</h3><button onClick={() => navigator.clipboard.writeText(selected.data.colors?.join(", ") || "")}>复制全部</button></div><div className="palette-list">{selected.data.colors.map((color) => <button key={color} onClick={() => navigator.clipboard.writeText(color)}><i style={{ background: color }} /><span>颜色</span><code>{color}</code></button>)}</div></section>}
@@ -1774,6 +2004,32 @@ function nodeMatchesQuery(node: CanvasNode, term: string) {
     ...(node.data.principles ?? []),
   ].filter(Boolean).join(" ").toLowerCase();
   return searchable.includes(term);
+}
+
+function nodeMatchesSearchKind(node: CanvasNode, kind: SearchKind) {
+  if (kind === "all") return true;
+  if (kind === "contract") return node.data.workflowStage === "contract";
+  if (kind === "analysis") return node.data.workflowStage === "analysis" || node.data.kind === "analysis";
+  return node.data.kind === kind && !node.data.workflowStage;
+}
+
+function nodeSearchIcon(node: CanvasNode) {
+  if (node.data.workflowStage === "analysis") return "✦";
+  if (node.data.workflowStage === "contract") return "◇";
+  return node.data.kind === "image" ? "▧" : node.data.kind === "web" ? "◎" : node.data.kind === "group" ? "▱" : "≡";
+}
+
+function nodeSearchSummary(node: CanvasNode) {
+  if (node.data.workflowStage === "analysis") return `来自 ${String(node.data.sourceTitle || "参考")} · 拆解结果`;
+  if (node.data.workflowStage === "contract") return `${node.data.contract?.sourceAssetIds.length || 0} 张参考 · 点击输出`;
+  if (node.data.kind === "group") return String(node.data.body || "分组");
+  return String(node.data.sourceUrl || node.data.body || node.data.tags?.join(" · ") || "无补充说明").slice(0, 90);
+}
+
+function absoluteNodePosition(nodes: CanvasNode[], node: CanvasNode) {
+  if (!node.parentId) return node.position;
+  const parent = nodes.find((item) => item.id === node.parentId);
+  return parent ? { x: parent.position.x + node.position.x, y: parent.position.y + node.position.y } : node.position;
 }
 
 function mergeAnalysis(node: CanvasNode, analysis: Record<string, unknown>): CanvasNode {

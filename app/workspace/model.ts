@@ -1,5 +1,5 @@
 import type { Edge, Node, Viewport } from "@xyflow/react";
-import type { BoardSceneV2, Relation } from "@/packages/domain/src";
+import type { BoardSceneV2, DesignContract, Relation } from "@/packages/domain/src";
 
 export type CardKind = "image" | "web" | "text" | "analysis" | "element" | "group";
 export type CardData = Record<string, unknown> & {
@@ -27,6 +27,8 @@ export type CardData = Record<string, unknown> & {
   analysisPromptVersion?: string;
   analysisRunMode?: "managed" | "byok";
   analysisFeedback?: "helpful" | "needs-work";
+  workflowStage?: "analysis" | "contract";
+  contract?: DesignContract;
   preview?: boolean;
   principles?: string[];
   regions?: Array<{
@@ -54,7 +56,7 @@ export function sceneToFlow(scene: BoardSceneV2): { nodes: CanvasNode[]; edges: 
     if (!assetId) continue;
     analysisByAsset.set(assetId, {
       analysisId: typeof item.data.analysisId === "string" ? item.data.analysisId : undefined,
-      analysisSummary: typeof item.data.body === "string" ? item.data.body : undefined,
+      analysisSummary: typeof item.data.analysisSummary === "string" ? item.data.analysisSummary : typeof item.data.body === "string" ? item.data.body : undefined,
       status: typeof item.data.status === "string" ? item.data.status : undefined,
       analysisError: typeof item.data.error === "string" ? item.data.error : undefined,
       principles: Array.isArray(item.data.principles) ? item.data.principles as string[] : undefined,
@@ -64,7 +66,7 @@ export function sceneToFlow(scene: BoardSceneV2): { nodes: CanvasNode[]; edges: 
     });
   }
 
-  const nodes = scene.nodes.filter((item) => item.kind !== "analysis" && item.kind !== "element").map((item): CanvasNode => {
+  const nodes = scene.nodes.filter((item) => item.kind !== "element").map((item): CanvasNode => {
     const assetId = String(item.data.assetId || item.id);
     return {
       id: item.id,
@@ -76,6 +78,7 @@ export function sceneToFlow(scene: BoardSceneV2): { nodes: CanvasNode[]; edges: 
         ...item.data,
         ...analysisByAsset.get(assetId),
         kind: item.kind,
+        workflowStage: item.kind === "analysis" ? "analysis" : item.data.workflowStage,
         title: String(item.data.title || "未命名"),
       },
       style: { width: item.width, height: item.height },
@@ -83,7 +86,7 @@ export function sceneToFlow(scene: BoardSceneV2): { nodes: CanvasNode[]; edges: 
     };
   });
   const edges = scene.relations
-    .filter((item) => item.status !== "rejected" && item.type !== "analysis-of")
+    .filter((item) => item.status !== "rejected")
     .map(relationToEdge);
   return { nodes, edges, viewport: scene.viewport };
 }
@@ -94,8 +97,8 @@ export function relationToEdge(item: Relation): Edge {
     id: item.id,
     source: item.sourceId,
     target: item.targetId,
-    label: relationLabel[item.type] ?? item.type,
-    type: "smoothstep",
+    label: item.explanation || relationLabel[item.type] || item.type,
+    type: "relation",
     zIndex: 0,
     animated: item.status === "suggested",
     data: item,
@@ -110,13 +113,13 @@ export function relationToEdge(item: Relation): Edge {
 export function flowToScene(nodes: CanvasNode[], edges: Edge[], viewport: Viewport): BoardSceneV2 {
   const relations = edges.flatMap((edge) => {
     const value = edge.data as Relation | undefined;
-    return value && value.type !== "analysis-of"
+    return value
       ? [{ ...value, id: edge.id, sourceId: edge.source, targetId: edge.target }]
       : [];
   });
   return {
     schemaVersion: 2,
-    nodes: nodes.filter((node) => node.data.kind !== "analysis").map((node) => ({
+    nodes: nodes.map((node) => ({
       id: node.id,
       kind: node.data.kind,
       position: node.position,
