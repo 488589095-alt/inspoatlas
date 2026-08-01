@@ -7,7 +7,7 @@ import { analyses, assets, boards, events } from "@/db/schema";
 import { loadCredential } from "../../../_credentials";
 import { currentUser, errorResponse, HttpError, newId } from "../../../_lib";
 
-export const DESIGN_ASSISTANT_PROMPT_VERSION = "assistant-v2";
+export const DESIGN_ASSISTANT_PROMPT_VERSION = "direction-v3";
 
 const inputSchema = z.object({
   goal: z.string().trim().min(2).max(2_000),
@@ -70,9 +70,10 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }).join("\n\n");
 
     const prompt = [
-      "你是面向专业设计师的设计策略助手。必须先理解设计目标，再基于提供的参考卡片给出可执行思路。",
-      "只使用卡片中真实存在的信息；每个关键判断都用【卡片标题】标注依据。不要虚构图片细节或来源。",
-      "如果目标过于模糊，先提出最多 3 个关键澄清问题；否则按‘方向判断、落地建议、需要取舍、下一步’组织回答。",
+      "这是设计流程里的“定方向”环节，不是自由聊天。只帮助用户判断参考中什么该保留、调整或避开。",
+      "只使用卡片中真实存在的信息；关键判断用【卡片标题】标注依据。不要虚构图片细节、设计规范或来源。",
+      "目标过于模糊时只提出最多 2 个关键问题；否则严格按‘保留、调整、避开、下一步’四段回答，每段不超过 3 条，总字数不超过 600 字。",
+      "用直接、具体、可执行的中文，不说‘赋能、打造、沉浸式、智能化’等空泛词，不介绍自己的身份。",
       `设计目标：${input.goal}`,
       `分析范围：${input.scope === "selection" ? "当前选择" : "整张画布"}`,
       `参考卡片：\n${references}`,

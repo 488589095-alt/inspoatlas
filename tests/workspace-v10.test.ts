@@ -16,15 +16,16 @@ test("辅助连线默认只显示当前相关且连接热区更大", async () =>
   const [workspace, card, styles] = await Promise.all([
     readFile(new URL("../app/InspoWorkspace.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/workspace/CardNode.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/workspace-v10.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/workspace-v11.css", import.meta.url), "utf8"),
   ]);
-  assert.match(workspace, /<span>连线<\/span>/);
+  assert.match(workspace, /从 ＋ 拖到圆点/);
   assert.match(workspace, /selectedSet\.has\(edge\.source\) \|\| selectedSet\.has\(edge\.target\)/);
   assert.match(workspace, /connectionRadius=\{48\}/);
   assert.match(workspace, /type: "complements"/);
   assert.doesNotMatch(workspace, /relation-modal/);
-  assert.match(card, /拖到这里完成连接/);
-  assert.match(styles, /width: 24px !important/);
+  assert.match(card, /node-port-output/);
+  assert.match(card, /node-port-input/);
+  assert.match(styles, /width: 28px !important/);
   assert.match(styles, /cursor: grabbing !important/);
 });
 
@@ -33,7 +34,7 @@ test("备注、分组说明和左右侧栏均可直接编辑", async () => {
     readFile(new URL("../app/InspoWorkspace.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/workspace/CardNode.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/workspace/organize.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/workspace-v10.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/workspace-v11.css", import.meta.url), "utf8"),
   ]);
   assert.match(workspace, /function createNote/);
   assert.match(workspace, /<small>备注<\/small>/);

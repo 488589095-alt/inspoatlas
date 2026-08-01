@@ -42,8 +42,9 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
   return (
     <article className={"canvas-card card-" + (data.note ? "note" : data.kind) + (selected ? " is-selected" : "") + (data.preview ? " is-preview" : "")}>
       <NodeResizer minWidth={200} minHeight={130} isVisible={selected} />
+      <Handle id="input" type="target" position={Position.Left} className="node-handle node-port-input nodrag" title="连接到这张卡片" aria-label="连接到这张卡片" />
+      <Handle id="output" type="source" position={Position.Right} className="node-handle node-port-output nodrag" title="从这里拖到另一张卡片" aria-label="从这里拖到另一张卡片" />
       <div className="card-surface">
-        <Handle type="target" position={Position.Left} className="node-handle" title="拖到这里完成连接" />
         <header className="card-head">
           <span className="card-kind">{data.note ? "备注" : labels[data.kind]}</span>
           <button className="node-menu nodrag" aria-label="卡片操作" onClick={(event) => { event.stopPropagation(); action("menu", event); }}>•••</button>

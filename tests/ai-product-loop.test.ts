@@ -27,7 +27,7 @@ test("拆解与设计助手记录版本、运行方式和行为事件", async ()
   assert.match(ai, /ANALYSIS_PROMPT_VERSION = "analysis-v3"/);
   assert.match(analysis, /ai\.analysis\.completed/);
   assert.match(analysis, /isRerun/);
-  assert.match(assistant, /DESIGN_ASSISTANT_PROMPT_VERSION = "assistant-v2"/);
+  assert.match(assistant, /DESIGN_ASSISTANT_PROMPT_VERSION = "direction-v3"/);
   assert.match(assistant, /ai\.assistant\.completed/);
   assert.match(assistant, /historyCount/);
 });
@@ -42,7 +42,7 @@ test("AI 结果支持可诊断反馈并持久化为质量事件", async () => {
   assert.match(feedback, /ai\.feedback/);
   assert.match(feedback, /not-actionable/);
   assert.match(workspace, /submitAssistantFeedback/);
-  assert.match(workspace, /不落地/);
+  assert.match(workspace, /不够具体/);
   assert.match(card, /不准确/);
   assert.match(database, /CREATE TABLE IF NOT EXISTS events/);
 });

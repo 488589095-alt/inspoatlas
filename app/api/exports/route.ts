@@ -17,6 +17,16 @@ export async function POST(request: Request) {
     const sourceRows = await db.select().from(assets).where(and(eq(assets.boardId, board.id), eq(assets.ownerId, user.id)));
     const elements = await db.select().from(confirmedElements).where(and(eq(confirmedElements.boardId, board.id), eq(confirmedElements.ownerId, user.id)));
     const context: ExportContext = { purpose: input.purpose, goal: input.goal, destination: input.destination, title: contract.title, version: stored.version };
+    if (input.destination === "figma-design" && input.format === "quick") {
+      const svg = buildFigmaBoardSvg(contract, stored.version);
+      return new Response(svg, {
+        headers: {
+          "content-type": "image/svg+xml; charset=utf-8",
+          "content-disposition": 'attachment; filename="inspoatlas-figma-board-v' + stored.version + '.svg"',
+          "cache-control": "no-store",
+        },
+      });
+    }
     const taskFiles = { ...buildFiles(input.purpose, contract, stored.version, sourceRows, elements), ...destinationFiles(context, contract) };
     const manifest = JSON.stringify({ schemaVersion: 1, ...context, files: Object.keys(taskFiles), generatedAt: new Date().toISOString() }, null, 2);
     const files = { "使用说明.txt": usageText(context), "manifest.json": manifest, ...taskFiles };
@@ -192,6 +202,40 @@ function buildFiles(purpose: ExportPurpose, contract: DesignContract, version: n
   };
 }
 
+function buildFigmaBoardSvg(contract: DesignContract, version: number) {
+  const colors = contract.tokens.colors.slice(0, 8);
+  const principles = contract.principles.slice(0, 6);
+  const components = contract.components.slice(0, 8);
+  const componentRows = Math.max(1, components.length);
+  const height = Math.max(1080, 690 + componentRows * 116);
+  const colorMarkup = colors.map((item, index) => {
+    const x = 80 + index * 150;
+    return '<g id="Color-' + (index + 1) + '"><rect x="' + x + '" y="390" width="126" height="92" rx="8" fill="' + xmlEscape(item.value) + '"/><text x="' + x + '" y="510" class="label">' + xmlEscape(item.name) + '</text><text x="' + x + '" y="532" class="meta">' + xmlEscape(item.value) + '</text></g>';
+  }).join("");
+  const principleMarkup = principles.map((item, index) => '<text x="96" y="' + (198 + index * 34) + '" class="body">' + (index + 1) + '. ' + xmlEscape(item) + '</text>').join("");
+  const componentMarkup = components.length
+    ? components.map((item, index) => {
+        const y = 650 + index * 116;
+        return '<g id="Component-' + (index + 1) + '"><rect x="80" y="' + y + '" width="1280" height="88" rx="8" fill="#FFFFFF" stroke="#D7D1C7"/><text x="104" y="' + (y + 34) + '" class="component">' + xmlEscape(item.name) + '</text><text x="104" y="' + (y + 60) + '" class="meta">' + xmlEscape(item.rules[0] || "根据参考继续完善") + '</text><rect x="1160" y="' + (y + 23) + '" width="168" height="42" rx="6" fill="#262521"/><text x="1244" y="' + (y + 49) + '" text-anchor="middle" class="button">组件草稿</text></g>';
+      }).join("")
+    : '<text x="80" y="690" class="meta">当前方案没有组件。</text>';
+  return [
+    '<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="' + height + '" viewBox="0 0 1440 ' + height + '">',
+    '<style>.eyebrow{font:700 15px Inter,Arial,sans-serif;letter-spacing:2px;fill:#D66F55}.title{font:700 38px Georgia,serif;fill:#262521}.section{font:700 21px Georgia,serif;fill:#262521}.body{font:500 16px Inter,Arial,sans-serif;fill:#4D4942}.label{font:700 14px Inter,Arial,sans-serif;fill:#262521}.meta{font:400 13px Inter,Arial,sans-serif;fill:#756F65}.component{font:700 17px Inter,Arial,sans-serif;fill:#262521}.button{font:700 13px Inter,Arial,sans-serif;fill:#FFFFFF}</style>',
+    '<rect width="1440" height="' + height + '" fill="#F5F1E8"/>',
+    '<g id="Header"><text x="80" y="78" class="eyebrow">INSPOATLAS · FIGMA BOARD · V' + version + '</text><text x="80" y="132" class="title">' + xmlEscape(contract.title) + '</text><line x1="80" y1="154" x2="1360" y2="154" stroke="#BEB7AA"/></g>',
+    '<g id="Principles"><text x="80" y="190" class="section">设计原则</text>' + principleMarkup + '</g>',
+    '<g id="Tokens"><text x="80" y="352" class="section">颜色与变量参考</text>' + colorMarkup + '</g>',
+    '<g id="Metrics"><text x="80" y="582" class="section">间距 ' + (contract.tokens.spacing.map((item) => item + "px").join(" · ") || "未确认") + '</text><text x="720" y="582" class="section">圆角 ' + (contract.tokens.radii.map((item) => item + "px").join(" · ") || "未确认") + '</text></g>',
+    '<g id="Components"><text x="80" y="626" class="section">组件草稿</text>' + componentMarkup + '</g>',
+    '<text x="1360" y="' + (height - 34) + '" text-anchor="end" class="meta">拖入 Figma 后可编辑文字、色块与图形；Variables 和正式组件需在 Figma 中确认。</text>',
+    '</svg>',
+  ].join("");
+}
+
+function xmlEscape(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[character] || character);
+}
 function designMarkdown(contract: DesignContract, version: number) {
   return "# " + contract.title + "\n\n合同版本：" + version + "\n生成时间：" + contract.generatedAt + "\n\n## 强制视觉原则\n\n" + contract.principles.map((item, index) => (index + 1) + ". " + item).join("\n") + "\n\n## Do\n\n" + contract.dos.map((item) => "- " + item).join("\n") + "\n\n## Don’t\n\n" + contract.donts.map((item) => "- " + item).join("\n") + "\n\n## 冲突\n\n" + (contract.conflicts.map((item) => "- " + item).join("\n") || "- 无") + "\n\n## 未确认项\n\n" + (contract.unresolved.map((item) => "- " + item).join("\n") || "- 无") + "\n\n## 证据素材\n\n" + contract.sourceAssetIds.map((item) => "- " + item).join("\n");
 }

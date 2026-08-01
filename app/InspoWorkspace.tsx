@@ -82,7 +82,7 @@ function WorkspaceCanvas() {
   const [showMiniMap, setShowMiniMap] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
   const [savedState, setSavedState] = useState("正在读取");
-  const [rightTab, setRightTab] = useState<"asset" | "baseline" | "export">("asset");
+  const [rightTab, setRightTab] = useState<"asset" | "direction" | "baseline" | "export">("asset");
   const [relationView, setRelationView] = useState<RelationView>("selection");
   const [modal, setModal] = useState<WorkspaceModal>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -98,18 +98,20 @@ function WorkspaceCanvas() {
   const [productionGoal, setProductionGoal] = useState<ProductionGoal>("recreate");
   const [exportDestination, setExportDestination] = useState<ExportDestination>("figma-design");
   const [exportBusy, setExportBusy] = useState(false);
-  const [exportComplete, setExportComplete] = useState(false);
+  const [exportComplete, setExportComplete] = useState<false | "quick" | "full">(false);
   const [credentialState, setCredentialState] = useState<Array<{ provider: string; model: string; lastFour: string; supportsVision: boolean; active: boolean }>>([]);
   const [managedAi, setManagedAi] = useState<ManagedAiState>({ available: false, provider: null, model: null, supportsVision: false });
   const [credentialForm, setCredentialForm] = useState<{ provider: ProviderId; apiKey: string; model: string; region: string }>({ provider: "openai", apiKey: "", model: providerCatalog.openai.models[0], region: "intl" });
   const [loadingCredential, setLoadingCredential] = useState(false);
   const [credentialToDelete, setCredentialToDelete] = useState<ProviderId | null>(null);
-  const [assistantOpen, setAssistantOpen] = useState(false);
+
   const [assistantScope, setAssistantScope] = useState<AssistantScope>("board");
   const [assistantGoal, setAssistantGoal] = useState("");
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([]);
   const [assistantBusy, setAssistantBusy] = useState(false);
+  const [linkMode, setLinkMode] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [leftRailWidth, setLeftRailWidth] = useState(242);
   const [rightRailWidth, setRightRailWidth] = useState(322);
   const [resizingRail, setResizingRail] = useState<"left" | "right" | null>(null);
@@ -871,9 +873,9 @@ function WorkspaceCanvas() {
     for (const id of ids) await analyze(id, false);
   }
 
-  async function askDesignAssistant() {
+  async function askDesignAssistant(requestedQuestion?: string) {
     const goal = assistantGoal.trim();
-    const question = assistantQuestion.trim();
+    const question = (requestedQuestion ?? assistantQuestion).trim();
     if (!goal) return notify("请先说明你要设计什么");
     if (!question) return notify("请输入你想讨论的问题");
     if (assistantScope === "selection" && !selectedIds.length) return notify("请先选择要分析的卡片");
@@ -1204,7 +1206,7 @@ function WorkspaceCanvas() {
     notify(response.ok ? "设计方案已保存" : "设计方案保存失败");
   }
 
-  async function exportPackage() {
+  async function exportPackage(format: "quick" | "full" = "full") {
     setExportBusy(true);
     setExportComplete(false);
     const response = await fetch("/api/exports", {
@@ -1215,6 +1217,7 @@ function WorkspaceCanvas() {
         purpose: activeDestination.purpose,
         goal: productionGoal,
         destination: activeDestination.id,
+        format: activeDestination.id === "figma-design" ? format : "full",
       }),
     });
     if (!response.ok) {
@@ -1225,12 +1228,13 @@ function WorkspaceCanvas() {
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
-    anchor.download = "inspoatlas-" + activeDestination.id + ".zip";
+    const quickFigma = activeDestination.id === "figma-design" && format === "quick";
+    anchor.download = "inspoatlas-" + activeDestination.id + (quickFigma ? ".svg" : ".zip");
     anchor.click();
     URL.revokeObjectURL(url);
     setExportBusy(false);
-    setExportComplete(true);
-    notify("已下载，解压后查看使用说明.txt");
+    setExportComplete(quickFigma ? "quick" : "full");
+    notify(quickFigma ? "已下载，直接拖进 Figma 即可" : "已下载完整任务包");
   }
 
   async function loadCredentials() {
@@ -1316,7 +1320,7 @@ function WorkspaceCanvas() {
 
   return (
     <main
-      className={"workspace-shell" + (focusMode ? " focus-mode" : "") + (resizingRail ? " is-resizing" : "")}
+      className={"workspace-shell" + (focusMode ? " focus-mode" : "") + (resizingRail ? " is-resizing" : "") + (linkMode ? " link-mode" : "")}
       style={{ "--left-rail-width": `${leftRailWidth}px`, "--right-rail-width": `${rightRailWidth}px` } as CSSProperties}
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
@@ -1352,13 +1356,13 @@ function WorkspaceCanvas() {
         <div className="top-actions">
           <button className="button ghost" onClick={undo} title="撤销">↶</button>
           <button className="button ghost" onClick={redo} title="重做">↷</button>
-          <button className={"button soft assistant-top-button" + (assistantOpen ? " active" : "")} onClick={() => { setAssistantScope(selectedIds.length ? "selection" : "board"); setAssistantOpen((value) => !value); }}>✦ 设计助手</button>
+          <button className={"button soft assistant-top-button" + (rightTab === "direction" ? " active" : "")} onClick={() => { setAssistantScope(selectedIds.length ? "selection" : "board"); setRightTab("direction"); }}>定方向</button>
           <button className={"button soft focus-top-button" + (focusMode ? " active" : "")} onClick={() => setFocusMode((value) => !value)}>{focusMode ? "退出专注" : "专注模式"}</button>
           <UserMenu />
         </div>
       </header>
 
-      <aside className="left-rail">
+      <aside className="left-rail" style={{ width: leftRailWidth }}>
         <button className="rail-action" onClick={() => setModal("import")}><span>＋</span>采集参考</button>
         <nav>
           <p>我的画布 <button onClick={() => void createBoard()} aria-label="新建画布">＋</button></p>
@@ -1425,6 +1429,7 @@ function WorkspaceCanvas() {
           <button onClick={() => setModal("import")} title="添加网页、文字或文件夹"><b>＋</b><small>添加</small></button>
           <button onClick={createNote} title="添加可原位编辑的画布备注"><b>✎</b><small>备注</small></button>
           <button onClick={() => createGroup()} title="新建分组"><b>▱</b><small>分组</small></button>
+          <button className={linkMode ? "is-active" : ""} onClick={() => { const next = !linkMode; setLinkMode(next); if (next) { setRelationView("all"); notify("从卡片右侧 ＋ 拖到另一张卡片左侧圆点"); } }} title="像 Coze 一样从端口拖动连接"><b>↗</b><small>{linkMode ? "完成" : "连接"}</small></button>
           <span />
           <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()} title="拆解所选参考"><b>✦</b><small>拆解</small></button>
           <button onClick={previewOrganize} title="整理画布"><b>⌗</b><small>整理</small></button>
@@ -1457,8 +1462,8 @@ function WorkspaceCanvas() {
           onChange={(event) => event.target.files?.length && void addImages(event.target.files, true)}
         />
         <label className="relation-view" title="关联线只用于辅助整理，默认仅显示当前卡片相关关系">
-          <span>连线</span>
-          <select value={relationView} onChange={(event) => setRelationView(event.target.value as RelationView)}>
+          <span>{connecting ? "松开完成" : linkMode ? "从 ＋ 拖到圆点" : "连线显示"}</span>
+          <select aria-label="连线显示范围" value={relationView} onChange={(event) => setRelationView(event.target.value as RelationView)}>
             <option value="selection">所选卡片</option>
             <option value="hidden">隐藏</option>
             <option value="all">全部</option>
@@ -1471,19 +1476,22 @@ function WorkspaceCanvas() {
           onNodesChange={organizePreview ? undefined : onNodesChange}
           onEdgesChange={organizePreview ? undefined : onEdgesChange}
           onConnect={organizePreview ? undefined : onConnect}
+          onConnectStart={() => setConnecting(true)}
+          onConnectEnd={() => setConnecting(false)}
           onSelectionChange={onSelectionChange}
           onNodeClick={onNodeClick}
           onNodeContextMenu={onNodeContextMenu}
           onPaneClick={onPaneClick}
           onNodeDragStop={onNodeDragStop}
           onMoveEnd={(_, viewport) => setViewportState(viewport)}
-          selectionOnDrag={!organizePreview}
+          selectionOnDrag={!organizePreview && !linkMode}
           selectionMode={SelectionMode.Full}
           multiSelectionKeyCode={["Shift", "Control", "Meta"]}
           panOnDrag={[2]}
           deleteKeyCode={null}
-          nodesDraggable={!organizePreview}
+          nodesDraggable={!organizePreview && !linkMode}
           nodesConnectable={!organizePreview}
+          connectOnClick
           connectionRadius={48}
           elementsSelectable={!organizePreview}
           fitView
@@ -1515,10 +1523,10 @@ function WorkspaceCanvas() {
       </section>
       <div className="rail-resizer rail-resizer-right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" title="拖动调整右栏宽度" onDoubleClick={() => setRightRailWidth(322)} onPointerDown={(event) => startRailResize("right", event)} />
 
-      <aside className="inspector">
+      <aside className="inspector" style={{ width: rightRailWidth }}>
         <div className="inspector-tabs">
           <button className={rightTab === "asset" ? "active" : ""} onClick={() => setRightTab("asset")}>参考</button>
-          <button className={rightTab === "baseline" ? "active" : ""} onClick={() => setRightTab("baseline")}>方案</button>
+          <button className={rightTab === "direction" ? "active" : ""} onClick={() => setRightTab("direction")}>方向</button>
           <button className={rightTab === "export" ? "active" : ""} onClick={() => setRightTab("export")}>输出</button>
         </div>
         {rightTab === "asset" ? (
@@ -1541,6 +1549,38 @@ function WorkspaceCanvas() {
               {!!selected.data.regions?.length && <section className="inspect-block"><div className="block-heading"><h3>识别到的组件</h3><small>生成方案时自动汇总</small></div><div className="region-list simple">{selected.data.regions.map((region) => <div key={region.id}><span className="region-preview">{region.type}</span><div><strong>{region.label}</strong><small>{Math.round((region.confidence ?? 0) * 100)}% 可信</small></div></div>)}</div></section>}
             </>
           ) : <div className="empty-inspector"><strong>从画布开始</strong><p>拖动空白处框选多张卡片，或选择一张参考查看拆解结果。</p></div>
+        ) : rightTab === "direction" ? (
+          <section className="direction-panel">
+            <span className="step-kicker">设计方向</span>
+            <h2>先定取舍，再出方案</h2>
+            <p>它只解决一个问题：这些参考里，什么该保留，什么该改。不会替你凭空生成一张新画布。</p>
+            <label className="direction-goal">
+              <span>这次要做什么</span>
+              <textarea value={assistantGoal} onChange={(event) => setAssistantGoal(event.target.value)} placeholder="例如：做一套户外品牌夏季活动页，年轻但不幼稚，后续还要批量换主题。" />
+            </label>
+            <div className="assistant-scope" role="group" aria-label="参考范围">
+              <button className={assistantScope === "selection" ? "active" : ""} disabled={!selectedIds.length} onClick={() => setAssistantScope("selection")}>所选 {selectedIds.length || ""}</button>
+              <button className={assistantScope === "board" ? "active" : ""} onClick={() => setAssistantScope("board")}>全部参考</button>
+            </div>
+            <div className="direction-actions">
+              <button onClick={() => void askDesignAssistant("找出这些参考最适合当前目标的共同点，并说明应保留什么。")} disabled={assistantBusy || !assistantGoal.trim()}>保留什么</button>
+              <button onClick={() => void askDesignAssistant("找出这些参考之间互相冲突的设计做法，并给出明确取舍。")} disabled={assistantBusy || !assistantGoal.trim()}>哪里冲突</button>
+              <button onClick={() => void askDesignAssistant("根据当前目标给出一条明确的设计方向，包括结构、视觉和组件取舍。")} disabled={assistantBusy || !assistantGoal.trim()}>给出方向</button>
+            </div>
+            {assistantBusy && <div className="direction-loading"><i /><span>正在对照目标与参考…</span></div>}
+            {assistantMessages.filter((message) => message.role === "assistant").slice(-1).map((message, index) => (
+              <article className="direction-result" key={message.id ?? index}>
+                <header><strong>方向建议</strong><small>依据当前参考</small></header>
+                <p>{message.content}</p>
+                {message.id && !message.content.startsWith("未能完成：") && <div className="ai-feedback-row">{message.feedback ? <small>{message.feedback === "helpful" ? "✓ 有帮助" : "✓ 需改进"}</small> : <><small>有用吗？</small><button onClick={() => void submitAssistantFeedback(message, "helpful")}>有用</button><button onClick={() => void submitAssistantFeedback(message, "needs-work", "not-actionable")}>不够具体</button></>}</div>}
+              </article>
+            ))}
+            <form className="direction-question" onSubmit={(event) => { event.preventDefault(); void askDesignAssistant(); }}>
+              <label htmlFor="direction-question">还有哪个决定没想清楚？</label>
+              <textarea id="direction-question" value={assistantQuestion} onChange={(event) => setAssistantQuestion(event.target.value)} placeholder="例如：导航应该更克制，还是延续参考里的强品牌感？" />
+              <button disabled={assistantBusy || !assistantGoal.trim() || !assistantQuestion.trim()}>分析这个问题</button>
+            </form>
+          </section>
         ) : rightTab === "baseline" ? (
           <section className="contract-panel">
             <span className="step-kicker">第 2 步</span><h2>设计方案</h2>
@@ -1620,45 +1660,27 @@ function WorkspaceCanvas() {
               <p><b>下一步：</b>{activeDestination.nextStep}</p>
             </div>
 
-            <button className="button primary wide export-now" onClick={() => void exportPackage()} disabled={exportBusy}>
+            <button className="button primary wide export-now" onClick={() => void exportPackage(activeDestination.id === "figma-design" ? "quick" : "full")} disabled={exportBusy}>
               {exportBusy ? "正在准备…" : activeDestination.action}
             </button>
 
+            {activeDestination.id === "figma-design" && (
+              <details className="figma-advanced">
+                <summary>需要真正的 Variables 和组件？</summary>
+                <p>快速画板是可编辑图层；完整导入包会再创建 Variables 和组件草稿，但需要在 Figma Desktop 里安装一次本地插件。</p>
+                <button onClick={() => void exportPackage("full")} disabled={exportBusy}>下载完整导入包</button>
+              </details>
+            )}
             {exportComplete && (
               <div className="export-receipt" role="status">
                 <span>✓</span>
-                <div><strong>已下载</strong><small>解压后查看“使用说明.txt”。Figma 包内含可导入的本地插件。</small></div>
+                <div><strong>已下载</strong><small>{exportComplete === "quick" ? "把 SVG 文件直接拖进 Figma，文字、色块和图形都能继续编辑。" : "解压后查看“使用说明.txt”。"}</small></div>
               </div>
             )}
           </section>
         )}
       </aside>
 
-      {assistantOpen && (
-        <aside className="assistant-drawer" aria-label="设计助手">
-          <header>
-            <div><span>✦</span><div><strong>设计助手</strong><small>基于画布里的参考给出设计思路</small></div></div>
-            <button onClick={() => setAssistantOpen(false)} aria-label="关闭设计助手">×</button>
-          </header>
-          <section className="assistant-goal">
-            <label htmlFor="assistant-goal">你要设计什么？</label>
-            <textarea id="assistant-goal" value={assistantGoal} onChange={(event) => setAssistantGoal(event.target.value)} placeholder="例如：为户外运动品牌设计一套夏季活动落地页，需要保持年轻、专业且便于批量延展。" />
-          </section>
-          <div className="assistant-scope" role="group" aria-label="分析范围">
-            <button className={assistantScope === "selection" ? "active" : ""} disabled={!selectedIds.length} onClick={() => setAssistantScope("selection")}>当前选择{selectedIds.length ? " · " + selectedIds.length + " 张" : ""}</button>
-            <button className={assistantScope === "board" ? "active" : ""} onClick={() => setAssistantScope("board")}>整张画布</button>
-          </div>
-          <div className="assistant-thread">
-            {!assistantMessages.length && <div className="assistant-empty"><strong>先说明目标，再从参考中找方向</strong><p>我会引用画布中的具体卡片，比较可复用的视觉语言、结构和冲突，不会替你凭空决定。</p><div><button onClick={() => setAssistantQuestion("这些参考里，哪些视觉规律最适合我的设计目标？")}>提炼视觉规律</button><button onClick={() => setAssistantQuestion("请给出信息结构、组件和视觉风格的落地建议。")}>生成落地思路</button></div></div>}
-            {assistantMessages.map((message, index) => <article key={message.id ?? index} className={message.role}><span>{message.role === "assistant" ? "✦" : "我"}</span><div className="assistant-message-content"><p>{message.content}</p>{message.role === "assistant" && message.id && !message.content.startsWith("未能完成：") && <div className="ai-feedback-row">{message.feedback ? <small>{message.feedback === "helpful" ? "✓ 已标记有帮助" : "✓ 已标记需改进"}</small> : <><small>这条建议有用吗？</small><button onClick={() => void submitAssistantFeedback(message, "helpful")}>有用</button><button onClick={() => void submitAssistantFeedback(message, "needs-work", "not-actionable")}>不落地</button></>}</div>}</div></article>)}
-            {assistantBusy && <article className="assistant is-loading"><span>✦</span><p>正在结合目标与参考内容思考…</p></article>}
-          </div>
-          <form className="assistant-compose" onSubmit={(event) => { event.preventDefault(); void askDesignAssistant(); }}>
-            <textarea value={assistantQuestion} onChange={(event) => setAssistantQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void askDesignAssistant(); } }} placeholder="继续追问设计方向、结构、组件或一致性…" />
-            <button disabled={assistantBusy || !assistantGoal.trim() || !assistantQuestion.trim()}>{assistantBusy ? "…" : "发送"}</button>
-          </form>
-        </aside>
-      )}
       {contextMenu?.kind === "node" && (() => {
         const node = nodes.find((item) => item.id === contextMenu.id);
         if (!node) return null;

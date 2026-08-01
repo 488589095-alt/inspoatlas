@@ -162,7 +162,13 @@ export const designContractSchema = z.object({
 });
 export type DesignContract = z.infer<typeof designContractSchema>;
 export interface OrganizeProposal { id: string; boardId: string; baseVersion: number; groups: Array<{ id: string; title: string; memberIds: string[] }>; positions: Record<string, { x: number; y: number; parentId?: string }>; suggestedRelations: Relation[]; }
-export const exportRequestSchema = z.object({ boardId: z.string().min(1), purpose: z.enum(exportPurposes), goal: z.enum(productionGoals).optional(), destination: z.enum(exportDestinations).optional() });
+export const exportRequestSchema = z.object({
+  boardId: z.string().min(1),
+  purpose: z.enum(exportPurposes),
+  goal: z.enum(productionGoals).optional(),
+  destination: z.enum(exportDestinations).optional(),
+  format: z.enum(["quick", "full"]).default("full"),
+});
 export const exportFilesByPurpose: Record<ExportPurpose, string[]> = {
   "web-rebuild": ["DESIGN.md", "STRUCTURE.md", "MAPPING.md", "IMPLEMENTATION_PROMPT.md", "tokens/tokens.json", "tokens/variables.css", "components.md", "STRUCTURE_QA.md", "DESIGN_QA.md", "sources.json"],
   "visual-remix": ["IMAGE_PROMPT.md", "PROMPT_VARIANTS.md", "NEGATIVE_PROMPT.md", "palette.json", "composition.md", "sources.json"],

@@ -1,4 +1,4 @@
-﻿import assert from "node:assert/strict";
+import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
@@ -49,13 +49,13 @@ test("设计助手要求目标并支持选择或整张画布", async () => {
     readFile(new URL("../app/InspoWorkspace.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/boards/[id]/design-assistant/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../packages/ai/src/index.ts", import.meta.url), "utf8"),
-    readFile(new URL("../app/workspace-v9.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/workspace-v11.css", import.meta.url), "utf8"),
   ]);
-  assert.match(workspace, /你要设计什么/);
+  assert.match(workspace, /这次要做什么/);
   assert.match(workspace, /assistantScope === "selection"/);
-  assert.match(workspace, /整张画布/);
+  assert.match(workspace, /全部参考/);
   assert.match(route, /eq\(boards\.ownerId, user\.id\)/);
-  assert.match(route, /每个关键判断都用【卡片标题】标注依据/);
+  assert.match(route, /关键判断用【卡片标题】标注依据/);
   assert.match(ai, /generateTextWithProvider/);
-  assert.match(styles, /\.assistant-drawer/);
+  assert.match(styles, /\.direction-panel/);
 });
