@@ -82,7 +82,7 @@ function WorkspaceCanvas() {
   const [showMiniMap, setShowMiniMap] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
   const [savedState, setSavedState] = useState("正在读取");
-  const [rightTab, setRightTab] = useState<"asset" | "direction" | "baseline" | "export">("asset");
+  const [rightTab, setRightTab] = useState<"asset" | "baseline" | "export">("asset");
   const [relationView, setRelationView] = useState<RelationView>("selection");
   const [modal, setModal] = useState<WorkspaceModal>(null);
   const [contextMenu, setContextMenu] = useState<ContextMenu | null>(null);
@@ -110,6 +110,7 @@ function WorkspaceCanvas() {
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([]);
   const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [linkMode, setLinkMode] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [leftRailWidth, setLeftRailWidth] = useState(242);
@@ -669,7 +670,7 @@ function WorkspaceCanvas() {
     notify(isUrl ? "网页来源卡已保存" : "文字参考已保存");
   }
 
-  function createNote() {
+  function createNote(initial?: { title?: string; body?: string }) {
     const id = "note-" + crypto.randomUUID();
     const center = screenToFlowPosition({
       x: leftRailWidth + Math.max(0, window.innerWidth - leftRailWidth - rightRailWidth) / 2,
@@ -681,8 +682,8 @@ function WorkspaceCanvas() {
       position: { x: center.x - 145, y: center.y - 95 },
       data: {
         kind: "text",
-        title: "备注",
-        body: "单击这里写下备注",
+        title: initial?.title || "备注",
+        body: initial?.body || "单击这里写下备注",
         note: true,
       },
       style: defaultSize.text,
@@ -692,7 +693,11 @@ function WorkspaceCanvas() {
     setNodes((current) => [...current, note]);
     setSelectedIds([id]);
     setRightTab("asset");
-    notify("已添加备注，单击正文即可编辑");
+    notify(initial ? "已放到画布，可继续修改" : "已添加备注，单击正文即可编辑");
+  }
+
+  function placeDirectionOnCanvas(message: AssistantMessage) {
+    createNote({ title: "方向建议", body: message.content });
   }
 
   function startRailResize(side: "left" | "right", event: ReactPointerEvent<HTMLDivElement>) {
@@ -1356,7 +1361,7 @@ function WorkspaceCanvas() {
         <div className="top-actions">
           <button className="button ghost" onClick={undo} title="撤销">↶</button>
           <button className="button ghost" onClick={redo} title="重做">↷</button>
-          <button className={"button soft assistant-top-button" + (rightTab === "direction" ? " active" : "")} onClick={() => { setAssistantScope(selectedIds.length ? "selection" : "board"); setRightTab("direction"); }}>定方向</button>
+          <button className={"button soft assistant-top-button" + (assistantOpen ? " active" : "")} onClick={() => { setAssistantScope(selectedIds.length ? "selection" : "board"); setAssistantOpen((value) => !value); }}>方向助手</button>
           <button className={"button soft focus-top-button" + (focusMode ? " active" : "")} onClick={() => setFocusMode((value) => !value)}>{focusMode ? "退出专注" : "专注模式"}</button>
           <UserMenu />
         </div>
@@ -1427,7 +1432,7 @@ function WorkspaceCanvas() {
         <div className="canvas-toolbar" role="toolbar" aria-label="画布工具">
           <button onClick={() => fileInput.current?.click()} title="从本地上传图片素材"><b>↑</b><small>上传</small></button>
           <button onClick={() => setModal("import")} title="添加网页、文字或文件夹"><b>＋</b><small>添加</small></button>
-          <button onClick={createNote} title="添加可原位编辑的画布备注"><b>✎</b><small>备注</small></button>
+          <button onClick={() => createNote()} title="添加可原位编辑的画布备注"><b>✎</b><small>备注</small></button>
           <button onClick={() => createGroup()} title="新建分组"><b>▱</b><small>分组</small></button>
           <button className={linkMode ? "is-active" : ""} onClick={() => { const next = !linkMode; setLinkMode(next); if (next) { setRelationView("all"); notify("从卡片右侧 ＋ 拖到另一张卡片左侧圆点"); } }} title="像 Coze 一样从端口拖动连接"><b>↗</b><small>{linkMode ? "完成" : "连接"}</small></button>
           <span />
@@ -1520,14 +1525,49 @@ function WorkspaceCanvas() {
             <footer><button className="button soft" onClick={() => setOrganizePreview(null)}>返回原画布</button><button className="button primary" onClick={applyOrganize}>应用整理</button></footer>
           </aside>
         )}
+
+        {assistantOpen && !organizePreview && (
+          <aside className="canvas-director" aria-label="方向助手">
+            <header>
+              <div><small>方向助手</small><h2>用参考做取舍</h2></div>
+              <button onClick={() => setAssistantOpen(false)} aria-label="关闭方向助手">×</button>
+            </header>
+            <p>说明这次要做什么。助手会对照画布里的参考给建议，不会替你改动画布。</p>
+            <label className="direction-goal">
+              <span>设计目标</span>
+              <textarea value={assistantGoal} onChange={(event) => setAssistantGoal(event.target.value)} placeholder="例如：做一套户外品牌夏季活动页，年轻但不幼稚，后续还要批量换主题。" />
+            </label>
+            <div className="assistant-scope" role="group" aria-label="参考范围">
+              <button className={assistantScope === "selection" ? "active" : ""} disabled={!selectedIds.length} onClick={() => setAssistantScope("selection")}>所选 {selectedIds.length || ""}</button>
+              <button className={assistantScope === "board" ? "active" : ""} onClick={() => setAssistantScope("board")}>全部参考</button>
+            </div>
+            <div className="direction-actions">
+              <button onClick={() => void askDesignAssistant("找出这些参考最适合当前目标的共同点，并说明应保留什么。")} disabled={assistantBusy || !assistantGoal.trim()}>保留什么</button>
+              <button onClick={() => void askDesignAssistant("找出这些参考之间互相冲突的设计做法，并给出明确取舍。")} disabled={assistantBusy || !assistantGoal.trim()}>哪里冲突</button>
+              <button onClick={() => void askDesignAssistant("根据当前目标给出一条明确的设计方向，包括结构、视觉和组件取舍。")} disabled={assistantBusy || !assistantGoal.trim()}>给出方向</button>
+            </div>
+            {assistantBusy && <div className="direction-loading"><i /><span>正在对照目标与参考…</span></div>}
+            {assistantMessages.filter((message) => message.role === "assistant").slice(-1).map((message, index) => (
+              <article className="direction-result" key={message.id ?? index}>
+                <header><strong>方向建议</strong><small>{assistantScope === "selection" ? `所选 ${selectedIds.length} 张` : "整张画布"}</small></header>
+                <p>{message.content}</p>
+                {!message.content.startsWith("未能完成：") && <div className="direction-result-actions"><button onClick={() => placeDirectionOnCanvas(message)}>放到画布</button>{message.id && (message.feedback ? <small>{message.feedback === "helpful" ? "✓ 有帮助" : "✓ 需改进"}</small> : <><button onClick={() => void submitAssistantFeedback(message, "helpful")}>有用</button><button onClick={() => void submitAssistantFeedback(message, "needs-work", "not-actionable")}>不够具体</button></>)}</div>}
+              </article>
+            ))}
+            <form className="direction-question" onSubmit={(event) => { event.preventDefault(); void askDesignAssistant(); }}>
+              <label htmlFor="direction-question">继续追问</label>
+              <div><textarea id="direction-question" value={assistantQuestion} onChange={(event) => setAssistantQuestion(event.target.value)} placeholder="例如：导航应该更克制，还是保留强品牌感？" /><button disabled={assistantBusy || !assistantGoal.trim() || !assistantQuestion.trim()}>发送</button></div>
+            </form>
+          </aside>
+        )}
       </section>
       <div className="rail-resizer rail-resizer-right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" title="拖动调整右栏宽度" onDoubleClick={() => setRightRailWidth(322)} onPointerDown={(event) => startRailResize("right", event)} />
 
       <aside className="inspector" style={{ width: rightRailWidth }}>
         <div className="inspector-tabs">
-          <button className={rightTab === "asset" ? "active" : ""} onClick={() => setRightTab("asset")}>参考</button>
-          <button className={rightTab === "direction" ? "active" : ""} onClick={() => setRightTab("direction")}>方向</button>
-          <button className={rightTab === "export" ? "active" : ""} onClick={() => setRightTab("export")}>输出</button>
+          <button className={rightTab === "asset" ? "active" : ""} onClick={() => setRightTab("asset")}><span>1</span>拆解</button>
+          <button className={rightTab === "baseline" ? "active" : ""} onClick={() => setRightTab("baseline")}><span>2</span>方案</button>
+          <button className={rightTab === "export" ? "active" : ""} onClick={() => setRightTab("export")}><span>3</span>输出</button>
         </div>
         {rightTab === "asset" ? (
           selectedIds.length > 1 ? (
@@ -1549,38 +1589,6 @@ function WorkspaceCanvas() {
               {!!selected.data.regions?.length && <section className="inspect-block"><div className="block-heading"><h3>识别到的组件</h3><small>生成方案时自动汇总</small></div><div className="region-list simple">{selected.data.regions.map((region) => <div key={region.id}><span className="region-preview">{region.type}</span><div><strong>{region.label}</strong><small>{Math.round((region.confidence ?? 0) * 100)}% 可信</small></div></div>)}</div></section>}
             </>
           ) : <div className="empty-inspector"><strong>从画布开始</strong><p>拖动空白处框选多张卡片，或选择一张参考查看拆解结果。</p></div>
-        ) : rightTab === "direction" ? (
-          <section className="direction-panel">
-            <span className="step-kicker">设计方向</span>
-            <h2>先定取舍，再出方案</h2>
-            <p>它只解决一个问题：这些参考里，什么该保留，什么该改。不会替你凭空生成一张新画布。</p>
-            <label className="direction-goal">
-              <span>这次要做什么</span>
-              <textarea value={assistantGoal} onChange={(event) => setAssistantGoal(event.target.value)} placeholder="例如：做一套户外品牌夏季活动页，年轻但不幼稚，后续还要批量换主题。" />
-            </label>
-            <div className="assistant-scope" role="group" aria-label="参考范围">
-              <button className={assistantScope === "selection" ? "active" : ""} disabled={!selectedIds.length} onClick={() => setAssistantScope("selection")}>所选 {selectedIds.length || ""}</button>
-              <button className={assistantScope === "board" ? "active" : ""} onClick={() => setAssistantScope("board")}>全部参考</button>
-            </div>
-            <div className="direction-actions">
-              <button onClick={() => void askDesignAssistant("找出这些参考最适合当前目标的共同点，并说明应保留什么。")} disabled={assistantBusy || !assistantGoal.trim()}>保留什么</button>
-              <button onClick={() => void askDesignAssistant("找出这些参考之间互相冲突的设计做法，并给出明确取舍。")} disabled={assistantBusy || !assistantGoal.trim()}>哪里冲突</button>
-              <button onClick={() => void askDesignAssistant("根据当前目标给出一条明确的设计方向，包括结构、视觉和组件取舍。")} disabled={assistantBusy || !assistantGoal.trim()}>给出方向</button>
-            </div>
-            {assistantBusy && <div className="direction-loading"><i /><span>正在对照目标与参考…</span></div>}
-            {assistantMessages.filter((message) => message.role === "assistant").slice(-1).map((message, index) => (
-              <article className="direction-result" key={message.id ?? index}>
-                <header><strong>方向建议</strong><small>依据当前参考</small></header>
-                <p>{message.content}</p>
-                {message.id && !message.content.startsWith("未能完成：") && <div className="ai-feedback-row">{message.feedback ? <small>{message.feedback === "helpful" ? "✓ 有帮助" : "✓ 需改进"}</small> : <><small>有用吗？</small><button onClick={() => void submitAssistantFeedback(message, "helpful")}>有用</button><button onClick={() => void submitAssistantFeedback(message, "needs-work", "not-actionable")}>不够具体</button></>}</div>}
-              </article>
-            ))}
-            <form className="direction-question" onSubmit={(event) => { event.preventDefault(); void askDesignAssistant(); }}>
-              <label htmlFor="direction-question">还有哪个决定没想清楚？</label>
-              <textarea id="direction-question" value={assistantQuestion} onChange={(event) => setAssistantQuestion(event.target.value)} placeholder="例如：导航应该更克制，还是延续参考里的强品牌感？" />
-              <button disabled={assistantBusy || !assistantGoal.trim() || !assistantQuestion.trim()}>分析这个问题</button>
-            </form>
-          </section>
         ) : rightTab === "baseline" ? (
           <section className="contract-panel">
             <span className="step-kicker">第 2 步</span><h2>设计方案</h2>

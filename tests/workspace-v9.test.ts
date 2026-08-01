@@ -44,18 +44,24 @@ test("网页正文可滚动且无截图素材不再发起图片请求", async ()
   assert.match(styles, /overflow-y: auto/);
 });
 
-test("设计助手要求目标并支持选择或整张画布", async () => {
+test("方向助手独立于固定流程并能把建议放回画布", async () => {
   const [workspace, route, ai, styles] = await Promise.all([
     readFile(new URL("../app/InspoWorkspace.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/boards/[id]/design-assistant/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../packages/ai/src/index.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/workspace-v11.css", import.meta.url), "utf8"),
   ]);
-  assert.match(workspace, /这次要做什么/);
+  assert.match(workspace, /className="canvas-director"/);
+  assert.match(workspace, /设计目标/);
   assert.match(workspace, /assistantScope === "selection"/);
   assert.match(workspace, /全部参考/);
+  assert.match(workspace, /placeDirectionOnCanvas/);
+  assert.match(workspace, /放到画布/);
+  assert.match(workspace, />拆解<\/button>/);
+  assert.match(workspace, />方案<\/button>/);
+  assert.match(workspace, />输出<\/button>/);
   assert.match(route, /eq\(boards\.ownerId, user\.id\)/);
   assert.match(route, /关键判断用【卡片标题】标注依据/);
   assert.match(ai, /generateTextWithProvider/);
-  assert.match(styles, /\.direction-panel/);
+  assert.match(styles, /\.canvas-director/);
 });
