@@ -16,11 +16,17 @@ test("拆解结果与方案作为可持久化画布节点串联", async () => {
   assert.match(workspace, /已选取舍（可选）/);
   assert.match(workspace, /contract-evidence/);
   assert.match(workspace, /检查证据与取舍/);
+  assert.match(workspace, /workflowOverlay === "purpose"/);
+  assert.match(workspace, /这批参考要帮你完成什么？/);
+  assert.match(workspace, /focusEvidence/);
+  assert.match(workspace, /已定位 \$\{targets\.length\} 张来源参考/);
   assert.match(card, /workflowStage === "analysis"/);
   assert.match(card, /workflowStage === "contract"/);
   assert.match(card, /待核对/);
+  assert.match(card, /仅整理灵感/);
   assert.match(model, /nodes: nodes\.map/);
   assert.match(preview, /requested\.size && !requested\.has\(row\.assetId\)/);
+  assert.match(preview, /brief: designBriefSchema\.optional\(\)/);
 });
 
 test("端口拖出下一步、连线文字编辑与节点搜索均在画布内", async () => {

@@ -1,6 +1,6 @@
-import type { AnalysisResult, DesignContract } from "@/packages/domain/src";
+import { defaultDesignBrief, type AnalysisResult, type DesignBrief, type DesignContract } from "@/packages/domain/src";
 
-export function buildContract(title: string, rows: Array<{ assetId: string; result: AnalysisResult }>): DesignContract {
+export function buildContract(title: string, rows: Array<{ assetId: string; result: AnalysisResult }>, brief: DesignBrief = defaultDesignBrief): DesignContract {
   const principles = unique(rows.flatMap((row) => row.result.principles)).slice(0, 8);
   const colors = new Map<string, Set<string>>();
   for (const row of rows) for (const color of row.result.palette) {
@@ -44,6 +44,7 @@ export function buildContract(title: string, rows: Array<{ assetId: string; resu
       unresolved: unresolved.map((value) => ({ value, sourceAssetIds: lowConfidenceAssetIds.length ? lowConfidenceAssetIds : allAssetIds })),
     },
     review: { conflictDecisions: [], unresolvedNotes: [] },
+    brief,
     sourceAssetIds: allAssetIds, generatedAt: new Date().toISOString(),
   };
 }

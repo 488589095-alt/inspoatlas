@@ -10,6 +10,7 @@ export const relationLayers = ["provenance", "association"] as const;
 export const relationStatuses = ["confirmed", "suggested", "rejected"] as const;
 export const exportPurposes = ["web-rebuild", "visual-remix", "campaign-system", "figma-bridge"] as const;
 export const productionGoals = ["recreate", "explore", "scale"] as const;
+export const designPurposes = ["web-ui-recreate", "brand-extension", "campaign-system", "organize"] as const;
 export const exportDestinations = ["figma-design", "coding-ai", "image-ai", "figma-make", "figma-buzz"] as const;
 export const providerIds = ["openai", "anthropic", "gemini", "qwen", "deepseek", "moonshot", "zhipu", "doubao", "minimax"] as const;
 
@@ -21,6 +22,7 @@ export type RelationStatus = (typeof relationStatuses)[number];
 export type JobStatus = "queued" | "processing" | "ready" | "failed";
 export type ExportPurpose = (typeof exportPurposes)[number];
 export type ProductionGoal = (typeof productionGoals)[number];
+export type DesignPurpose = (typeof designPurposes)[number];
 export type ExportDestination = (typeof exportDestinations)[number];
 export type ProviderId = (typeof providerIds)[number];
 
@@ -153,6 +155,21 @@ export const boardSceneSchema = z.object({
 export type BoardSceneV2 = z.infer<typeof boardSceneSchema>;
 export type SceneNode = z.infer<typeof sceneNodeSchema>;
 export const EMPTY_SCENE: BoardSceneV2 = { schemaVersion: 2, nodes: [], relations: [], viewport: { x: 0, y: 0, zoom: 1 } };
+export const defaultDesignBrief = {
+  purpose: "organize" as const,
+  objective: "整理当前参考",
+  context: "",
+  keep: "",
+  avoid: "",
+};
+export const designBriefSchema = z.object({
+  purpose: z.enum(designPurposes),
+  objective: z.string().trim().min(1).max(500),
+  context: z.string().trim().max(400).default(""),
+  keep: z.string().trim().max(400).default(""),
+  avoid: z.string().trim().max(400).default(""),
+});
+export type DesignBrief = z.infer<typeof designBriefSchema>;
 export const designContractSchema = z.object({
   schemaVersion: z.literal(1).default(1), title: z.string().min(1), principles: z.array(z.string()).min(1).max(8),
   tokens: z.object({ colors: z.array(z.object({ name: z.string(), value: z.string(), sourceAssetIds: z.array(z.string()) })), spacing: z.array(z.number()), radii: z.array(z.number()), shadows: z.array(z.string()) }),
@@ -167,6 +184,7 @@ export const designContractSchema = z.object({
     conflictDecisions: z.array(z.object({ issue: z.string().min(1), decision: z.string().min(1) })).max(8).default([]),
     unresolvedNotes: z.array(z.object({ issue: z.string().min(1), decision: z.string().min(1) })).max(8).default([]),
   }).default({ conflictDecisions: [], unresolvedNotes: [] }),
+  brief: designBriefSchema.default(defaultDesignBrief),
   sourceAssetIds: z.array(z.string()), generatedAt: z.string(),
 });
 export type DesignContract = z.infer<typeof designContractSchema>;

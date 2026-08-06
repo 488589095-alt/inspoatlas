@@ -18,7 +18,7 @@ import {
   useReactFlow,
   type Viewport,
 } from "@xyflow/react";
-import { providerCatalog, type AnalysisResult, type DesignContract, type ProviderId, type Relation } from "@/packages/domain/src";
+import { providerCatalog, type AnalysisResult, type DesignBrief, type DesignContract, type DesignPurpose, type ProviderId, type Relation } from "@/packages/domain/src";
 import {
   exportDestinationsByGoal,
   productionGoalOptions,
@@ -83,6 +83,30 @@ const searchKindOptions: Array<{ id: SearchKind; label: string; icon: string }> 
   { id: "contract", label: "方案", icon: "◇" },
   { id: "group", label: "分组", icon: "▱" },
 ];
+const purposeOptions: Array<{
+  id: DesignPurpose;
+  mark: string;
+  title: string;
+  description: string;
+  fields: [string, string, string, string];
+}> = [
+  { id: "web-ui-recreate", mark: "▧", title: "网页 / UI 复刻", description: "复用明确的结构与组件规律。", fields: ["复刻范围", "平台 / 尺寸", "必须保留", "排除项"] },
+  { id: "brand-extension", mark: "◉", title: "图片 / 品牌视觉延展", description: "借用视觉语言，重写品牌与主体。", fields: ["品牌 / 主体", "使用场景与受众", "必须保留", "禁止项"] },
+  { id: "campaign-system", mark: "▦", title: "批量活动页系统", description: "把可复用规则和可变内容分开。", fields: ["页面数量与目标", "投放渠道", "固定模块", "可变内容"] },
+  { id: "organize", mark: "⌗", title: "仅整理灵感", description: "先形成可追溯的参考方案，不进入生产。", fields: ["整理目标", "整理范围", "重点保留", "暂不考虑"] },
+];
+const productionGoalByPurpose: Record<DesignPurpose, ProductionGoal | null> = {
+  "web-ui-recreate": "recreate",
+  "brand-extension": "explore",
+  "campaign-system": "scale",
+  organize: null,
+};
+function createDesignBrief(purpose: DesignPurpose = "organize"): DesignBrief {
+  return { purpose, objective: "", context: "", keep: "", avoid: "" };
+}
+function designPurposeLabel(purpose: DesignPurpose | undefined) {
+  return purposeOptions.find((item) => item.id === purpose)?.title ?? "未指定任务";
+}
 
 function WorkspaceCanvas() {
   const [boards, setBoards] = useState<BoardSummary[]>([]);
@@ -112,7 +136,9 @@ function WorkspaceCanvas() {
   const [contract, setContract] = useState<DesignContract | null>(null);
   const [contractBusy, setContractBusy] = useState(false);
   const [contractSourceNodeIds, setContractSourceNodeIds] = useState<string[]>([]);
-  const [workflowOverlay, setWorkflowOverlay] = useState<"contract" | "export" | null>(null);
+  const [contractSetupNodeIds, setContractSetupNodeIds] = useState<string[]>([]);
+  const [designBrief, setDesignBrief] = useState<DesignBrief>(() => createDesignBrief());
+  const [workflowOverlay, setWorkflowOverlay] = useState<"purpose" | "contract" | "export" | null>(null);
   const [nextStepMenu, setNextStepMenu] = useState<NextStepMenu | null>(null);
   const [productionGoal, setProductionGoal] = useState<ProductionGoal>("recreate");
   const [exportDestination, setExportDestination] = useState<ExportDestination>("figma-design");
@@ -176,6 +202,7 @@ function WorkspaceCanvas() {
   const selected = selectedNodes[0];
   const exportDestinations = exportDestinationsByGoal[productionGoal];
   const activeDestination = exportDestinations.find((item) => item.id === exportDestination) ?? exportDestinations[0];
+  const activePurposeOption = purposeOptions.find((item) => item.id === designBrief.purpose) ?? purposeOptions[3];
   const sourceTitlesByAssetId = useMemo(() => new Map(nodes.flatMap((node) => {
     const assetId = node.data.workflowStage === "analysis" ? node.data.sourceAssetId : node.data.assetId;
     return assetId ? [[String(assetId), String(node.data.sourceTitle || node.data.title)]] : [];
@@ -457,9 +484,14 @@ function WorkspaceCanvas() {
       }
       if (detail.action === "open-export") {
         const node = nodes.find((item) => item.id === detail.id);
+        if (node?.data.contract) openExport(node.data.contract);
+        setSelectedIds([detail.id]);
+      }
+      if (detail.action === "focus-contract") {
+        const node = nodes.find((item) => item.id === detail.id);
         if (node?.data.contract) setContract(node.data.contract);
         setSelectedIds([detail.id]);
-        setWorkflowOverlay("export");
+        setRightTab("baseline");
       }
     };
     window.addEventListener("inspo:node-action", handler);
@@ -619,10 +651,9 @@ function WorkspaceCanvas() {
         .filter((item) => selectedIds.includes(item.id) && item.data.workflowStage === "analysis" && item.data.status === "ready")
         .map((item) => item.id);
       const ids = selectedAnalysisIds.includes(node.id) ? selectedAnalysisIds : [node.id];
-      return void previewBaseline(ids);
+      return openContractSetup(ids);
     }
-    if (node.data.contract) setContract(node.data.contract);
-    setWorkflowOverlay("export");
+    if (node.data.contract) openExport(node.data.contract);
   }
   const onSelectionChange = useCallback(({ nodes: selection }: { nodes: CanvasNode[] }) => {
     const next = selection.map((node) => node.id);
@@ -1322,9 +1353,24 @@ function WorkspaceCanvas() {
     setEdges(snapshot.edges);
   }
 
-  async function previewBaseline(sourceNodeIds?: string[]) {
+  function openContractSetup(sourceNodeIds?: string[]) {
+    setContractSetupNodeIds(sourceNodeIds ?? selectedNodes.filter((node) => node.data.workflowStage === "analysis" || isAnalyzableNode(node)).map((node) => node.id));
+    setDesignBrief(createDesignBrief());
+    setWorkflowOverlay("purpose");
+    setRightTab("baseline");
+  }
+
+  function updateDesignBrief(field: keyof Omit<DesignBrief, "purpose">, value: string) {
+    setDesignBrief((current) => ({ ...current, [field]: value }));
+  }
+
+  function selectDesignPurpose(purpose: DesignPurpose) {
+    setDesignBrief(createDesignBrief(purpose));
+  }
+
+  async function previewBaseline(sourceNodeIds: string[] = contractSetupNodeIds) {
     setContractBusy(true);
-    const candidates = sourceNodeIds?.length ? nodes.filter((node) => sourceNodeIds.includes(node.id)) : selectedNodes;
+    const candidates = sourceNodeIds.length ? nodes.filter((node) => sourceNodeIds.includes(node.id)) : [];
     const selectedAssetIds = [...new Set(candidates.flatMap((node) => {
       if (node.data.workflowStage === "analysis" && node.data.sourceAssetId) return [String(node.data.sourceAssetId)];
       if (isAnalyzableNode(node) && node.data.assetId) return [String(node.data.assetId)];
@@ -1333,17 +1379,32 @@ function WorkspaceCanvas() {
     const response = await fetch("/api/boards/" + boardId + "/contracts/preview", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(selectedAssetIds.length ? { assetIds: selectedAssetIds } : {}),
+      body: JSON.stringify({ ...(selectedAssetIds.length ? { assetIds: selectedAssetIds } : {}), brief: designBrief }),
     });
     const payload = await response.json().catch(() => ({}));
     setContractBusy(false);
     if (!response.ok) return notify(payload.error || "请先拆解至少一张参考");
     setContract(payload.contract);
     const directAnalysisIds = candidates.filter((node) => node.data.workflowStage === "analysis").map((node) => node.id);
-    const matchingAnalysisIds = nodes.filter((node) => node.data.workflowStage === "analysis" && selectedAssetIds.includes(String(node.data.sourceAssetId || ""))).map((node) => node.id);
+    const resolvedAssetIds = payload.contract?.sourceAssetIds ?? selectedAssetIds;
+    const matchingAnalysisIds = nodes.filter((node) => node.data.workflowStage === "analysis" && resolvedAssetIds.includes(String(node.data.sourceAssetId || ""))).map((node) => node.id);
     setContractSourceNodeIds(directAnalysisIds.length ? directAnalysisIds : matchingAnalysisIds);
     setWorkflowOverlay("contract");
     setRightTab("baseline");
+  }
+
+  function openExport(nextContract: DesignContract) {
+    const nextGoal = productionGoalByPurpose[nextContract.brief?.purpose ?? "web-ui-recreate"];
+    if (!nextGoal) {
+      setContract(nextContract);
+      setRightTab("baseline");
+      return notify("此方案仅用于整理，确定生产任务后再选择输出工具");
+    }
+    setContract(nextContract);
+    setProductionGoal(nextGoal);
+    setExportDestination(exportDestinationsByGoal[nextGoal][0].id);
+    setExportComplete(false);
+    setWorkflowOverlay("export");
   }
 
   function removeContractItem(section: "principles" | "colors" | "spacing" | "radii" | "components", index: number) {
@@ -1357,10 +1418,30 @@ function WorkspaceCanvas() {
     });
   }
 
-  function evidenceLabels(section: ContractEvidenceSection, value: string) {
-    if (!contract) return "来源待载入";
-    const assetIds = contract.evidence?.[section]?.find((item) => item.value === value)?.sourceAssetIds ?? contract.sourceAssetIds;
+  function evidenceAssetIds(section: ContractEvidenceSection, value: string) {
+    if (!contract) return [];
+    return contract.evidence?.[section]?.find((item) => item.value === value)?.sourceAssetIds ?? contract.sourceAssetIds;
+  }
+
+  function evidenceLabels(assetIds: string[]) {
     return assetIds.map((assetId) => sourceTitlesByAssetId.get(assetId) || `参考 ${assetId.slice(-6)}`).join("、");
+  }
+
+  function focusEvidence(assetIds: string[]) {
+    const sourceIds = new Set(assetIds);
+    const directSources = nodes.filter((node) => isAnalyzableNode(node) && sourceIds.has(String(node.data.assetId || "")));
+    const analysisSources = nodes.filter((node) => node.data.workflowStage === "analysis" && sourceIds.has(String(node.data.sourceAssetId || "")));
+    const targets = directSources.length ? directSources : analysisSources;
+    if (!targets.length) return notify("这条证据的参考卡已不在当前画布");
+    setSelectedIds(targets.map((node) => node.id));
+    setRightTab("asset");
+    setWorkflowOverlay(null);
+    window.setTimeout(() => { void fitView({ nodes: targets, padding: 0.28, duration: 260 }); }, 0);
+    notify(`已定位 ${targets.length} 张来源参考`);
+  }
+
+  function ContractEvidenceLink({ assetIds }: { assetIds: string[] }) {
+    return <button type="button" className="contract-evidence" onClick={() => focusEvidence(assetIds)} title="点击定位来源参考">证据 · {assetIds.length} 张：{evidenceLabels(assetIds)}</button>;
   }
 
   function reviewDecision(section: ContractReviewSection, issue: string) {
@@ -1388,7 +1469,10 @@ function WorkspaceCanvas() {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ contract }),
     });
-    if (!response.ok) return notify("设计方案保存失败");
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) return notify(payload.error || "设计方案保存失败");
+    const savedContract = (payload.contract?.content as DesignContract | undefined) ?? contract;
+    setContract(savedContract);
     const contractCardId = "contract-card-current";
     setNodes((current) => {
       const existing = current.find((node) => node.id === contractCardId);
@@ -1399,7 +1483,7 @@ function WorkspaceCanvas() {
         id: contractCardId,
         type: "inspo",
         position: existing?.position ?? { x: right + 120, y: top },
-        data: { kind: "text", workflowStage: "contract", title: contract.title, contract, tags: ["设计方案"] },
+        data: { kind: "text", workflowStage: "contract", title: savedContract.title, contract: savedContract, tags: ["设计方案", designPurposeLabel(savedContract.brief?.purpose)] },
         style: existing?.style ?? { width: 360, height: 250 },
         zIndex: 10,
       };
@@ -1659,7 +1743,7 @@ function WorkspaceCanvas() {
             <strong>{selectedIds.length} 项</strong>
             <button onClick={() => createGroup()}>组成分组</button>
             {selectedNodes.some(isAnalyzableNode) && <button onClick={() => void analyzeSelected()}>批量拆解</button>}
-            {selectedNodes.filter((node) => node.data.workflowStage === "analysis" && node.data.status === "ready").length > 1 && <button className="is-primary" onClick={() => void previewBaseline(selectedNodes.filter((node) => node.data.workflowStage === "analysis").map((node) => node.id))}>整合为方案</button>}
+            {selectedNodes.filter((node) => node.data.workflowStage === "analysis" && node.data.status === "ready").length > 1 && <button className="is-primary" onClick={() => openContractSetup(selectedNodes.filter((node) => node.data.workflowStage === "analysis").map((node) => node.id))}>整合为方案</button>}
             <button onClick={() => alignSelected("left")}>左对齐</button>
             <button onClick={() => alignSelected("top")}>顶对齐</button>
             <button onClick={() => alignSelected("horizontal")}>水平等距</button>
@@ -1750,9 +1834,25 @@ function WorkspaceCanvas() {
             <header><span>下一步</span><button onClick={() => setNextStepMenu(null)}>×</button></header>
             {isAnalyzableNode(node) && <button onClick={() => runNextStep("analyze")}><i>✦</i><span><strong>{node.data.analysisId ? "重新拆解" : "拆解参考"}</strong><small>提取版式、视觉规则和组件</small></span><b>→</b></button>}
             {node.data.workflowStage === "analysis" && <button onClick={() => runNextStep("contract")}><i>◇</i><span><strong>{selectedAnalysisCount > 1 ? `整合所选 ${selectedAnalysisCount} 张拆解` : "整合为方案"}</strong><small>合并共同点，标出冲突与取舍</small></span><b>→</b></button>}
-            {node.data.workflowStage === "contract" && <button onClick={() => runNextStep("export")}><i>↗</i><span><strong>选择输出方式</strong><small>按用途准备 Figma、开发或生图文件</small></span><b>→</b></button>}
+            {node.data.workflowStage === "contract" && node.data.contract?.brief?.purpose !== "organize" && <button onClick={() => runNextStep("export")}><i>↗</i><span><strong>选择输出方式</strong><small>按任务准备 Figma、开发或生图文件</small></span><b>→</b></button>}
           </aside>;
         })()}
+
+        {workflowOverlay === "purpose" && (
+          <div className="workflow-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setWorkflowOverlay(null); }}>
+            <section className="workflow-dialog purpose-dialog">
+              <header><div><small>整合前 · 先定义任务</small><h2>这批参考要帮你完成什么？</h2><p>任务决定后续该关注的字段；不会重新拆解或改动画布。</p></div><button onClick={() => setWorkflowOverlay(null)}>×</button></header>
+              <div className="purpose-choice-grid" role="list" aria-label="选择设计任务">
+                {purposeOptions.map((option) => <button key={option.id} role="listitem" className={designBrief.purpose === option.id ? "is-active" : ""} onClick={() => selectDesignPurpose(option.id)}><i>{option.mark}</i><span><strong>{option.title}</strong><small>{option.description}</small></span><b>{designBrief.purpose === option.id ? "✓" : ""}</b></button>)}
+              </div>
+              <section className="purpose-brief-fields" aria-label="最小任务 Brief">
+                <header><div><small>最小 Brief</small><h3>{activePurposeOption.title}</h3></div><span>只填写现在能确定的内容</span></header>
+                {(["objective", "context", "keep", "avoid"] as const).map((field, index) => <label key={field}><span>{activePurposeOption.fields[index]}{field === "objective" ? " · 必填" : " · 可选"}</span><textarea value={designBrief[field]} onChange={(event) => updateDesignBrief(field, event.target.value)} placeholder={field === "objective" ? `例如：${activePurposeOption.title}的当前目标` : "暂时不确定可以留空"} /></label>)}
+              </section>
+              <footer><button className="button soft" onClick={() => setWorkflowOverlay(null)}>返回画布</button><button className="button primary" onClick={() => void previewBaseline()} disabled={contractBusy || !designBrief.objective.trim()}>{contractBusy ? "正在汇总…" : "生成方案预览"}</button></footer>
+            </section>
+          </div>
+        )}
 
         {workflowOverlay === "contract" && contract && (
           <div className="workflow-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setWorkflowOverlay(null); }}>
@@ -1760,11 +1860,11 @@ function WorkspaceCanvas() {
               <header><div><small>整合拆解</small><h2>{contract.title}</h2><p>{contract.sourceAssetIds.length} 张参考将合并为一套可编辑方案。</p></div><button onClick={() => setWorkflowOverlay(null)}>×</button></header>
               <div className="contract-content">
                 <div className="contract-title"><div><h3>采用内容</h3><small>点 × 移除不采用的内容</small></div></div>
-                <h4>设计原则</h4><div className="contract-items">{contract.principles.map((item, index) => <div key={item}><span>{item}<small className="contract-evidence">证据：{evidenceLabels("principles", item)}</small></span><button onClick={() => removeContractItem("principles", index)}>×</button></div>)}</div>
-                {!!contract.tokens.colors.length && <><h4>颜色</h4><div className="contract-items compact">{contract.tokens.colors.map((item, index) => <div key={item.name}><i style={{ background: item.value }} /><span>{item.value}<small className="contract-evidence">证据：{item.sourceAssetIds.map((id) => sourceTitlesByAssetId.get(id) || `参考 ${id.slice(-6)}`).join("、")}</small></span><button onClick={() => removeContractItem("colors", index)}>×</button></div>)}</div></>}
-                {!!contract.components.length && <><h4>组件</h4><div className="contract-items">{contract.components.map((item, index) => <div key={item.name}><span><b>{item.name}</b>{item.rules[0] && <small>{item.rules[0]}</small>}<small className="contract-evidence">证据：{item.sourceAssetIds.map((id) => sourceTitlesByAssetId.get(id) || `参考 ${id.slice(-6)}`).join("、")}</small></span><button onClick={() => removeContractItem("components", index)}>×</button></div>)}</div></>}
-                {!!contract.conflicts.length && <div className="contract-warning"><strong>需要取舍</strong>{contract.conflicts.map((item) => <div className="contract-review-item" key={item}><p>{item}</p><small className="contract-evidence">证据：{evidenceLabels("conflicts", item)}</small><label>已选取舍（可选）<input value={reviewDecision("conflicts", item)} onChange={(event) => updateReviewDecision("conflicts", item, event.target.value)} placeholder="例如：以紫色为主品牌色，绿色只用于状态" /></label></div>)}</div>}
-                {!!contract.unresolved.length && <div className="contract-unresolved"><strong>仍待确认</strong>{contract.unresolved.map((item) => <div className="contract-review-item" key={item}><p>{item}</p><small className="contract-evidence">证据：{evidenceLabels("unresolved", item)}</small><label>确认方式或备注（可选）<input value={reviewDecision("unresolved", item)} onChange={(event) => updateReviewDecision("unresolved", item, event.target.value)} placeholder="例如：上线前在 Figma 样式库核对字体" /></label></div>)}</div>}
+                <h4>设计原则</h4><div className="contract-items">{contract.principles.map((item, index) => <div key={item}><span>{item}<ContractEvidenceLink assetIds={evidenceAssetIds("principles", item)} /></span><button onClick={() => removeContractItem("principles", index)}>×</button></div>)}</div>
+                {!!contract.tokens.colors.length && <><h4>颜色</h4><div className="contract-items compact">{contract.tokens.colors.map((item, index) => <div key={item.name}><i style={{ background: item.value }} /><span>{item.value}<ContractEvidenceLink assetIds={item.sourceAssetIds} /></span><button onClick={() => removeContractItem("colors", index)}>×</button></div>)}</div></>}
+                {!!contract.components.length && <><h4>组件</h4><div className="contract-items">{contract.components.map((item, index) => <div key={item.name}><span><b>{item.name}</b>{item.rules[0] && <small>{item.rules[0]}</small>}<ContractEvidenceLink assetIds={item.sourceAssetIds} /></span><button onClick={() => removeContractItem("components", index)}>×</button></div>)}</div></>}
+                {!!contract.conflicts.length && <div className="contract-warning"><strong>需要取舍</strong>{contract.conflicts.map((item) => <div className="contract-review-item" key={item}><p>{item}</p><ContractEvidenceLink assetIds={evidenceAssetIds("conflicts", item)} /><label>已选取舍（可选）<input value={reviewDecision("conflicts", item)} onChange={(event) => updateReviewDecision("conflicts", item, event.target.value)} placeholder="例如：以紫色为主品牌色，绿色只用于状态" /></label></div>)}</div>}
+                {!!contract.unresolved.length && <div className="contract-unresolved"><strong>仍待确认</strong>{contract.unresolved.map((item) => <div className="contract-review-item" key={item}><p>{item}</p><ContractEvidenceLink assetIds={evidenceAssetIds("unresolved", item)} /><label>确认方式或备注（可选）<input value={reviewDecision("unresolved", item)} onChange={(event) => updateReviewDecision("unresolved", item, event.target.value)} placeholder="例如：上线前在 Figma 样式库核对字体" /></label></div>)}</div>}
               </div>
               <footer><button className="button soft" onClick={() => setWorkflowOverlay(null)}>返回画布</button><button className="button primary" onClick={() => void confirmBaseline()}>保存为方案卡</button></footer>
             </section>
@@ -1774,9 +1874,9 @@ function WorkspaceCanvas() {
         {workflowOverlay === "export" && contract && (
           <div className="workflow-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setWorkflowOverlay(null); }}>
             <section className="workflow-dialog export-dialog">
-              <header><div><small>方案输出</small><h2>{contract.title}</h2><p>先选用途，再选接下来使用的工具。</p></div><button onClick={() => setWorkflowOverlay(null)}>×</button></header>
+              <header><div><small>方案输出</small><h2>{contract.title}</h2><p>{contract.brief?.purpose ? `任务已确定为「${designPurposeLabel(contract.brief.purpose)}」，现在选择继续工作的工具。` : "先选用途，再选接下来使用的工具。"}</p></div><button onClick={() => setWorkflowOverlay(null)}>×</button></header>
               <div className="export-dialog-grid">
-                <div><h3>想得到什么</h3><div className="export-goal-list">{productionGoalOptions.map((option) => <button key={option.id} className={productionGoal === option.id ? "is-active" : ""} onClick={() => { setProductionGoal(option.id); setExportDestination(exportDestinationsByGoal[option.id][0].id); setExportComplete(false); }}><i>{option.step}</i><div><strong>{option.title}</strong><small>{option.description}</small></div><span>{productionGoal === option.id ? "✓" : "›"}</span></button>)}</div></div>
+                {contract.brief?.purpose ? <article className="purpose-export-summary"><small>当前任务</small><strong>{designPurposeLabel(contract.brief.purpose)}</strong><p>{contract.brief.objective}</p><dl><div><dt>场景</dt><dd>{contract.brief.context || "待补充"}</dd></div><div><dt>保留</dt><dd>{contract.brief.keep || "待补充"}</dd></div><div><dt>排除</dt><dd>{contract.brief.avoid || "待补充"}</dd></div></dl></article> : <div><h3>想得到什么</h3><div className="export-goal-list">{productionGoalOptions.map((option) => <button key={option.id} className={productionGoal === option.id ? "is-active" : ""} onClick={() => { setProductionGoal(option.id); setExportDestination(exportDestinationsByGoal[option.id][0].id); setExportComplete(false); }}><i>{option.step}</i><div><strong>{option.title}</strong><small>{option.description}</small></div><span>{productionGoal === option.id ? "✓" : "›"}</span></button>)}</div></div>}
                 <div><h3>接下来在哪里工作</h3><div className="export-destination-list">{exportDestinations.map((option) => <button key={option.id} className={activeDestination.id === option.id ? "is-active" : ""} onClick={() => { setExportDestination(option.id); setExportComplete(false); }}><span className="destination-icon">{option.icon}</span><div><strong>{option.title}</strong><small>{option.description}</small></div><i>{activeDestination.id === option.id ? "✓" : "›"}</i></button>)}</div></div>
               </div>
               <div className="export-result-preview"><span>将为你准备</span><strong>{activeDestination.deliverable}</strong><p>{activeDestination.nextStep}</p></div>
@@ -1835,7 +1935,7 @@ function WorkspaceCanvas() {
               <small>已选择</small><h2>{selectedIds.length} 张卡片</h2>
               <p>可以一起移动、分组、对齐或整理；选择多个拆解结果时可整合为一套方案。</p>
               {selectedNodes.some(isAnalyzableNode) && <button className="analyze-button" onClick={() => void analyzeSelected()}>✦ 批量拆解所选参考</button>}
-              {selectedNodes.filter((node) => node.data.workflowStage === "analysis" && node.data.status === "ready").length > 1 && <button className="analyze-button" onClick={() => void previewBaseline(selectedNodes.filter((node) => node.data.workflowStage === "analysis").map((node) => node.id))}>◇ 整合所选拆解</button>}
+              {selectedNodes.filter((node) => node.data.workflowStage === "analysis" && node.data.status === "ready").length > 1 && <button className="analyze-button" onClick={() => openContractSetup(selectedNodes.filter((node) => node.data.workflowStage === "analysis").map((node) => node.id))}>◇ 整合所选拆解</button>}
               <button className="button soft wide" onClick={previewOrganize}>整理所选卡片</button>
             </section>
           ) : selected ? (
@@ -1854,10 +1954,10 @@ function WorkspaceCanvas() {
           <section className="contract-panel">
             <span className="step-kicker">第 2 步</span><h2>设计方案</h2>
             <p>汇总已拆解的参考。选中卡片后只汇总所选；未选择时使用全部已拆解参考。</p>
-            <button className="analyze-button" onClick={() => void previewBaseline()} disabled={contractBusy}>✦ {contractBusy ? "正在汇总…" : selectedNodes.some(isAnalyzableNode) ? `汇总所选 ${selectedNodes.filter(isAnalyzableNode).length} 张` : "汇总全部参考"}</button>
+            <button className="analyze-button" onClick={() => openContractSetup()} disabled={contractBusy}>✦ {contractBusy ? "正在汇总…" : selectedNodes.some(isAnalyzableNode) ? `整合所选 ${selectedNodes.filter(isAnalyzableNode).length} 张` : "开始整合参考"}</button>
             {contract && <div className="contract-content">
               <div className="contract-title"><div><h3>{contract.title}</h3><small>{contract.sourceAssetIds.length} 张参考</small></div><span>点 × 移除不采用的内容</span></div>
-              <h4>设计原则</h4><div className="contract-items">{contract.principles.map((item, index) => <div key={item}><span>{item}<small className="contract-evidence">证据：{evidenceLabels("principles", item)}</small></span><button onClick={() => removeContractItem("principles", index)} aria-label="移除设计原则">×</button></div>)}</div>
+              <h4>设计原则</h4><div className="contract-items">{contract.principles.map((item, index) => <div key={item}><span>{item}<ContractEvidenceLink assetIds={evidenceAssetIds("principles", item)} /></span><button onClick={() => removeContractItem("principles", index)} aria-label="移除设计原则">×</button></div>)}</div>
               {!!contract.tokens.colors.length && <><h4>颜色</h4><div className="contract-items compact">{contract.tokens.colors.map((item, index) => <div key={item.name}><i style={{ background: item.value }} /><span>{item.value}</span><button onClick={() => removeContractItem("colors", index)} aria-label="移除颜色">×</button></div>)}</div></>}
               {!!contract.tokens.spacing.length && <><h4>间距</h4><div className="contract-items compact">{contract.tokens.spacing.map((item, index) => <div key={`${item}-${index}`}><span>{item}px</span><button onClick={() => removeContractItem("spacing", index)} aria-label="移除间距">×</button></div>)}</div></>}
               {!!contract.tokens.radii.length && <><h4>圆角</h4><div className="contract-items compact">{contract.tokens.radii.map((item, index) => <div key={`${item}-${index}`}><span>{item}px</span><button onClick={() => removeContractItem("radii", index)} aria-label="移除圆角">×</button></div>)}</div></>}

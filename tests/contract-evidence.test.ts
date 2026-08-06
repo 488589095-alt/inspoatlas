@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { analysisResultSchema, designContractSchema } from "../packages/domain/src/index";
+import { analysisResultSchema, designBriefSchema, designContractSchema } from "../packages/domain/src/index";
 import { buildContract } from "../app/api/boards/[id]/contracts/_build";
 
 function analysis(sourceAssetId: string, principle: string, color: string, fontConfidence = .92) {
@@ -23,4 +23,12 @@ test("设计方案逐条保留证据，并兼容此前保存的方案", () => {
   const legacy = designContractSchema.parse({ ...contract, evidence: undefined, review: undefined });
   assert.deepEqual(legacy.evidence, { principles: [], conflicts: [], unresolved: [] });
   assert.deepEqual(legacy.review, { conflictDecisions: [], unresolvedNotes: [] });
+  assert.equal(legacy.brief.purpose, "organize");
+});
+
+test("任务 Brief 在方案预览前校验，并随方案一起保存", () => {
+  assert.throws(() => designBriefSchema.parse({ purpose: "brand-extension", objective: "" }));
+  const brief = designBriefSchema.parse({ purpose: "brand-extension", objective: "为户外品牌做秋季主视觉", context: "电商首页", keep: "低饱和橙色", avoid: "沿用参考品牌文案" });
+  const contract = buildContract("秋季主视觉", [{ assetId: "asset-a", result: analysis("asset-a", "标题保持紧凑层级", "#112233") }], brief);
+  assert.deepEqual(contract.brief, brief);
 });

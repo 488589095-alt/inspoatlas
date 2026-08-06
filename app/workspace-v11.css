@@ -1032,13 +1032,205 @@ body {
   overflow: auto;
 }
 
+.purpose-dialog {
+  width: min(860px, 100%);
+}
+
+.purpose-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.purpose-choice-grid > button {
+  display: grid;
+  min-height: 82px;
+  grid-template-columns: 32px minmax(0, 1fr) 18px;
+  align-items: start;
+  gap: 9px;
+  padding: 12px;
+  border: 1px solid var(--desk-line);
+  border-radius: 8px;
+  color: var(--desk-ink);
+  background: rgba(255, 253, 248, .7);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+}
+
+.purpose-choice-grid > button:hover {
+  border-color: rgba(98, 86, 154, .5);
+  transform: translateY(-1px);
+}
+
+.purpose-choice-grid > button.is-active {
+  border-color: var(--desk-iris);
+  background: #f6f3fb;
+  box-shadow: inset 3px 0 0 var(--desk-iris);
+}
+
+.purpose-choice-grid > button > i {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--desk-iris);
+  background: #eae5f2;
+  font-style: normal;
+}
+
+.purpose-choice-grid strong,
+.purpose-choice-grid small {
+  display: block;
+}
+
+.purpose-choice-grid strong {
+  font-size: 12px;
+}
+
+.purpose-choice-grid small {
+  margin-top: 4px;
+  color: var(--desk-muted);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
+.purpose-choice-grid b {
+  color: var(--desk-iris);
+  font-size: 12px;
+}
+
+.purpose-brief-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+  margin-top: 16px;
+  padding: 15px;
+  border: 1px solid rgba(98, 86, 154, .16);
+  border-radius: 9px;
+  background: linear-gradient(100deg, rgba(242, 238, 248, .85), rgba(255, 253, 248, .84));
+}
+
+.purpose-brief-fields > header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.purpose-brief-fields > header h3 {
+  margin: 3px 0 0;
+  font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+  font-size: 16px;
+}
+
+.purpose-brief-fields > header small,
+.purpose-brief-fields > header > span {
+  color: var(--desk-muted);
+  font-size: 10px;
+}
+
+.purpose-brief-fields > label {
+  display: grid;
+  gap: 5px;
+  color: #554e5e;
+  font-size: 10.5px;
+  font-weight: 750;
+}
+
+.purpose-brief-fields textarea {
+  width: 100%;
+  min-height: 54px;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 8px 9px;
+  border: 1px solid rgba(65, 57, 75, .16);
+  border-radius: 5px;
+  outline: 0;
+  color: var(--desk-ink);
+  background: rgba(255, 255, 255, .82);
+  font: inherit;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.purpose-brief-fields textarea:focus {
+  border-color: var(--desk-iris);
+  box-shadow: 0 0 0 3px rgba(98, 86, 154, .1);
+}
+
+.purpose-export-summary {
+  min-height: 220px;
+  padding: 18px;
+  border-left: 3px solid var(--desk-iris);
+  background: #f3f0f7;
+}
+
+.purpose-export-summary > small,
+.purpose-export-summary dt {
+  color: var(--desk-muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.purpose-export-summary > strong {
+  display: block;
+  margin-top: 6px;
+  font-family: Georgia, "Noto Serif SC", "Songti SC", serif;
+  font-size: 19px;
+}
+
+.purpose-export-summary > p {
+  margin: 10px 0 16px;
+  color: #4f4859;
+  font-size: 11.5px;
+  line-height: 1.55;
+}
+
+.purpose-export-summary dl {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+}
+
+.purpose-export-summary dl > div {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.purpose-export-summary dd {
+  margin: 0;
+  color: #514b58;
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
 .contract-evidence {
   display: block;
   margin-top: 4px;
+  padding: 0;
+  border: 0;
   color: #827b87;
+  background: transparent;
+  cursor: pointer;
   font-size: 9.5px;
   font-weight: 600;
   line-height: 1.45;
+  text-align: left;
+  text-decoration: underline;
+  text-decoration-color: rgba(98, 86, 154, .28);
+  text-underline-offset: 2px;
+}
+
+.contract-evidence:hover,
+.contract-evidence:focus-visible {
+  outline: 0;
+  color: var(--desk-iris);
+  text-decoration-color: currentColor;
 }
 
 .contract-unresolved {
@@ -1306,6 +1498,8 @@ body {
   .workflow-dialog-backdrop { padding: 60px 10px 76px; }
   .workflow-dialog { padding: 15px; }
   .export-dialog-grid { grid-template-columns: 1fr; }
+  .purpose-choice-grid,
+  .purpose-brief-fields { grid-template-columns: 1fr; }
   .next-step-menu { width: min(300px, calc(100vw - 24px)); }
 }
 
