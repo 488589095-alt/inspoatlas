@@ -13,8 +13,12 @@ test("拆解结果与方案作为可持久化画布节点串联", async () => {
   assert.match(workspace, /workflowStage: "contract"/);
   assert.match(workspace, /保存为方案卡/);
   assert.match(workspace, /整合所选拆解/);
+  assert.match(workspace, /已选取舍（可选）/);
+  assert.match(workspace, /contract-evidence/);
+  assert.match(workspace, /检查证据与取舍/);
   assert.match(card, /workflowStage === "analysis"/);
   assert.match(card, /workflowStage === "contract"/);
+  assert.match(card, /待核对/);
   assert.match(model, /nodes: nodes\.map/);
   assert.match(preview, /requested\.size && !requested\.has\(row\.assetId\)/);
 });

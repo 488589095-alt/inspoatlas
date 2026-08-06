@@ -158,6 +158,15 @@ export const designContractSchema = z.object({
   tokens: z.object({ colors: z.array(z.object({ name: z.string(), value: z.string(), sourceAssetIds: z.array(z.string()) })), spacing: z.array(z.number()), radii: z.array(z.number()), shadows: z.array(z.string()) }),
   components: z.array(z.object({ name: z.string(), rules: z.array(z.string()), sourceAssetIds: z.array(z.string()) })),
   dos: z.array(z.string()), donts: z.array(z.string()), conflicts: z.array(z.string()), unresolved: z.array(z.string()),
+  evidence: z.object({
+    principles: z.array(z.object({ value: z.string().min(1), sourceAssetIds: z.array(z.string().min(1)).min(1) })).max(8).default([]),
+    conflicts: z.array(z.object({ value: z.string().min(1), sourceAssetIds: z.array(z.string().min(1)).min(1) })).max(8).default([]),
+    unresolved: z.array(z.object({ value: z.string().min(1), sourceAssetIds: z.array(z.string().min(1)).min(1) })).max(8).default([]),
+  }).default({ principles: [], conflicts: [], unresolved: [] }),
+  review: z.object({
+    conflictDecisions: z.array(z.object({ issue: z.string().min(1), decision: z.string().min(1) })).max(8).default([]),
+    unresolvedNotes: z.array(z.object({ issue: z.string().min(1), decision: z.string().min(1) })).max(8).default([]),
+  }).default({ conflictDecisions: [], unresolvedNotes: [] }),
   sourceAssetIds: z.array(z.string()), generatedAt: z.string(),
 });
 export type DesignContract = z.infer<typeof designContractSchema>;

@@ -1032,6 +1032,65 @@ body {
   overflow: auto;
 }
 
+.contract-evidence {
+  display: block;
+  margin-top: 4px;
+  color: #827b87;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.contract-unresolved {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid rgba(173, 123, 39, .2);
+  border-left: 3px solid #b98231;
+  background: #fffbef;
+}
+
+.contract-warning .contract-review-item,
+.contract-unresolved .contract-review-item {
+  padding: 8px 0;
+  border-top: 1px solid rgba(85, 76, 66, .1);
+}
+
+.contract-warning .contract-review-item:first-of-type,
+.contract-unresolved .contract-review-item:first-of-type {
+  margin-top: 7px;
+}
+
+.contract-review-item p {
+  margin: 0;
+}
+
+.contract-review-item label {
+  display: grid;
+  gap: 5px;
+  margin-top: 8px;
+  color: #625b51;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.contract-review-item input {
+  width: 100%;
+  min-height: 31px;
+  box-sizing: border-box;
+  padding: 7px 8px;
+  border: 1px solid rgba(85, 76, 66, .16);
+  border-radius: 5px;
+  outline: 0;
+  color: var(--desk-ink);
+  background: rgba(255, 255, 255, .72);
+  font-size: 10.5px;
+}
+
+.contract-review-item input:focus {
+  border-color: var(--desk-iris);
+  box-shadow: 0 0 0 3px rgba(98, 86, 154, .1);
+}
+
 .export-dialog {
   width: min(920px, 100%);
 }

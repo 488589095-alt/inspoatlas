@@ -62,6 +62,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
 
   if (data.workflowStage === "contract") {
     const contract = data.contract;
+    const reviewCount = (contract?.conflicts.length || 0) + (contract?.unresolved.length || 0);
     return (
       <article className={"canvas-card workflow-card contract-workflow-card" + (selected ? " is-selected" : "")}>
         <NodeResizer minWidth={280} minHeight={190} isVisible={selected} />
@@ -70,7 +71,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
         <button className="contract-card-button nodrag" onClick={(event) => { event.stopPropagation(); action("open-export"); }}>
           <span className="card-kind">方案</span>
           <InlineTitle id={id} value={data.title} />
-          <small>{contract?.sourceAssetIds.length || 0} 张参考 · {contract?.components.length || 0} 个组件</small>
+          <small>{contract?.sourceAssetIds.length || 0} 张参考 · {contract?.components.length || 0} 个组件{reviewCount ? ` · ${reviewCount} 项待核对` : " · 证据已汇总"}</small>
           <p>{contract?.principles.slice(0, 2).join("；") || "打开后检查方案并选择输出方式"}</p>
           <b>打开输出选项 <span>→</span></b>
         </button>

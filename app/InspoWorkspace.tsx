@@ -61,6 +61,8 @@ type NextStepMenu = { sourceId: string; x: number; y: number };
 type ContextMenu = { kind: "node" | "board"; id: string; x: number; y: number };
 type DeleteRequest = { kind: "board" | "nodes"; ids: string[]; title: string; body: string };
 type AssistantScope = "selection" | "board";
+type ContractEvidenceSection = "principles" | "conflicts" | "unresolved";
+type ContractReviewSection = "conflicts" | "unresolved";
 type AssistantMessage = {
   id?: string;
   role: "user" | "assistant";
@@ -174,6 +176,10 @@ function WorkspaceCanvas() {
   const selected = selectedNodes[0];
   const exportDestinations = exportDestinationsByGoal[productionGoal];
   const activeDestination = exportDestinations.find((item) => item.id === exportDestination) ?? exportDestinations[0];
+  const sourceTitlesByAssetId = useMemo(() => new Map(nodes.flatMap((node) => {
+    const assetId = node.data.workflowStage === "analysis" ? node.data.sourceAssetId : node.data.assetId;
+    return assetId ? [[String(assetId), String(node.data.sourceTitle || node.data.title)]] : [];
+  })), [nodes]);
   const searchResults = useMemo(() => {
     const term = search.trim().toLowerCase();
     return nodes.filter((node) => nodeMatchesSearchKind(node, searchKind) && (!term || nodeMatchesQuery(node, term)));
@@ -1351,6 +1357,30 @@ function WorkspaceCanvas() {
     });
   }
 
+  function evidenceLabels(section: ContractEvidenceSection, value: string) {
+    if (!contract) return "来源待载入";
+    const assetIds = contract.evidence?.[section]?.find((item) => item.value === value)?.sourceAssetIds ?? contract.sourceAssetIds;
+    return assetIds.map((assetId) => sourceTitlesByAssetId.get(assetId) || `参考 ${assetId.slice(-6)}`).join("、");
+  }
+
+  function reviewDecision(section: ContractReviewSection, issue: string) {
+    if (!contract) return "";
+    const key = section === "conflicts" ? "conflictDecisions" : "unresolvedNotes";
+    return contract.review?.[key]?.find((item) => item.issue === issue)?.decision ?? "";
+  }
+
+  function updateReviewDecision(section: ContractReviewSection, issue: string, decision: string) {
+    setContract((current) => {
+      if (!current) return current;
+      const key = section === "conflicts" ? "conflictDecisions" : "unresolvedNotes";
+      const existing = current.review?.[key] ?? [];
+      const next = decision.trim()
+        ? [...existing.filter((item) => item.issue !== issue), { issue, decision }]
+        : existing.filter((item) => item.issue !== issue);
+      return { ...current, review: { ...(current.review ?? { conflictDecisions: [], unresolvedNotes: [] }), [key]: next } };
+    });
+  }
+
   async function confirmBaseline() {
     if (!contract) return;
     const response = await fetch("/api/boards/" + boardId + "/contracts", {
@@ -1730,10 +1760,11 @@ function WorkspaceCanvas() {
               <header><div><small>整合拆解</small><h2>{contract.title}</h2><p>{contract.sourceAssetIds.length} 张参考将合并为一套可编辑方案。</p></div><button onClick={() => setWorkflowOverlay(null)}>×</button></header>
               <div className="contract-content">
                 <div className="contract-title"><div><h3>采用内容</h3><small>点 × 移除不采用的内容</small></div></div>
-                <h4>设计原则</h4><div className="contract-items">{contract.principles.map((item, index) => <div key={item}><span>{item}</span><button onClick={() => removeContractItem("principles", index)}>×</button></div>)}</div>
-                {!!contract.tokens.colors.length && <><h4>颜色</h4><div className="contract-items compact">{contract.tokens.colors.map((item, index) => <div key={item.name}><i style={{ background: item.value }} /><span>{item.value}</span><button onClick={() => removeContractItem("colors", index)}>×</button></div>)}</div></>}
-                {!!contract.components.length && <><h4>组件</h4><div className="contract-items">{contract.components.map((item, index) => <div key={item.name}><span><b>{item.name}</b>{item.rules[0] && <small>{item.rules[0]}</small>}</span><button onClick={() => removeContractItem("components", index)}>×</button></div>)}</div></>}
-                {!!contract.conflicts.length && <div className="contract-warning"><strong>需要取舍</strong>{contract.conflicts.map((item) => <p key={item}>{item}</p>)}</div>}
+                <h4>设计原则</h4><div className="contract-items">{contract.principles.map((item, index) => <div key={item}><span>{item}<small className="contract-evidence">证据：{evidenceLabels("principles", item)}</small></span><button onClick={() => removeContractItem("principles", index)}>×</button></div>)}</div>
+                {!!contract.tokens.colors.length && <><h4>颜色</h4><div className="contract-items compact">{contract.tokens.colors.map((item, index) => <div key={item.name}><i style={{ background: item.value }} /><span>{item.value}<small className="contract-evidence">证据：{item.sourceAssetIds.map((id) => sourceTitlesByAssetId.get(id) || `参考 ${id.slice(-6)}`).join("、")}</small></span><button onClick={() => removeContractItem("colors", index)}>×</button></div>)}</div></>}
+                {!!contract.components.length && <><h4>组件</h4><div className="contract-items">{contract.components.map((item, index) => <div key={item.name}><span><b>{item.name}</b>{item.rules[0] && <small>{item.rules[0]}</small>}<small className="contract-evidence">证据：{item.sourceAssetIds.map((id) => sourceTitlesByAssetId.get(id) || `参考 ${id.slice(-6)}`).join("、")}</small></span><button onClick={() => removeContractItem("components", index)}>×</button></div>)}</div></>}
+                {!!contract.conflicts.length && <div className="contract-warning"><strong>需要取舍</strong>{contract.conflicts.map((item) => <div className="contract-review-item" key={item}><p>{item}</p><small className="contract-evidence">证据：{evidenceLabels("conflicts", item)}</small><label>已选取舍（可选）<input value={reviewDecision("conflicts", item)} onChange={(event) => updateReviewDecision("conflicts", item, event.target.value)} placeholder="例如：以紫色为主品牌色，绿色只用于状态" /></label></div>)}</div>}
+                {!!contract.unresolved.length && <div className="contract-unresolved"><strong>仍待确认</strong>{contract.unresolved.map((item) => <div className="contract-review-item" key={item}><p>{item}</p><small className="contract-evidence">证据：{evidenceLabels("unresolved", item)}</small><label>确认方式或备注（可选）<input value={reviewDecision("unresolved", item)} onChange={(event) => updateReviewDecision("unresolved", item, event.target.value)} placeholder="例如：上线前在 Figma 样式库核对字体" /></label></div>)}</div>}
               </div>
               <footer><button className="button soft" onClick={() => setWorkflowOverlay(null)}>返回画布</button><button className="button primary" onClick={() => void confirmBaseline()}>保存为方案卡</button></footer>
             </section>
@@ -1826,12 +1857,13 @@ function WorkspaceCanvas() {
             <button className="analyze-button" onClick={() => void previewBaseline()} disabled={contractBusy}>✦ {contractBusy ? "正在汇总…" : selectedNodes.some(isAnalyzableNode) ? `汇总所选 ${selectedNodes.filter(isAnalyzableNode).length} 张` : "汇总全部参考"}</button>
             {contract && <div className="contract-content">
               <div className="contract-title"><div><h3>{contract.title}</h3><small>{contract.sourceAssetIds.length} 张参考</small></div><span>点 × 移除不采用的内容</span></div>
-              <h4>设计原则</h4><div className="contract-items">{contract.principles.map((item, index) => <div key={item}><span>{item}</span><button onClick={() => removeContractItem("principles", index)} aria-label="移除设计原则">×</button></div>)}</div>
+              <h4>设计原则</h4><div className="contract-items">{contract.principles.map((item, index) => <div key={item}><span>{item}<small className="contract-evidence">证据：{evidenceLabels("principles", item)}</small></span><button onClick={() => removeContractItem("principles", index)} aria-label="移除设计原则">×</button></div>)}</div>
               {!!contract.tokens.colors.length && <><h4>颜色</h4><div className="contract-items compact">{contract.tokens.colors.map((item, index) => <div key={item.name}><i style={{ background: item.value }} /><span>{item.value}</span><button onClick={() => removeContractItem("colors", index)} aria-label="移除颜色">×</button></div>)}</div></>}
               {!!contract.tokens.spacing.length && <><h4>间距</h4><div className="contract-items compact">{contract.tokens.spacing.map((item, index) => <div key={`${item}-${index}`}><span>{item}px</span><button onClick={() => removeContractItem("spacing", index)} aria-label="移除间距">×</button></div>)}</div></>}
               {!!contract.tokens.radii.length && <><h4>圆角</h4><div className="contract-items compact">{contract.tokens.radii.map((item, index) => <div key={`${item}-${index}`}><span>{item}px</span><button onClick={() => removeContractItem("radii", index)} aria-label="移除圆角">×</button></div>)}</div></>}
               {!!contract.components.length && <><h4>组件</h4><div className="contract-items">{contract.components.map((item, index) => <div key={item.name}><span><b>{item.name}</b>{item.rules[0] && <small>{item.rules[0]}</small>}</span><button onClick={() => removeContractItem("components", index)} aria-label="移除组件">×</button></div>)}</div></>}
-              {!!contract.conflicts.length && <div className="contract-warning"><strong>需要确认</strong>{contract.conflicts.map((item) => <p key={item}>{item}</p>)}</div>}
+              {!!(contract.conflicts.length || contract.unresolved.length) && <div className="contract-warning"><strong>{contract.conflicts.length + contract.unresolved.length} 项待核对</strong><p>打开检查后可以查看来源，并记录取舍或确认方式。</p></div>}
+              <button className="button soft wide" onClick={() => setWorkflowOverlay("contract")}>检查证据与取舍</button>
               <button className="button primary wide" onClick={() => void confirmBaseline()}>保存设计方案</button>
             </div>}
           </section>        ) : (

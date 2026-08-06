@@ -164,7 +164,7 @@ function buildFiles(purpose: ExportPurpose, contract: DesignContract, version: n
     capturedAt: item.createdAt, contractVersion: version,
     evidenceState: item.kind === "web" && (item.metadata as Record<string, unknown>)?.styles ? "实测与视觉推断混合" : "视觉推断",
   }));
-  const sources = JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), sources: sourceMap, confirmedElements: elements.map((item) => ({ id: item.id, assetId: item.assetId, regionId: item.regionId, label: item.label, type: item.type, rect: item.rect, state: "人工确认" })) }, null, 2);
+  const sources = JSON.stringify({ schemaVersion: 1, generatedAt: new Date().toISOString(), sources: sourceMap, contractEvidence: contract.evidence, review: contract.review, confirmedElements: elements.map((item) => ({ id: item.id, assetId: item.assetId, regionId: item.regionId, label: item.label, type: item.type, rect: item.rect, state: "人工确认" })) }, null, 2);
   const design = designMarkdown(contract, version);
   const tokens = JSON.stringify(contract.tokens, null, 2);
   const css = ":root {\n" + contract.tokens.colors.map((item) => "  --" + item.name.replaceAll("/", "-") + ": " + item.value + "; /* evidence: " + item.sourceAssetIds.join(", ") + " */").join("\n") + "\n" + contract.tokens.spacing.map((value, index) => "  --space-" + (index + 1) + ": " + value + "px;").join("\n") + "\n" + contract.tokens.radii.map((value, index) => "  --radius-" + (index + 1) + ": " + value + "px;").join("\n") + "\n}";
@@ -182,7 +182,7 @@ function buildFiles(purpose: ExportPurpose, contract: DesignContract, version: n
     ...common, "CAMPAIGN_SYSTEM.md": "# 批量活动页生产系统\n\n## 固定层\n\nTokens、组件尺寸、圆角、状态、容器与间距节奏。\n\n## 可变层\n\n主题内容、主视觉、权益、日期与经批准的主题色。\n\n## 变更规则\n\n任何新组件先回写 DESIGN.md 并补充来源证据，经确认后再进入后续页面。",
     "PAGE_BRIEF_TEMPLATE.md": "# 页面 Brief\n\n- 页面目标：\n- 核心 CTA：\n- 主视觉素材 ID：\n- 内容模块顺序：\n- 可覆盖 Token：\n- 不允许变化的组件：\n",
     "content-schema.json": JSON.stringify({ pageName: "", goal: "", hero: { headline: "", subheading: "", assetId: "" }, cta: { label: "", href: "" }, sections: [] }, null, 2),
-    "components.md": components, "QA_CHECKLIST.md": qaMarkdown(), "tokens/tokens.json": tokens, "tokens/variables.css": css,
+    "components.md": components, "QA_CHECKLIST.md": qaMarkdown(contract), "tokens/tokens.json": tokens, "tokens/variables.css": css,
   };
   if (purpose === "figma-bridge") return {
     ...common, "tokens.json": tokens,
@@ -194,11 +194,11 @@ function buildFiles(purpose: ExportPurpose, contract: DesignContract, version: n
   return {
     ...common,
     "STRUCTURE.md": "# 结构拆解\n\n" + sourceRows.map((item, index) => (index + 1) + ". " + item.title + " · " + item.kind + " · " + (item.sourceUrl || "上传素材")).join("\n"),
-    "MAPPING.md": "# 来源 → 规则映射\n\n" + contract.principles.map((item, index) => (index + 1) + ". " + item + "\n   - 证据： " + contract.sourceAssetIds.join("、")).join("\n"),
+    "MAPPING.md": "# 来源 → 规则映射\n\n" + contract.principles.map((item, index) => (index + 1) + ". " + item + "\n   - 证据： " + evidenceIds(contract, "principles", item).join("、")).join("\n"),
     "IMPLEMENTATION_PROMPT.md": "# AI 实现提示词\n\n先读取 DESIGN.md、STRUCTURE.md、MAPPING.md 与 sources.json。先输出规范预检和结构映射，等待确认后再实现。原始参考决定内容结构，DESIGN.md 决定视觉语言。不得新增来源中不存在的模块，也不得把视觉推断写成事实。实现结束后分别执行 STRUCTURE_QA.md 与 DESIGN_QA.md。",
     "tokens/tokens.json": tokens, "tokens/variables.css": css, "components.md": components,
     "STRUCTURE_QA.md": "# 结构 QA\n\n- [ ] 模块顺序、文案、图片和 CTA 可定位到来源\n- [ ] 没有新增无证据的功能或营销模块\n- [ ] 指定画板尺寸无溢出与错位",
-    "DESIGN_QA.md": qaMarkdown(),
+    "DESIGN_QA.md": qaMarkdown(contract),
   };
 }
 
@@ -237,8 +237,19 @@ function xmlEscape(value: string) {
   return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&apos;" })[character] || character);
 }
 function designMarkdown(contract: DesignContract, version: number) {
-  return "# " + contract.title + "\n\n合同版本：" + version + "\n生成时间：" + contract.generatedAt + "\n\n## 强制视觉原则\n\n" + contract.principles.map((item, index) => (index + 1) + ". " + item).join("\n") + "\n\n## Do\n\n" + contract.dos.map((item) => "- " + item).join("\n") + "\n\n## Don’t\n\n" + contract.donts.map((item) => "- " + item).join("\n") + "\n\n## 冲突\n\n" + (contract.conflicts.map((item) => "- " + item).join("\n") || "- 无") + "\n\n## 未确认项\n\n" + (contract.unresolved.map((item) => "- " + item).join("\n") || "- 无") + "\n\n## 证据素材\n\n" + contract.sourceAssetIds.map((item) => "- " + item).join("\n");
+  return "# " + contract.title + "\n\n合同版本：" + version + "\n生成时间：" + contract.generatedAt + "\n\n## 强制视觉原则\n\n" + contract.principles.map((item, index) => (index + 1) + ". " + item + "\n   - 证据：" + evidenceIds(contract, "principles", item).join("、")).join("\n") + "\n\n## Do\n\n" + contract.dos.map((item) => "- " + item).join("\n") + "\n\n## Don’t\n\n" + contract.donts.map((item) => "- " + item).join("\n") + "\n\n## 冲突\n\n" + (contract.conflicts.map((item) => "- " + item + decisionSuffix(contract.review.conflictDecisions, item)).join("\n") || "- 无") + "\n\n## 未确认项\n\n" + (contract.unresolved.map((item) => "- " + item + decisionSuffix(contract.review.unresolvedNotes, item)).join("\n") || "- 无") + "\n\n## 证据素材\n\n" + contract.sourceAssetIds.map((item) => "- " + item).join("\n");
 }
-function qaMarkdown() {
-  return "# 设计一致性 QA\n\n- [ ] 颜色、字号、间距和圆角均来自合同 Tokens\n- [ ] 重复组件的 default / hover / active / focus / disabled 状态一致\n- [ ] 实测、视觉推断与人工覆盖没有混淆\n- [ ] 每条关键结论可定位到 sources.json\n- [ ] 未确认字体、渐变与阴影没有进入生产规范";
+function evidenceIds(contract: DesignContract, section: "principles" | "conflicts" | "unresolved", value: string) {
+  return contract.evidence[section].find((item) => item.value === value)?.sourceAssetIds ?? contract.sourceAssetIds;
+}
+function decisionSuffix(rows: Array<{ issue: string; decision: string }>, issue: string) {
+  const decision = rows.find((item) => item.issue === issue)?.decision;
+  return decision ? "\n  - 已记录取舍：" + decision : "";
+}
+function qaMarkdown(contract: DesignContract) {
+  const reviewItems = [
+    ...contract.conflicts.map((issue) => "- [ ] 冲突：" + issue + (decisionSuffix(contract.review.conflictDecisions, issue) || "；尚未记录取舍")),
+    ...contract.unresolved.map((issue) => "- [ ] 未确认：" + issue + (decisionSuffix(contract.review.unresolvedNotes, issue) || "；不得当作确定事实")),
+  ];
+  return "# 设计一致性 QA\n\n- [ ] 颜色、字号、间距和圆角均来自合同 Tokens\n- [ ] 重复组件的 default / hover / active / focus / disabled 状态一致\n- [ ] 实测、视觉推断与人工覆盖没有混淆\n- [ ] 每条关键结论可定位到 sources.json\n- [ ] 未确认字体、渐变与阴影没有进入生产规范" + (reviewItems.length ? "\n\n## 本方案的待核对项\n\n" + reviewItems.join("\n") : "");
 }

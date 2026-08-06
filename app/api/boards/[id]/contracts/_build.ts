@@ -14,6 +14,12 @@ export function buildContract(title: string, rows: Array<{ assetId: string; resu
   }
   const lowConfidenceFonts = rows.flatMap((row) => row.result.typography.filter((item) => item.confidence < .75).map((item) => item.familyGuess));
   const dominantColors = rows.map((row) => row.result.palette[0]?.hex).filter(Boolean);
+  const conflicts = new Set(dominantColors).size > 3 ? ["不同参考的主色差异较大；应用前需确认主品牌色和场景色的优先级"] : [];
+  const unresolved = lowConfidenceFonts.length ? ["字体为视觉推断，需在 Figma 或代码中人工确认：" + unique(lowConfidenceFonts).join("、")] : [];
+  const allAssetIds = rows.map((row) => row.assetId);
+  const lowConfidenceAssetIds = rows
+    .filter((row) => row.result.typography.some((item) => item.confidence < .75))
+    .map((row) => row.assetId);
   return {
     schemaVersion: 1, title, principles: principles.length ? principles : ["保持参考素材中反复出现的层级、比例和间距节奏"],
     tokens: {
@@ -25,9 +31,20 @@ export function buildContract(title: string, rows: Array<{ assetId: string; resu
     components: [...components].map(([name, value]) => ({ name, rules: [...value.rules], sourceAssetIds: [...value.sourceAssetIds] })),
     dos: principles.slice(0, 6),
     donts: unique(rows.flatMap((row) => row.result.accessibility.filter((item) => item.level === "warning").map((item) => item.message))),
-    conflicts: new Set(dominantColors).size > 3 ? ["不同参考的主色差异较大；应用前需确认主品牌色和场景色的优先级"] : [],
-    unresolved: lowConfidenceFonts.length ? ["字体为视觉推断，需在 Figma 或代码中人工确认：" + unique(lowConfidenceFonts).join("、")] : [],
-    sourceAssetIds: rows.map((row) => row.assetId), generatedAt: new Date().toISOString(),
+    conflicts,
+    unresolved,
+    evidence: {
+      principles: (principles.length ? principles : ["保持参考素材中反复出现的层级、比例和间距节奏"]).map((value) => ({
+        value,
+        sourceAssetIds: rows.filter((row) => row.result.principles.includes(value)).map((row) => row.assetId).filter(Boolean).length
+          ? rows.filter((row) => row.result.principles.includes(value)).map((row) => row.assetId)
+          : allAssetIds,
+      })),
+      conflicts: conflicts.map((value) => ({ value, sourceAssetIds: allAssetIds })),
+      unresolved: unresolved.map((value) => ({ value, sourceAssetIds: lowConfidenceAssetIds.length ? lowConfidenceAssetIds : allAssetIds })),
+    },
+    review: { conflictDecisions: [], unresolvedNotes: [] },
+    sourceAssetIds: allAssetIds, generatedAt: new Date().toISOString(),
   };
 }
 function unique(values: string[]) { return [...new Set(values.filter(Boolean))]; }
