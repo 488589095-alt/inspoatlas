@@ -47,26 +47,27 @@ test("端口拖出下一步、连线文字编辑与节点搜索均在画布内",
   assert.match(styles, /background: var\(--desk-iris\)/);
 });
 
-test("精密档案工作台统一视觉 token、操作层级与减少动态效果", async () => {
+test("深色创作工作台统一 token、操作层级与减少动态效果", async () => {
   const [workspace, styles, exportStyles, icon] = await Promise.all([
     readFile(new URL("../app/InspoWorkspace.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/workspace-v12.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/workspace-v13.css", import.meta.url), "utf8"),
     readFile(new URL("../app/export.css", import.meta.url), "utf8"),
     readFile(new URL("../app/workspace/WorkspaceIcon.tsx", import.meta.url), "utf8"),
   ]);
 
   assert.match(exportStyles, /@import "\.\/workspace-v12\.css"/);
-  assert.match(styles, /--desk-accent: #315e73/);
-  assert.match(styles, /"PingFang SC"/);
+  assert.match(exportStyles, /@import "\.\/workspace-v13\.css"/);
+  assert.match(styles, /--desk-accent: #98b872/);
+  assert.match(styles, /"Microsoft YaHei UI"/);
   assert.match(styles, /:focus-visible/);
   assert.match(styles, /prefers-reduced-motion: reduce/);
-  assert.doesNotMatch(styles, /gradient/i);
-  assert.match(workspace, /className="canvas-toolbar-more"/);
+  assert.match(styles, /radial-gradient/);
+  assert.match(workspace, /ToolbarMoreMenu/);
   assert.match(workspace, /<small>添加<\/small>/);
   assert.match(workspace, /<small>拆解<\/small>/);
   assert.match(workspace, /<small>整理<\/small>/);
   assert.match(workspace, /<small>定位<\/small>/);
-  assert.match(workspace, /可执行建议/);
+  assert.match(workspace, /方向校对/);
   assert.match(workspace, /正在拆解/);
   assert.match(workspace, /disabled=\{contractBusy\}/);
   assert.match(icon, /stroke="currentColor"/);

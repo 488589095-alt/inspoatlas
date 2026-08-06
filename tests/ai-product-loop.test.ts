@@ -13,10 +13,10 @@ test("产品固定模型，运行方式不暴露给普通用户", async () => {
   assert.match(credentials, /runMode: "managed"/);
   assert.match(credentials, /runMode: "byok"/);
   assert.match(route, /managedAiSummary/);
-  assert.match(workspace, /GPT-5\.6 Terra/);
+  assert.match(workspace, /Qwen 3\.7 Plus/);
   assert.doesNotMatch(workspace, /平台托管 AI|高级实验|inspoatlas:ai-run-mode/);
-  assert.match(ai, /gpt-5\.6-terra/);
-  assert.match(domain, /models: \["gpt-5\.6-terra"\]/);
+  assert.match(ai, /qwen3\.7-plus/);
+  assert.match(domain, /models: \["qwen3\.7-plus"/);
 });
 test("拆解与设计助手记录版本、运行方式和行为事件", async () => {
   const [analysis, assistant, ai] = await Promise.all([

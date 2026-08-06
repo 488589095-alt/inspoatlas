@@ -4,12 +4,14 @@ import { analysisResultSchema, type AnalysisResult, type ProviderId } from "@ins
 export interface ProviderConfig { provider: ProviderId; apiKey: string; model: string; baseUrl: string; supportsVision: boolean; }
 export interface AnalyzeInput { assetId: string; title: string; text?: string; imageDataUrl?: string; computedStyles?: Record<string, unknown>[]; }
 export const ANALYSIS_PROMPT_VERSION = "analysis-v3";
+export const LAYER_PROPOSAL_PROMPT_VERSION = "layers-v1";
+export const RESEARCH_PROMPT_VERSION = "research-v1";
 export interface TextMessage { role: "user" | "assistant"; content: string; }
 export const providerDefaults: Record<ProviderId, { model: string; baseUrl: string; supportsVision: boolean }> = {
   openai: { model: "gpt-5.6-terra", baseUrl: "https://api.openai.com/v1", supportsVision: true },
   anthropic: { model: "claude-sonnet-4-20250514", baseUrl: "https://api.anthropic.com/v1", supportsVision: true },
   gemini: { model: "gemini-3.6-flash", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", supportsVision: true },
-  qwen: { model: "qwen3.6-flash", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", supportsVision: true },
+  qwen: { model: "qwen3.7-plus", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", supportsVision: true },
   deepseek: { model: "deepseek-chat", baseUrl: "https://api.deepseek.com/v1", supportsVision: false },
   moonshot: { model: "kimi-k3", baseUrl: "https://api.moonshot.cn/v1", supportsVision: true },
   zhipu: { model: "glm-4.5v", baseUrl: "https://open.bigmodel.cn/api/paas/v4", supportsVision: true },
@@ -60,6 +62,59 @@ export async function testProvider(config: ProviderConfig) {
   const result = await requestJson([{ role: "user", content: "只返回 JSON：{\"ok\":true}" }], config);
   if (!result || typeof result !== "object") throw new Error("模型没有返回有效 JSON");
 }
+
+export type ImageLayerProposal = {
+  id: string;
+  label: string;
+  category: string;
+  rect: { x: number; y: number; width: number; height: number };
+  confidence: number;
+};
+
+/** Object boxes are suggestions only; a user always confirms or refines the mask before a PNG is saved. */
+export async function proposeImageLayers(input: { title: string; imageDataUrl: string }, config: ProviderConfig): Promise<ImageLayerProposal[]> {
+  assertProviderConfig(config);
+  if (!config.supportsVision) throw new Error("当前百炼连接不支持图片定位");
+  const prompt = [
+    "你负责为图片中的可复用主体提出图层候选。只返回 JSON。",
+    "只给清晰、可独立使用的实体；不要把背景、光影、纹理、文字或不确定区域当作对象。",
+    "rect 坐标必须按 0-1 归一化，输出最多 12 项。所有候选只是定位建议，不能声称已完成抠图。",
+    "严格结构：{\"layers\":[{\"id\":\"layer-1\",\"label\":\"人物\",\"category\":\"person\",\"rect\":{\"x\":0.1,\"y\":0.1,\"width\":0.3,\"height\":0.6},\"confidence\":0.8}]}",
+    "图片标题：" + input.title,
+  ].join("\n");
+  const raw = await requestJson([{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: input.imageDataUrl } }] }], config);
+  return asArray(asRecord(raw).layers).slice(0, 12).flatMap((value, index) => {
+    const item = asRecord(value); const box = asRecord(item.rect ?? item.bbox);
+    const rect = { x: clamp(asNumber(box.x, -1), 0, 1), y: clamp(asNumber(box.y, -1), 0, 1), width: clamp(asNumber(box.width ?? box.w, 0), 0, 1), height: clamp(asNumber(box.height ?? box.h, 0), 0, 1) };
+    const label = asText(item.label ?? item.name);
+    if (!label || !rect.width || !rect.height || rect.x + rect.width > 1.001 || rect.y + rect.height > 1.001) return [];
+    return [{ id: asText(item.id, `layer-${index + 1}`), label, category: asText(item.category, "object"), rect, confidence: asConfidence(item.confidence) }];
+  });
+}
+
+export type ResearchCandidate = { title: string; domain: string; url: string; quote: string; reason: string; searchTerms: string[] };
+
+/** Results are intentionally ephemeral; a candidate becomes a source only after the user accepts it. */
+export async function researchWithQwen(input: { brief: string; limit: number }, config: ProviderConfig): Promise<ResearchCandidate[]> {
+  assertProviderConfig(config);
+  if (config.provider !== "qwen") throw new Error("灵感搜索固定使用百炼 Qwen");
+  const prompt = [
+    "基于联网搜索，为设计师找公开可访问的视觉参考候选。只返回 JSON，不要解释。",
+    `返回 ${input.limit} 条以内。每条必须有来自搜索结果的真实 https URL，不能编造 URL、标题、引文或网页内容。`,
+    "严格结构：{\"candidates\":[{\"title\":\"页面标题\",\"domain\":\"example.com\",\"url\":\"https://example.com\",\"quote\":\"不超过80字的页面片段\",\"reason\":\"适配理由\",\"searchTerms\":[\"词\"]}]}",
+    "需求：" + input.brief,
+  ].join("\n");
+  const raw = await requestJson([{ role: "user", content: prompt }], config, { enable_search: true });
+  const seen = new Set<string>();
+  return asArray(asRecord(raw).candidates).flatMap((value) => {
+    const item = asRecord(value); const url = asText(item.url);
+    if (!/^https:\/\//i.test(url) || seen.has(url)) return [];
+    try { new URL(url); } catch { return []; }
+    seen.add(url);
+    const title = asText(item.title); if (!title) return [];
+    return [{ title: title.slice(0, 180), domain: asText(item.domain, new URL(url).hostname).slice(0, 180), url, quote: asText(item.quote).slice(0, 300), reason: asText(item.reason).slice(0, 280), searchTerms: asArray(item.searchTerms).map((term) => asText(term)).filter(Boolean).slice(0, 8) }];
+  }).slice(0, input.limit);
+}
 export async function generateTextWithProvider(messages: TextMessage[], config: ProviderConfig) {
   assertProviderConfig(config);
   const controller = new AbortController();
@@ -97,7 +152,7 @@ export async function generateTextWithProvider(messages: TextMessage[], config: 
   }
 }
 
-async function requestJson(messages: Array<Record<string, unknown>>, config: ProviderConfig) {
+async function requestJson(messages: Array<Record<string, unknown>>, config: ProviderConfig, options: Record<string, unknown> = {}) {
   const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 240_000);
   try {
     const requestRaw = async (requestMessages: Array<Record<string, unknown>>) => {
@@ -114,6 +169,7 @@ async function requestJson(messages: Array<Record<string, unknown>>, config: Pro
             model: config.model,
             max_tokens: 3_500,
             messages: toAnthropicMessages(requestMessages),
+            ...options,
           }),
         });
         if (!response.ok) throw await providerRequestError(response, config);
@@ -125,7 +181,7 @@ async function requestJson(messages: Array<Record<string, unknown>>, config: Pro
 
       const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/chat/completions", {
         method: "POST", signal: controller.signal, headers: { "content-type": "application/json", authorization: "Bearer " + config.apiKey },
-        body: JSON.stringify({ model: config.model, messages: requestMessages, ...(config.provider === "openai" ? { max_completion_tokens: 8_000, reasoning_effort: "low" } : { max_tokens: 3_500 }), response_format: { type: "json_object" } }),
+        body: JSON.stringify({ model: config.model, messages: requestMessages, ...(config.provider === "openai" ? { max_completion_tokens: 8_000, reasoning_effort: "low" } : { max_tokens: 3_500 }), response_format: { type: "json_object" }, ...options }),
       });
       if (!response.ok) throw await providerRequestError(response, config);
       const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };

@@ -28,7 +28,7 @@ test("模型弹窗精简排版且视觉分析超时可恢复", async () => {
   assert.match(ai, /240_000/);
   assert.match(ai, /max_tokens: 3_500/);
   assert.match(ai, /isAbortError/);
-  assert.match(workspace, /视觉分析用时超过当前限制/);
+  assert.match(workspace, /连接百炼/);
 });
 
 test("网页正文可滚动且无截图素材不再发起图片请求", async () => {
@@ -44,7 +44,7 @@ test("网页正文可滚动且无截图素材不再发起图片请求", async ()
   assert.match(styles, /overflow-y: auto/);
 });
 
-test("设计助手独立于固定流程并能把建议放回画布", async () => {
+test("方向校对独立于固定流程并能把建议放回画布", async () => {
   const [workspace, route, ai, styles] = await Promise.all([
     readFile(new URL("../app/InspoWorkspace.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/api/boards/[id]/design-assistant/route.ts", import.meta.url), "utf8"),
@@ -53,15 +53,15 @@ test("设计助手独立于固定流程并能把建议放回画布", async () =>
   ]);
   assert.match(workspace, /className="canvas-director"/);
   assert.match(workspace, /className=\{"assistant-orb"/);
-  assert.match(workspace, /设计助手/);
-  assert.match(workspace, /设计目标/);
+  assert.match(workspace, /方向校对/);
+  assert.match(workspace, /目标/);
   assert.match(workspace, /assistantScope === "selection"/);
   assert.match(workspace, /全部参考/);
   assert.match(workspace, /placeDirectionOnCanvas/);
   assert.match(workspace, /放到画布/);
-  assert.match(workspace, />参考<\/button>/);
-  assert.match(workspace, />方案<\/button>/);
-  assert.match(workspace, />输出<\/button>/);
+  assert.match(workspace, />保留<\/button>/);
+  assert.match(workspace, />取舍<\/button>/);
+  assert.match(workspace, />建议<\/button>/);
   assert.match(route, /eq\(boards\.ownerId, user\.id\)/);
   assert.match(route, /关键判断用【卡片标题】标注依据/);
   assert.match(ai, /generateTextWithProvider/);

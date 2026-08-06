@@ -50,6 +50,20 @@ export const confirmedElements = sqliteTable("confirmed_elements", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+/**
+ * A derivative never replaces its source asset.  The canvas may show it as an
+ * `element` card, while this record keeps the original file, operation and
+ * transform traceable for export and later re-editing.
+ */
+export const assetDerivatives = sqliteTable("asset_derivatives", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), boardId: text("board_id").notNull(),
+  sourceAssetId: text("source_asset_id").notNull(), title: text("title").notNull(),
+  operation: text("operation", { enum: ["crop", "mask", "ai-edit"] }).notNull(), objectKey: text("object_key").notNull(),
+  metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>().notNull().default({}),
+  status: text("status", { enum: ["ready", "failed"] }).notNull().default("ready"), error: text("error"),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`), updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [index("asset_derivatives_source_idx").on(table.sourceAssetId), index("asset_derivatives_owner_created_idx").on(table.ownerId, table.createdAt)]);
+
 export const designContracts = sqliteTable("design_contracts", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), boardId: text("board_id").notNull().unique(),
   version: integer("version").notNull().default(1), status: text("status", { enum: ["draft", "confirmed"] }).notNull().default("draft"),

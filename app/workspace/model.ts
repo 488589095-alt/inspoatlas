@@ -11,6 +11,7 @@ export type CardData = Record<string, unknown> & {
   screenshotPartCount?: number;
   sourceUrl?: string;
   assetId?: string;
+  derivativeId?: string;
   sourceAssetId?: string;
   sourceTitle?: string;
   status?: string;
@@ -66,7 +67,7 @@ export function sceneToFlow(scene: BoardSceneV2): { nodes: CanvasNode[]; edges: 
     });
   }
 
-  const nodes = scene.nodes.filter((item) => item.kind !== "element").map((item): CanvasNode => {
+  const nodes = scene.nodes.map((item): CanvasNode => {
     const assetId = String(item.data.assetId || item.id);
     return {
       id: item.id,
@@ -103,7 +104,7 @@ export function relationToEdge(item: Relation): Edge {
     animated: item.status === "suggested",
     data: item,
     style: {
-      stroke: sourceRelation ? "#64576f" : "#9b8aaa",
+      stroke: sourceRelation ? "#879b80" : "#64746d",
       strokeWidth: sourceRelation ? 2 : 1.5,
       strokeDasharray: item.status === "suggested" ? "6 5" : undefined,
     },

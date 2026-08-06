@@ -1,6 +1,6 @@
 import { and, eq } from "drizzle-orm";
 import { ensureCoreTables, getDb } from "@/db";
-import { assets, confirmedElements } from "@/db/schema";
+import { assetDerivatives, assets, confirmedElements } from "@/db/schema";
 import { currentUser, errorResponse, HttpError } from "../../../_lib";
 import { getAssetBucket } from "../../../_storage";
 
@@ -9,10 +9,11 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const user = currentUser(request); const { id } = await context.params; await ensureCoreTables();
     const [asset] = await getDb().select({ objectKey: assets.objectKey, metadata: assets.metadata }).from(assets).where(and(eq(assets.id, id), eq(assets.ownerId, user.id))).limit(1);
     const [element] = asset ? [] : await getDb().select({ objectKey: confirmedElements.objectKey }).from(confirmedElements).where(and(eq(confirmedElements.id, id), eq(confirmedElements.ownerId, user.id))).limit(1);
+    const [derivative] = asset || element ? [] : await getDb().select({ objectKey: assetDerivatives.objectKey }).from(assetDerivatives).where(and(eq(assetDerivatives.id, id), eq(assetDerivatives.ownerId, user.id))).limit(1);
     const screenshotKeys = (asset?.metadata as { screenshotKeys?: string[] } | null)?.screenshotKeys;
     const requestedPart = Number(new URL(request.url).searchParams.get("part") ?? "0");
     const part = Number.isInteger(requestedPart) && requestedPart >= 0 ? requestedPart : 0;
-    const objectKey = asset?.objectKey ?? screenshotKeys?.[part] ?? element?.objectKey;
+    const objectKey = asset?.objectKey ?? screenshotKeys?.[part] ?? element?.objectKey ?? derivative?.objectKey;
     if (!objectKey) throw new HttpError(404, "素材文件不存在");
     const object = await getAssetBucket().get(objectKey);
     if (!object) throw new HttpError(404, "素材文件不存在");

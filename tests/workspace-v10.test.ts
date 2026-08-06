@@ -30,14 +30,15 @@ test("辅助连线默认只显示当前相关且连接热区更大", async () =>
 });
 
 test("备注、分组说明和左右侧栏均可直接编辑", async () => {
-  const [workspace, card, organize, styles] = await Promise.all([
+  const [workspace, card, organize, styles, toolbar] = await Promise.all([
     readFile(new URL("../app/InspoWorkspace.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/workspace/CardNode.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/workspace/organize.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/workspace-v11.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/workspace/ToolbarMoreMenu.tsx", import.meta.url), "utf8"),
   ]);
   assert.match(workspace, /function createNote/);
-  assert.match(workspace, /新建备注/);
+  assert.match(toolbar, /新建备注/);
   assert.match(workspace, /rail-resizer-left/);
   assert.match(workspace, /rail-resizer-right/);
   assert.match(workspace, /connectedModelLabel/);

@@ -9,7 +9,7 @@ const labels = {
   web: "网页",
   text: "文字",
   analysis: "拆解",
-  element: "确认元素",
+  element: "图层",
   group: "分组",
 };
 
@@ -105,7 +105,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={data.imageUrl} alt={data.title} draggable={false} />
               )}
-            <span className="source-chip">{data.kind === "web" ? "网页截图" : "原始素材"}</span>
+            <span className="source-chip">{data.kind === "web" ? "网页截图" : data.kind === "element" ? "衍生素材" : "原始素材"}</span>
             {data.kind === "web" && Number(data.screenshotPartCount) > 1 && <span className="web-shot-count">{data.screenshotPartCount} 段 · 滚动查看</span>}
           </div>
         )}
@@ -130,6 +130,11 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
             <span>{data.status === "processing" ? "◌" : "✦"}</span>
             <b>{analysisStatusText(data.status, hasAnalysis)}</b>
             <small>{data.analysisExpanded ? "收起" : hasAnalysis ? "展开" : "开始"}</small>
+          </button>
+        )}
+        {data.kind === "image" && data.assetId && (
+          <button className="image-edit-trigger nodrag" onClick={(event) => { event.stopPropagation(); action("edit-image", event); }}>
+            编辑素材
           </button>
         )}
       </div>

@@ -27,6 +27,8 @@ import { CardNode } from "./workspace/CardNode";
 import { RelationEdge } from "./workspace/RelationEdge";
 import { UserMenu } from "./workspace/UserMenu";
 import { WorkspaceIcon, type WorkspaceIconName } from "./workspace/WorkspaceIcon";
+import { ImageEditor } from "./workspace/ImageEditor";
+import { ToolbarMoreMenu } from "./workspace/ToolbarMoreMenu";
 import { buildOrganizePreview, type OrganizePreview } from "./workspace/organize";
 import {
   flowToScene,
@@ -53,7 +55,7 @@ const defaultSize: Record<CardData["kind"], { width: number; height: number }> =
 };
 const canvasSnapGrid: [number, number] = [8, 8];
 
-type WorkspaceModal = "import" | "credentials" | null;
+type WorkspaceModal = "import" | "credentials" | "research" | null;
 type RelationView = "hidden" | "selection" | "all";
 type SearchKind = "all" | "image" | "web" | "text" | "analysis" | "contract" | "group";
 type NextStepMenu = { sourceId: string; x: number; y: number };
@@ -73,6 +75,7 @@ type AssistantMessage = {
   feedback?: "helpful" | "needs-work";
 };
 type ManagedAiState = { available: boolean; provider: ProviderId | null; model: string | null; supportsVision: boolean };
+type ResearchCandidate = { title: string; domain: string; url: string; quote: string; reason: string; searchTerms: string[] };
 const searchKindOptions: Array<{ id: SearchKind; label: string; icon: string }> = [
   { id: "all", label: "全部", icon: "⌕" },
   { id: "image", label: "图片", icon: "▧" },
@@ -151,7 +154,7 @@ function WorkspaceCanvas() {
   const [exportComplete, setExportComplete] = useState<false | "quick" | "full">(false);
   const [credentialState, setCredentialState] = useState<Array<{ provider: string; model: string; lastFour: string; supportsVision: boolean; active: boolean }>>([]);
   const [managedAi, setManagedAi] = useState<ManagedAiState>({ available: false, provider: null, model: null, supportsVision: false });
-  const [credentialForm, setCredentialForm] = useState<{ provider: ProviderId; apiKey: string; model: string; region: string }>({ provider: "openai", apiKey: "", model: providerCatalog.openai.models[0], region: "intl" });
+  const [credentialForm, setCredentialForm] = useState<{ provider: ProviderId; apiKey: string; model: string; region: string }>({ provider: "qwen", apiKey: "", model: providerCatalog.qwen.models[0], region: "intl" });
   const [loadingCredential, setLoadingCredential] = useState(false);
   const [credentialToDelete, setCredentialToDelete] = useState<ProviderId | null>(null);
 
@@ -161,6 +164,11 @@ function WorkspaceCanvas() {
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([]);
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [researchBrief, setResearchBrief] = useState("");
+  const [researchCandidates, setResearchCandidates] = useState<ResearchCandidate[]>([]);
+  const [researchBusy, setResearchBusy] = useState(false);
+  const [researchError, setResearchError] = useState("");
+  const [editingImage, setEditingImage] = useState<{ assetId: string; sourceUrl: string; title: string; nodeId: string } | null>(null);
   const [linkMode, setLinkMode] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [leftRailWidth, setLeftRailWidth] = useState(242);
@@ -239,8 +247,8 @@ function WorkspaceCanvas() {
     });
   }, [edges, relationView, selectedIds]);
   const persistableSignature = useMemo(() => sceneSignature(nodes, edges, viewportState), [nodes, edges, viewportState]);
-  const openAiCredential = credentialState.find((item) => item.provider === "openai");
-  const connectedModelLabel = "GPT-5.6 Terra";
+  const qwenCredential = credentialState.find((item) => item.provider === "qwen");
+  const connectedModelLabel = "Qwen 3.7 Plus";
 
   useEffect(() => {
     signatureRef.current = persistableSignature;
@@ -480,6 +488,12 @@ function WorkspaceCanvas() {
         });
       }
       if (detail.action === "analyze") void analyze(detail.id);
+      if (detail.action === "edit-image") {
+        const node = nodes.find((item) => item.id === detail.id);
+        if (node?.data.kind === "image" && node.data.assetId && node.data.imageUrl) {
+          setEditingImage({ assetId: String(node.data.assetId), sourceUrl: String(node.data.imageUrl), title: node.data.title, nodeId: node.id });
+        }
+      }
       if (detail.action === "feedback-analysis-helpful") void submitAnalysisFeedback(detail.id, "helpful");
       if (detail.action === "feedback-analysis-needs-work") void submitAnalysisFeedback(detail.id, "needs-work", "inaccurate");
       if (detail.action === "toggle-analysis") toggleAnalysis(detail.id);
@@ -784,7 +798,7 @@ function WorkspaceCanvas() {
     }
   }
 
-  async function addAsset(value: string) {
+  async function addAsset(value: string, options?: { title?: string; body?: string }) {
     const isUrl = /^https?:\/\//i.test(value);
     const response = await fetch("/api/assets", {
       method: "POST",
@@ -792,7 +806,7 @@ function WorkspaceCanvas() {
       body: JSON.stringify({
         boardId,
         kind: isUrl ? "web" : "text",
-        title: isUrl ? new URL(value).hostname : "新便签",
+        title: options?.title || (isUrl ? new URL(value).hostname : "新便签"),
         sourceUrl: isUrl ? value : undefined,
         text: isUrl ? undefined : value.slice(0, 50_000),
       }),
@@ -810,7 +824,7 @@ function WorkspaceCanvas() {
         title: asset.title,
         assetId: asset.id,
         sourceUrl: asset.sourceUrl,
-        body: value,
+        body: options?.body || value,
         tags: ["待拆解"],
       },
       style: defaultSize[kind],
@@ -821,6 +835,39 @@ function WorkspaceCanvas() {
     setModal(null);
     setUrlValue("");
     notify(isUrl ? "网页来源卡已保存" : "文字参考已保存");
+  }
+
+  async function exploreResearch() {
+    const brief = researchBrief.trim();
+    if (brief.length < 4) return setResearchError("写下项目、受众或想找的方向。");
+    setResearchBusy(true); setResearchError("");
+    try {
+      const response = await fetch(`/api/boards/${encodeURIComponent(boardId)}/research`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ brief, limit: 10 }) });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        if (response.status === 409) setModal("credentials");
+        throw new Error(payload.error || "灵感搜索失败");
+      }
+      setResearchCandidates(Array.isArray(payload.candidates) ? payload.candidates : []);
+      if (!payload.candidates?.length) setResearchError("没有找到可确认的公开来源，请换一组更具体的搜索词。");
+    } catch (cause) { setResearchError(cause instanceof Error ? cause.message : "灵感搜索失败"); }
+    finally { setResearchBusy(false); }
+  }
+
+  function addDerivativeLayer(derivative: { id: string; sourceAssetId: string; title: string; operation: string; contentUrl: string; metadata?: Record<string, unknown> }) {
+    const source = nodes.find((node) => String(node.data.assetId || "") === derivative.sourceAssetId);
+    if (!source) return notify("图层已保存；原始素材不在当前画布。");
+    const id = `element-${derivative.id}`;
+    remember();
+    setNodes((current) => [...current, {
+      id, type: "inspo", position: { x: source.position.x + 332, y: source.position.y + 28 },
+      data: { kind: "element", title: derivative.title, derivativeId: derivative.id, sourceAssetId: derivative.sourceAssetId, sourceTitle: source.data.title, imageUrl: derivative.contentUrl, body: derivative.operation === "mask" ? "可编辑图层" : "编辑副本", tags: ["图层"] },
+      style: defaultSize.element, zIndex: 11,
+    }]);
+    setEdges((current) => [...current, {
+      id: `element-of-${derivative.id}`, source: source.id, target: id, type: "relation", label: "来自素材", data: { id: `element-of-${derivative.id}`, sourceId: source.id, targetId: id, type: "element-of", layer: "provenance", status: "confirmed", origin: "human", explanation: "来自素材" }, style: { stroke: "#879b80", strokeWidth: 2 }, zIndex: 0,
+    }]);
+    setSelectedIds([id]); setEditingImage(null); notify("图层已保存到画布");
   }
 
   function createNote(initial?: { title?: string; body?: string }) {
@@ -1079,7 +1126,7 @@ function WorkspaceCanvas() {
         body: JSON.stringify({
           goal,
           question,
-          ...(!managedAi.available ? { provider: "openai" } : {}),
+          ...(!managedAi.available ? { provider: "qwen" } : {}),
           scope: assistantScope,
           selectedNodeIds: assistantScope === "selection" ? selectedIds : [],
           history: assistantMessages.slice(-6),
@@ -1546,9 +1593,9 @@ function WorkspaceCanvas() {
       const rows = payload.credentials ?? [];
       setCredentialState(rows);
       if (payload.managed) setManagedAi(payload.managed);
-      const openai = rows.find((item) => item.provider === "openai");
-      setCredentialForm({ provider: "openai", apiKey: "", model: providerCatalog.openai.models[0], region: "intl" });
-      if (openai) setCredentialForm((value) => ({ ...value, apiKey: "" }));
+      const qwen = rows.find((item) => item.provider === "qwen");
+      setCredentialForm({ provider: "qwen", apiKey: "", model: providerCatalog.qwen.models[0], region: "intl" });
+      if (qwen) setCredentialForm((value) => ({ ...value, apiKey: "" }));
     }
     setModal("credentials");
   }
@@ -1712,7 +1759,7 @@ function WorkspaceCanvas() {
         </nav>
         <div className="quota-card">
           <div><span>AI 服务</span><strong title={connectedModelLabel}>{connectedModelLabel}</strong></div>
-          <p>拆解与设计助手统一使用这个模型。</p>
+          <p>拆解、定位与搜索统一使用。</p>
           <button onClick={() => void loadCredentials()}>AI 设置</button>
         </div>
       </aside>
@@ -1733,18 +1780,11 @@ function WorkspaceCanvas() {
         </div>
         <div className="canvas-toolbar" role="toolbar" aria-label="画布工具">
           <button onClick={() => setModal("import")} title="添加网页、文字或文件夹"><WorkspaceIcon name="add" /><small>添加</small></button>
-          <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()} title="拆解所选参考"><WorkspaceIcon name="analyze" /><small>拆解</small></button>
+          {selected?.data.kind === "image" ? <button className="ai-tool" onClick={() => setEditingImage({ assetId: String(selected.data.assetId), sourceUrl: String(selected.data.imageUrl), title: selected.data.title, nodeId: selected.id })} title="裁剪、旋转、蒙版并保存副本"><WorkspaceIcon name="analyze" /><small>编辑素材</small></button> : <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()} title="拆解所选参考"><WorkspaceIcon name="analyze" /><small>拆解</small></button>}
+          {!selectedIds.length && <button onClick={() => { setResearchError(""); setModal("research"); }} title="从公开网页找候选"><WorkspaceIcon name="search" /><small>探索</small></button>}
           <button onClick={previewOrganize} title="按设计重点整理画布"><WorkspaceIcon name="arrange" /><small>整理</small></button>
           <button onClick={() => void fitView({ padding: 0.18, duration: 320 })} title="快速定位全部内容"><WorkspaceIcon name="fit" /><small>定位</small></button>
-          <details className="canvas-toolbar-more">
-            <summary title="更多画布操作"><WorkspaceIcon name="note" /><small>更多</small></summary>
-            <div>
-              <button onClick={() => fileInput.current?.click()}><WorkspaceIcon name="upload" />上传图片</button>
-              <button onClick={() => createNote()}><WorkspaceIcon name="note" />新建备注</button>
-              <button onClick={() => createGroup()}><WorkspaceIcon name="folder" />新建分组</button>
-              <button className={linkMode ? "is-active" : ""} onClick={() => { const next = !linkMode; setLinkMode(next); if (next) { setRelationView("all"); notify("从卡片端口拖到目标卡片即可连线"); } }}><WorkspaceIcon name="connect" />{linkMode ? "完成连线" : "连接卡片"}</button>
-            </div>
-          </details>
+          <ToolbarMoreMenu onUpload={() => fileInput.current?.click()} onNote={() => createNote()} onGroup={() => createGroup()} linkMode={linkMode} onLink={() => { const next = !linkMode; setLinkMode(next); if (next) { setRelationView("all"); notify("从卡片端口拖到目标卡片即可连线"); } }} />
         </div>
         {selectedIds.length > 1 && !organizePreview && (
           <div className="multi-toolbar">
@@ -1814,7 +1854,7 @@ function WorkspaceCanvas() {
           onlyRenderVisibleElements
           elevateEdgesOnSelect
         >
-          {showMiniMap && nodes.length > 0 && <MiniMap pannable zoomable nodeColor={miniMapNodeColor} maskColor="rgba(239,243,240,.72)" ariaLabel="画布缩略图" />}
+          {showMiniMap && nodes.length > 0 && <MiniMap pannable zoomable nodeColor={miniMapNodeColor} maskColor="rgba(8,12,11,.76)" ariaLabel="画布缩略图" />}
         </ReactFlow>
         <button className={"minimap-toggle" + (showMiniMap ? " is-open" : "")} onClick={() => setShowMiniMap((value) => !value)} title={showMiniMap ? "收起缩略图" : "打开缩略图"} aria-label={showMiniMap ? "收起缩略图" : "打开缩略图"}><WorkspaceIcon name="map" /></button>
         <button className={"assistant-orb" + (assistantOpen ? " is-open" : "")} onClick={() => { setAssistantScope(selectedIds.length ? "selection" : "board"); setAssistantOpen((value) => !value); }} title="打开设计助手" aria-label={assistantOpen ? "关闭设计助手" : "打开设计助手"}><WorkspaceIcon name="ask" /></button>
@@ -1893,36 +1933,35 @@ function WorkspaceCanvas() {
         )}
 
         {assistantOpen && !organizePreview && (
-          <aside className="canvas-director" aria-label="设计助手">
+          <aside className="canvas-director" aria-label="方向校对">
             <header>
-              <div><small>设计提问</small><h2>聚焦一个决定</h2></div>
-              <button onClick={() => setAssistantOpen(false)} aria-label="关闭设计助手"><WorkspaceIcon name="close" size={16} /></button>
+              <div><h2>方向校对</h2></div>
+              <button onClick={() => setAssistantOpen(false)} aria-label="关闭方向校对"><WorkspaceIcon name="close" size={16} /></button>
             </header>
-            <p>先确认目标，再选择问题或输入自己的问题。</p>
             <label className="direction-goal">
-              <span>设计目标</span>
-              <textarea value={assistantGoal} onChange={(event) => setAssistantGoal(event.target.value)} placeholder="例如：做一套户外品牌夏季活动页，年轻但不幼稚，后续还要批量换主题。" />
+              <span>目标</span>
+              <textarea value={assistantGoal} onChange={(event) => setAssistantGoal(event.target.value)} placeholder="例如：户外品牌夏季活动页，年轻但不幼稚。" />
             </label>
             <div className="assistant-scope" role="group" aria-label="参考范围">
               <button className={assistantScope === "selection" ? "active" : ""} disabled={!selectedIds.length} onClick={() => setAssistantScope("selection")}>所选 {selectedIds.length || ""}</button>
               <button className={assistantScope === "board" ? "active" : ""} onClick={() => setAssistantScope("board")}>全部参考</button>
             </div>
             <div className="direction-actions">
-              <button onClick={() => void askDesignAssistant("找出这些参考最适合当前目标的共同点，并说明应保留什么。")} disabled={assistantBusy || !assistantGoal.trim()}>保留什么</button>
-              <button onClick={() => void askDesignAssistant("找出这些参考之间互相冲突的设计做法，并给出明确取舍。")} disabled={assistantBusy || !assistantGoal.trim()}>哪里冲突</button>
-              <button onClick={() => void askDesignAssistant("根据当前目标给出一条明确的设计方向，包括结构、视觉和组件取舍。")} disabled={assistantBusy || !assistantGoal.trim()}>给出方向</button>
+              <button onClick={() => void askDesignAssistant("指出最该保留的设计规则，并标注依据。")} disabled={assistantBusy || !assistantGoal.trim()}>保留</button>
+              <button onClick={() => void askDesignAssistant("指出需要取舍的冲突，并标注依据。")} disabled={assistantBusy || !assistantGoal.trim()}>取舍</button>
+              <button onClick={() => void askDesignAssistant("给出一条可以立即执行的方向。")} disabled={assistantBusy || !assistantGoal.trim()}>建议</button>
             </div>
-            {assistantBusy && <div className="direction-loading"><i /><span>正在核对参考…</span></div>}
+            {assistantBusy && <div className="direction-loading"><i /><span>核对中…</span></div>}
             {assistantMessages.filter((message) => message.role === "assistant").slice(-1).map((message, index) => (
               <article className="direction-result" key={message.id ?? index}>
-                <header><strong>可执行建议</strong><small>{assistantScope === "selection" ? `所选 ${selectedIds.length} 张` : "整张画布"}</small></header>
+                <header><strong>建议</strong><small>{assistantScope === "selection" ? `所选 ${selectedIds.length} 张` : "整张画布"}</small></header>
                 <p>{message.content}</p>
                 {!message.content.startsWith("未能完成：") && <div className="direction-result-actions"><button onClick={() => placeDirectionOnCanvas(message)}>放到画布</button>{message.id && (message.feedback ? <small>{message.feedback === "helpful" ? "✓ 有帮助" : "✓ 需改进"}</small> : <><button onClick={() => void submitAssistantFeedback(message, "helpful")}>有用</button><button onClick={() => void submitAssistantFeedback(message, "needs-work", "not-actionable")}>不够具体</button></>)}</div>}
               </article>
             ))}
             <form className="direction-question" onSubmit={(event) => { event.preventDefault(); void askDesignAssistant(); }}>
-              <label htmlFor="direction-question">自定义问题</label>
-              <div><textarea id="direction-question" value={assistantQuestion} onChange={(event) => setAssistantQuestion(event.target.value)} placeholder="例如：导航应该更克制，还是保留强品牌感？" /><button disabled={assistantBusy || !assistantGoal.trim() || !assistantQuestion.trim()}>发送</button></div>
+              <label htmlFor="direction-question">问题</label>
+              <div><textarea id="direction-question" value={assistantQuestion} onChange={(event) => setAssistantQuestion(event.target.value)} placeholder="例如：导航要更克制，还是保留强品牌感？" /><button disabled={assistantBusy || !assistantGoal.trim() || !assistantQuestion.trim()}>发送</button></div>
             </form>
           </aside>
         )}
@@ -2089,14 +2128,17 @@ function WorkspaceCanvas() {
 
       {deleteRequest && <div className="modal-backdrop"><section className="modal confirm-modal"><span className="confirm-icon">⌫</span><h2>{deleteRequest.title}</h2><p>{deleteRequest.body}</p><footer><button className="button soft" onClick={() => setDeleteRequest(null)}>取消</button><button className="button danger-fill" onClick={() => deleteRequest.kind === "board" ? void performDeleteBoard(deleteRequest.ids[0]) : performDeleteNodes(deleteRequest.ids)}>确认删除</button></footer></section></div>}
 
-      {modal === "import" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal import-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">第 1 步 · 采集参考</span><h2>加入当前画布</h2><p>上传图片或整个灵感文件夹，也可以粘贴文字、输入网页地址。网页使用插件采集时会保存完整截图。</p><div className="import-choice"><button className="import-drop" onClick={() => fileInput.current?.click()}><span>⇧</span><strong>上传图片</strong><small>JPG、PNG、WebP · 单张最大 20 MB</small></button><button className="import-drop folder-drop" onClick={() => folderInput.current?.click()}><span>▱</span><strong>上传文件夹</strong><small>自动建立同名分组并排列图片</small></button></div><div className="url-entry"><input autoFocus value={urlValue} onChange={(event) => setUrlValue(event.target.value)} placeholder="公开 URL 或参考文字" /><button onClick={() => urlValue.trim() && void addAsset(urlValue.trim())}>加入</button></div></section></div>}
+      {modal === "research" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal research-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setModal(null)}>×</button><h2>探索灵感</h2><p>只展示公开候选。确认后才会加入画布。</p><div className="research-query"><textarea autoFocus value={researchBrief} onChange={(event) => setResearchBrief(event.target.value)} placeholder="例如：简洁、清晰引导的招聘网站；面向创意岗位。" /><button className="button primary" disabled={researchBusy} onClick={() => void exploreResearch()}>{researchBusy ? "搜索中…" : "搜索"}</button></div>{researchError && <p className="research-error" role="alert">{researchError}</p>}{researchCandidates.length > 0 && <div className="research-candidates">{researchCandidates.map((candidate) => <article key={candidate.url}><div><small>{candidate.domain}</small><h3>{candidate.title}</h3>{candidate.quote && <p>{candidate.quote}</p>}<em>{candidate.reason}</em></div><footer><button onClick={() => window.open(candidate.url, "_blank", "noopener,noreferrer")}>打开采集</button><button className="button primary" onClick={() => void addAsset(candidate.url, { title: candidate.title, body: candidate.reason ? `灵感候选 · ${candidate.reason}` : "灵感候选" })}>加入链接</button></footer></article>)}</div>}</section></div>}
+      {modal === "import" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal import-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setModal(null)}>×</button><h2>加入当前画布</h2><p>上传图片、文件夹、网页或文字。</p><div className="import-choice"><button className="import-drop" onClick={() => fileInput.current?.click()}><span>⇧</span><strong>上传图片</strong><small>JPG、PNG、WebP · 单张最大 20 MB</small></button><button className="import-drop folder-drop" onClick={() => folderInput.current?.click()}><span>▱</span><strong>上传文件夹</strong><small>自动建立同名分组并排列图片</small></button></div><div className="url-entry"><input autoFocus value={urlValue} onChange={(event) => setUrlValue(event.target.value)} placeholder="公开 URL 或参考文字" /><button onClick={() => urlValue.trim() && void addAsset(urlValue.trim())}>加入</button></div></section></div>}
 
-      {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal model-service-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><span className="step-kicker">AI 设置</span><h2>GPT-5.6 Terra</h2><p>网页、图片拆解和设计助手统一使用此模型。产品会固定模型与提示词版本，便于比较每次更新是否真的更好。</p>
-        <div className="model-fixed-card"><div><span>{managedAi.available || openAiCredential ? "已连接" : "尚未连接"}</span><strong>GPT-5.6 Terra</strong></div><small>{managedAi.available ? "可直接使用" : openAiCredential ? `OpenAI Key · •••• ${openAiCredential.lastFour}` : "粘贴 OpenAI API Key 后即可使用"}</small></div>
-        {!managedAi.available && <div className="credential-form"><label><span>OpenAI API Key</span><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value, provider: "openai", model: providerCatalog.openai.models[0] })} placeholder={openAiCredential ? "留空则使用已保存 Key" : "粘贴 API Key"} /></label><div className="credential-actions"><a href={providerCatalog.openai.platformUrl} target="_blank" rel="noreferrer">获取 API Key ↗</a><button className="button primary" disabled={(!credentialForm.apiKey && !openAiCredential) || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "正在验证…" : openAiCredential && !credentialForm.apiKey ? "重新验证" : "连接"}</button></div></div>}
-        {!managedAi.available && openAiCredential && <button className="credential-remove-link" onClick={() => setCredentialToDelete("openai")}>移除已保存的 API Key</button>}
+      {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal model-service-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><h2>连接百炼</h2><p>固定使用 Qwen 3.7 Plus。</p>
+        <div className="model-fixed-card"><div><span>{managedAi.available || qwenCredential ? "已连接" : "尚未连接"}</span><strong>Qwen 3.7 Plus</strong></div><small>{managedAi.available ? "由工作区提供" : qwenCredential ? `百炼 Key · •••• ${qwenCredential.lastFour}` : "粘贴百炼 API Key 后连接"}</small></div>
+        {!managedAi.available && <div className="credential-form"><label><span>百炼 API Key</span><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value, provider: "qwen", model: providerCatalog.qwen.models[0] })} placeholder={qwenCredential ? "留空则使用已保存 Key" : "粘贴 API Key"} /></label><div className="credential-actions"><a href={providerCatalog.qwen.platformUrl} target="_blank" rel="noreferrer">打开百炼 ↗</a><button className="button primary" disabled={(!credentialForm.apiKey && !qwenCredential) || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "验证中…" : qwenCredential && !credentialForm.apiKey ? "重新验证" : "连接"}</button></div></div>}
+        {!managedAi.available && qwenCredential && <button className="credential-remove-link" onClick={() => setCredentialToDelete("qwen")}>移除已保存的 API Key</button>}
       </section></div>}
-      {credentialToDelete && <div className="modal-backdrop"><section className="modal credential-delete-modal"><span className="step-kicker">删除模型服务</span><h2>移除 OpenAI API Key？</h2><p>移除后将无法使用拆解与设计助手，重新连接即可恢复。</p><div className="confirm-actions"><button className="button soft" onClick={() => setCredentialToDelete(null)}>取消</button><button className="button danger" onClick={() => void deleteCredential(credentialToDelete)}>删除</button></div></section></div>}
+      {credentialToDelete && <div className="modal-backdrop"><section className="modal credential-delete-modal"><h2>移除百炼 API Key？</h2><p>移除后无法使用拆解、定位和搜索。</p><div className="confirm-actions"><button className="button soft" onClick={() => setCredentialToDelete(null)}>取消</button><button className="button danger" onClick={() => void deleteCredential(credentialToDelete)}>删除</button></div></section></div>}
+
+      {editingImage && <ImageEditor assetId={editingImage.assetId} sourceUrl={editingImage.sourceUrl} title={editingImage.title} onClose={() => setEditingImage(null)} onSaved={addDerivativeLayer} />}
 
       {toast && <div className="toast"><span>✓</span>{toast}</div>}
     </main>

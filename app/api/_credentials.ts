@@ -40,13 +40,13 @@ export function managedAiSummary() {
   const values = managedEnv();
   const provider = providerIds.includes(values.MANAGED_AI_PROVIDER as ProviderId)
     ? values.MANAGED_AI_PROVIDER as ProviderId
-    : null;
+    : values.MANAGED_AI_API_KEY ? "qwen" as const : null;
   if (!provider) return { available: false as const, provider: null, model: null, supportsVision: false };
   const defaults = providerDefaults[provider];
   return {
     available: Boolean(values.MANAGED_AI_API_KEY),
     provider,
-    model: defaults.model,
+    model: values.MANAGED_AI_MODEL || defaults.model,
     supportsVision: defaults.supportsVision,
   };
 }
@@ -59,7 +59,7 @@ function managedCredential(needsVision: boolean): LoadedCredential | null {
   const config: LoadedCredential = {
     provider: summary.provider,
     apiKey: values.MANAGED_AI_API_KEY,
-    model: defaults.model,
+    model: values.MANAGED_AI_MODEL || defaults.model,
     baseUrl: values.MANAGED_AI_BASE_URL ?? defaults.baseUrl,
     supportsVision: defaults.supportsVision,
     runMode: "managed",
@@ -72,7 +72,8 @@ export async function loadCredential(ownerId: string, provider?: string, needsVi
   const managed = !provider ? managedCredential(needsVision) : null;
   if (managed) return managed;
   const rows = await getDb().select().from(aiCredentials).where(eq(aiCredentials.ownerId, ownerId)).orderBy(desc(aiCredentials.updatedAt));
-  const row = rows.find((item) => (!provider || item.provider === provider) && (!needsVision || item.supportsVision));
+  const row = rows.find((item) => item.provider === (provider ?? "qwen") && (!needsVision || item.supportsVision))
+    ?? rows.find((item) => (!provider || item.provider === provider) && (!needsVision || item.supportsVision));
   if (!row) return null;
   const apiKey = await decryptApiKey({ ciphertext: row.ciphertext, iv: row.iv, authTag: row.authTag }, credentialMasterKey());
   return { provider: row.provider, apiKey, model: row.provider === "openai" ? providerDefaults.openai.model : row.model, baseUrl: row.baseUrl, supportsVision: row.supportsVision, runMode: "byok" } satisfies LoadedCredential;
