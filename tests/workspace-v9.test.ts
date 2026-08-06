@@ -59,7 +59,7 @@ test("设计助手独立于固定流程并能把建议放回画布", async () =>
   assert.match(workspace, /全部参考/);
   assert.match(workspace, /placeDirectionOnCanvas/);
   assert.match(workspace, /放到画布/);
-  assert.match(workspace, />拆解<\/button>/);
+  assert.match(workspace, />参考<\/button>/);
   assert.match(workspace, />方案<\/button>/);
   assert.match(workspace, />输出<\/button>/);
   assert.match(route, /eq\(boards\.ownerId, user\.id\)/);

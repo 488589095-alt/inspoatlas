@@ -18,7 +18,7 @@ test("辅助连线默认只显示当前相关且连接热区更大", async () =>
     readFile(new URL("../app/workspace/CardNode.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/workspace-v11.css", import.meta.url), "utf8"),
   ]);
-  assert.match(workspace, /从 ＋ 拖到圆点/);
+  assert.match(workspace, /从卡片端口拖到目标卡片/);
   assert.match(workspace, /selectedSet\.has\(edge\.source\) \|\| selectedSet\.has\(edge\.target\)/);
   assert.match(workspace, /connectionRadius=\{48\}/);
   assert.match(workspace, /type: "complements"/);
@@ -37,7 +37,7 @@ test("备注、分组说明和左右侧栏均可直接编辑", async () => {
     readFile(new URL("../app/workspace-v11.css", import.meta.url), "utf8"),
   ]);
   assert.match(workspace, /function createNote/);
-  assert.match(workspace, /<small>备注<\/small>/);
+  assert.match(workspace, /新建备注/);
   assert.match(workspace, /rail-resizer-left/);
   assert.match(workspace, /rail-resizer-right/);
   assert.match(workspace, /connectedModelLabel/);

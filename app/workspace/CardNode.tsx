@@ -8,7 +8,7 @@ const labels = {
   image: "图片",
   web: "网页",
   text: "文字",
-  analysis: "AI 拆解",
+  analysis: "拆解",
   element: "确认元素",
   group: "分组",
 };
@@ -48,7 +48,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
           <div className="workflow-card-content">
             <small>来自 {String(data.sourceTitle || "参考卡片")}</small>
             <InlineTitle id={id} value={data.title} />
-            {busy ? <div className="workflow-processing"><i /><span>正在读取版式、视觉和组件</span></div> : <p>{data.analysisSummary || data.analysisError || "等待拆解结果"}</p>}
+            {busy ? <div className="workflow-processing"><i /><span>正在拆解</span></div> : <p>{data.analysisSummary || data.analysisError || "等待结果"}</p>}
             {!busy && <div className="workflow-card-details">
               {!!data.principles?.length && <><b>可复用要点</b><ul>{data.principles.slice(0, 4).map((item) => <li key={item}>{item}</li>)}</ul></>}
               {!!data.colors?.length && <div className="workflow-colors">{data.colors.slice(0, 7).map((color) => <i key={color} style={{ background: color }} title={color} />)}</div>}
@@ -137,7 +137,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
       {isSource && data.analysisExpanded && (
         <section className="analysis-drawer nodrag nowheel" onClick={(event) => event.stopPropagation()}>
           <header>
-            <div><small>AI 拆解 · 来自</small><strong>{data.title}</strong></div>
+            <div><small>拆解 · 来源</small><strong>{data.title}</strong></div>
             <button onClick={() => action("toggle-analysis")} aria-label="收起分析">×</button>
           </header>
           {data.status === "processing" ? (
@@ -147,7 +147,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
           ) : (
             <>
               <div className="analysis-section">
-                <h4>参考摘要</h4>
+                <h4>结论</h4>
                 <p>{data.analysisSummary || "还没有分析结果。"}</p>
               </div>
               {!!data.principles?.length && (
@@ -164,7 +164,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
               )}
               {!!data.regions?.length && (
                 <div className="analysis-section analysis-elements">
-                  <div><h4>识别到的组件</h4><small>{data.regions.length} 项，会自动进入设计方案</small></div>
+                  <div><h4>识别到的组件</h4><small>{data.regions.length} 项 · 纳入方案</small></div>
                   <button onClick={() => action("show-details")}>在右侧查看</button>
                 </div>
               )}
@@ -172,7 +172,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
               <div className="analysis-feedback">
                 {data.analysisFeedback ? <small>{data.analysisFeedback === "helpful" ? "✓ 已标记有帮助" : "✓ 已标记需改进"}</small> : <><small>这次拆解有帮助吗？</small><button onClick={() => action("feedback-analysis-helpful")}>有用</button><button onClick={() => action("feedback-analysis-needs-work")}>不准确</button></>}
               </div>
-              <button className="analysis-refresh" onClick={() => action("analyze")}>重新拆解这个参考</button>
+              <button className="analysis-refresh" onClick={() => action("analyze")}>重新拆解</button>
             </>
           )}
         </section>
@@ -270,7 +270,7 @@ function displayAnalysisError(value: string | undefined) {
 function analysisStatusText(status: string | undefined, hasAnalysis: boolean) {
   if (status === "processing") return "正在拆解";
   if (status === "failed" && !hasAnalysis) return "拆解失败";
-  if (hasAnalysis) return "AI 拆解";
+  if (hasAnalysis) return "拆解结果";
   return "拆解这个参考";
 }
 

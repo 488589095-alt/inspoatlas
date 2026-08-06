@@ -4,8 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, 
 import {
   addEdge,
   applyNodeChanges,
-  Background,
-  BackgroundVariant,
   Connection,
   Edge,
   MiniMap,
@@ -28,6 +26,7 @@ import {
 import { CardNode } from "./workspace/CardNode";
 import { RelationEdge } from "./workspace/RelationEdge";
 import { UserMenu } from "./workspace/UserMenu";
+import { WorkspaceIcon, type WorkspaceIconName } from "./workspace/WorkspaceIcon";
 import { buildOrganizePreview, type OrganizePreview } from "./workspace/organize";
 import {
   flowToScene,
@@ -100,6 +99,12 @@ const productionGoalByPurpose: Record<DesignPurpose, ProductionGoal | null> = {
   "brand-extension": "explore",
   "campaign-system": "scale",
   organize: null,
+};
+const purposeIconById: Record<DesignPurpose, WorkspaceIconName> = {
+  "web-ui-recreate": "archive",
+  "brand-extension": "ask",
+  "campaign-system": "arrange",
+  organize: "folder",
 };
 function createDesignBrief(purpose: DesignPurpose = "organize"): DesignBrief {
   return { purpose, objective: "", context: "", keep: "", avoid: "" };
@@ -1628,7 +1633,7 @@ function WorkspaceCanvas() {
       }}
     >
       <header className="topbar">
-        <div className="brand"><span className="brand-mark">✦</span><div><strong>InspoAtlas</strong><small>灵感拆解工作台</small></div></div>
+        <div className="brand"><span className="brand-mark"><WorkspaceIcon name="archive" size={18} /></span><div><strong>InspoAtlas</strong><small>参考档案</small></div></div>
         <div
           className="board-title editable"
           title="双击原位修改画布名称"
@@ -1652,15 +1657,15 @@ function WorkspaceCanvas() {
           <small>{savedState}</small>
         </div>
         <div className="top-actions">
-          <button className="button ghost" onClick={undo} title="撤销">↶</button>
-          <button className="button ghost" onClick={redo} title="重做">↷</button>
+          <button className="button ghost icon-button" onClick={undo} title="撤销" aria-label="撤销"><WorkspaceIcon name="undo" /></button>
+          <button className="button ghost icon-button" onClick={redo} title="重做" aria-label="重做"><WorkspaceIcon name="redo" /></button>
           <button className={"button soft focus-top-button" + (focusMode ? " active" : "")} onClick={() => setFocusMode((value) => !value)}>{focusMode ? "退出专注" : "专注模式"}</button>
           <UserMenu />
         </div>
       </header>
 
       <aside className="left-rail" style={{ width: leftRailWidth }}>
-        <button className="rail-action" onClick={() => setModal("import")}><span>＋</span>采集参考</button>
+        <button className="rail-action" onClick={() => setModal("import")}><WorkspaceIcon name="add" size={16} />添加参考</button>
         <nav>
           <p>我的画布 <button onClick={() => void createBoard()} aria-label="新建画布">＋</button></p>
           {boards.map((board) => (
@@ -1715,9 +1720,9 @@ function WorkspaceCanvas() {
 
       <section className={"canvas-area" + (rightPanning ? " is-right-panning" : "")} aria-label="灵感无限画布" onPointerDownCapture={(event) => { if (event.button === 2) setRightPanning(true); }}>
         <div className={"canvas-search node-search" + (searchExpanded ? " is-open" : " is-collapsed")}>
-          {!searchExpanded && <button className="search-toggle" onClick={() => setSearchExpanded(true)} aria-label="搜索画布节点">⌕</button>}
+          {!searchExpanded && <button className="search-toggle" onClick={() => setSearchExpanded(true)} aria-label="搜索画布节点"><WorkspaceIcon name="search" /></button>}
           {searchExpanded && <div className="node-search-panel nodrag nowheel">
-            <header><span>⌕</span><input type="search" value={search} onChange={(event) => handleSearchChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && searchMatchIds.length) { event.preventDefault(); focusSearchMatch(searchCursor + (event.shiftKey ? -1 : 1)); } }} placeholder="搜索节点…" autoFocus /><button onClick={() => setSearchExpanded(false)} aria-label="关闭节点搜索">×</button></header>
+            <header><span><WorkspaceIcon name="search" size={16} /></span><input type="search" value={search} onChange={(event) => handleSearchChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && searchMatchIds.length) { event.preventDefault(); focusSearchMatch(searchCursor + (event.shiftKey ? -1 : 1)); } }} placeholder="搜索节点…" autoFocus /><button onClick={() => setSearchExpanded(false)} aria-label="关闭节点搜索"><WorkspaceIcon name="close" size={15} /></button></header>
             <div className="node-search-kinds" role="tablist" aria-label="节点类型">
               {searchKindOptions.map((option) => <button key={option.id} className={searchKind === option.id ? "active" : ""} onClick={() => { setSearchKind(option.id); setSearchCursor(0); }}>{option.icon}<span>{option.label}</span></button>)}
             </div>
@@ -1727,16 +1732,19 @@ function WorkspaceCanvas() {
           </div>}
         </div>
         <div className="canvas-toolbar" role="toolbar" aria-label="画布工具">
-          <button onClick={() => fileInput.current?.click()} title="从本地上传图片素材"><b>↑</b><small>上传</small></button>
-          <button onClick={() => setModal("import")} title="添加网页、文字或文件夹"><b>＋</b><small>添加</small></button>
-          <button onClick={() => createNote()} title="添加可原位编辑的画布备注"><b>✎</b><small>备注</small></button>
-          <button onClick={() => createGroup()} title="新建分组"><b>▱</b><small>分组</small></button>
-          <button className={linkMode ? "is-active" : ""} onClick={() => { const next = !linkMode; setLinkMode(next); if (next) { setRelationView("all"); notify("从卡片右侧 ＋ 拖到另一张卡片左侧圆点"); } }} title="像 Coze 一样从端口拖动连接"><b>↗</b><small>{linkMode ? "完成" : "连接"}</small></button>
-          <span />
-          <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()} title="拆解所选参考"><b>✦</b><small>拆解</small></button>
-          <button onClick={previewOrganize} title="整理画布"><b>⌗</b><small>整理</small></button>
-          <span />
-          <button onClick={() => void fitView({ padding: 0.18, duration: 320 })} title="快速定位全部内容"><b>⛶</b><small>定位</small></button>
+          <button onClick={() => setModal("import")} title="添加网页、文字或文件夹"><WorkspaceIcon name="add" /><small>添加</small></button>
+          <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()} title="拆解所选参考"><WorkspaceIcon name="analyze" /><small>拆解</small></button>
+          <button onClick={previewOrganize} title="按设计重点整理画布"><WorkspaceIcon name="arrange" /><small>整理</small></button>
+          <button onClick={() => void fitView({ padding: 0.18, duration: 320 })} title="快速定位全部内容"><WorkspaceIcon name="fit" /><small>定位</small></button>
+          <details className="canvas-toolbar-more">
+            <summary title="更多画布操作"><WorkspaceIcon name="note" /><small>更多</small></summary>
+            <div>
+              <button onClick={() => fileInput.current?.click()}><WorkspaceIcon name="upload" />上传图片</button>
+              <button onClick={() => createNote()}><WorkspaceIcon name="note" />新建备注</button>
+              <button onClick={() => createGroup()}><WorkspaceIcon name="folder" />新建分组</button>
+              <button className={linkMode ? "is-active" : ""} onClick={() => { const next = !linkMode; setLinkMode(next); if (next) { setRelationView("all"); notify("从卡片端口拖到目标卡片即可连线"); } }}><WorkspaceIcon name="connect" />{linkMode ? "完成连线" : "连接卡片"}</button>
+            </div>
+          </details>
         </div>
         {selectedIds.length > 1 && !organizePreview && (
           <div className="multi-toolbar">
@@ -1765,7 +1773,7 @@ function WorkspaceCanvas() {
           onChange={(event) => event.target.files?.length && void addImages(event.target.files, true)}
         />
         <label className="relation-view" title="关联线只用于辅助整理，默认仅显示当前卡片相关关系">
-          <span>{connecting ? "松开完成" : linkMode ? "从 ＋ 拖到圆点" : "连线显示"}</span>
+          <span>{connecting ? "松开完成" : linkMode ? "拖到目标端口" : "连线显示"}</span>
           <select aria-label="连线显示范围" value={relationView} onChange={(event) => setRelationView(event.target.value as RelationView)}>
             <option value="selection">所选卡片</option>
             <option value="hidden">隐藏</option>
@@ -1806,12 +1814,10 @@ function WorkspaceCanvas() {
           onlyRenderVisibleElements
           elevateEdgesOnSelect
         >
-          <Background id="fine-dots" variant={BackgroundVariant.Dots} color="rgba(72,63,86,.30)" gap={20} size={1.35} />
-          <Background id="major-dots" variant={BackgroundVariant.Dots} color="rgba(72,63,86,.16)" gap={100} size={2.1} />
-          {showMiniMap && <MiniMap pannable zoomable nodeColor={miniMapNodeColor} maskColor="rgba(246,243,248,.58)" ariaLabel="画布缩略图" />}
+          {showMiniMap && nodes.length > 0 && <MiniMap pannable zoomable nodeColor={miniMapNodeColor} maskColor="rgba(239,243,240,.72)" ariaLabel="画布缩略图" />}
         </ReactFlow>
-        <button className={"minimap-toggle" + (showMiniMap ? " is-open" : "")} onClick={() => setShowMiniMap((value) => !value)} title={showMiniMap ? "收起缩略图" : "打开缩略图"} aria-label={showMiniMap ? "收起缩略图" : "打开缩略图"}>▣</button>
-        <button className={"assistant-orb" + (assistantOpen ? " is-open" : "")} onClick={() => { setAssistantScope(selectedIds.length ? "selection" : "board"); setAssistantOpen((value) => !value); }} title="打开设计助手" aria-label={assistantOpen ? "关闭设计助手" : "打开设计助手"}><span>✦</span></button>
+        <button className={"minimap-toggle" + (showMiniMap ? " is-open" : "")} onClick={() => setShowMiniMap((value) => !value)} title={showMiniMap ? "收起缩略图" : "打开缩略图"} aria-label={showMiniMap ? "收起缩略图" : "打开缩略图"}><WorkspaceIcon name="map" /></button>
+        <button className={"assistant-orb" + (assistantOpen ? " is-open" : "")} onClick={() => { setAssistantScope(selectedIds.length ? "selection" : "board"); setAssistantOpen((value) => !value); }} title="打开设计助手" aria-label={assistantOpen ? "关闭设计助手" : "打开设计助手"}><WorkspaceIcon name="ask" /></button>
         {focusMode && <button className="focus-exit-button" onClick={() => setFocusMode(false)}>退出专注 <kbd>Esc</kbd></button>}
 
         {organizePreview && (
@@ -1841,9 +1847,9 @@ function WorkspaceCanvas() {
         {workflowOverlay === "purpose" && (
           <div className="workflow-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setWorkflowOverlay(null); }}>
             <section className="workflow-dialog purpose-dialog">
-              <header><div><small>整合前 · 先定义任务</small><h2>这批参考要帮你完成什么？</h2><p>任务决定后续该关注的字段；不会重新拆解或改动画布。</p></div><button onClick={() => setWorkflowOverlay(null)}>×</button></header>
+              <header><div><small>整合前</small><h2>定义这次设计任务</h2><p>任务会成为方案取舍与输出的依据。</p></div><button onClick={() => setWorkflowOverlay(null)} aria-label="关闭"><WorkspaceIcon name="close" size={16} /></button></header>
               <div className="purpose-choice-grid" role="list" aria-label="选择设计任务">
-                {purposeOptions.map((option) => <button key={option.id} role="listitem" className={designBrief.purpose === option.id ? "is-active" : ""} onClick={() => selectDesignPurpose(option.id)}><i>{option.mark}</i><span><strong>{option.title}</strong><small>{option.description}</small></span><b>{designBrief.purpose === option.id ? "✓" : ""}</b></button>)}
+                {purposeOptions.map((option) => <button key={option.id} role="listitem" className={designBrief.purpose === option.id ? "is-active" : ""} onClick={() => selectDesignPurpose(option.id)}><i><WorkspaceIcon name={purposeIconById[option.id]} size={17} /></i><span><strong>{option.title}</strong><small>{option.description}</small></span><b>{designBrief.purpose === option.id ? "✓" : ""}</b></button>)}
               </div>
               <section className="purpose-brief-fields" aria-label="最小任务 Brief">
                 <header><div><small>最小 Brief</small><h3>{activePurposeOption.title}</h3></div><span>只填写现在能确定的内容</span></header>
@@ -1874,7 +1880,7 @@ function WorkspaceCanvas() {
         {workflowOverlay === "export" && contract && (
           <div className="workflow-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setWorkflowOverlay(null); }}>
             <section className="workflow-dialog export-dialog">
-              <header><div><small>方案输出</small><h2>{contract.title}</h2><p>{contract.brief?.purpose ? `任务已确定为「${designPurposeLabel(contract.brief.purpose)}」，现在选择继续工作的工具。` : "先选用途，再选接下来使用的工具。"}</p></div><button onClick={() => setWorkflowOverlay(null)}>×</button></header>
+              <header><div><small>方案输出</small><h2>{contract.title}</h2><p>{contract.brief?.purpose ? `已确认「${designPurposeLabel(contract.brief.purpose)}」。选择下一步的工作方式。` : "先定义任务，再选择输出。"}</p></div><button onClick={() => setWorkflowOverlay(null)} aria-label="关闭"><WorkspaceIcon name="close" size={16} /></button></header>
               <div className="export-dialog-grid">
                 {contract.brief?.purpose ? <article className="purpose-export-summary"><small>当前任务</small><strong>{designPurposeLabel(contract.brief.purpose)}</strong><p>{contract.brief.objective}</p><dl><div><dt>场景</dt><dd>{contract.brief.context || "待补充"}</dd></div><div><dt>保留</dt><dd>{contract.brief.keep || "待补充"}</dd></div><div><dt>排除</dt><dd>{contract.brief.avoid || "待补充"}</dd></div></dl></article> : <div><h3>想得到什么</h3><div className="export-goal-list">{productionGoalOptions.map((option) => <button key={option.id} className={productionGoal === option.id ? "is-active" : ""} onClick={() => { setProductionGoal(option.id); setExportDestination(exportDestinationsByGoal[option.id][0].id); setExportComplete(false); }}><i>{option.step}</i><div><strong>{option.title}</strong><small>{option.description}</small></div><span>{productionGoal === option.id ? "✓" : "›"}</span></button>)}</div></div>}
                 <div><h3>接下来在哪里工作</h3><div className="export-destination-list">{exportDestinations.map((option) => <button key={option.id} className={activeDestination.id === option.id ? "is-active" : ""} onClick={() => { setExportDestination(option.id); setExportComplete(false); }}><span className="destination-icon">{option.icon}</span><div><strong>{option.title}</strong><small>{option.description}</small></div><i>{activeDestination.id === option.id ? "✓" : "›"}</i></button>)}</div></div>
@@ -1889,10 +1895,10 @@ function WorkspaceCanvas() {
         {assistantOpen && !organizePreview && (
           <aside className="canvas-director" aria-label="设计助手">
             <header>
-              <div><small>设计助手</small><h2>一起理清设计决定</h2></div>
-              <button onClick={() => setAssistantOpen(false)} aria-label="关闭设计助手">×</button>
+              <div><small>设计提问</small><h2>聚焦一个决定</h2></div>
+              <button onClick={() => setAssistantOpen(false)} aria-label="关闭设计助手"><WorkspaceIcon name="close" size={16} /></button>
             </header>
-            <p>描述目标或问题，也可以先选中几张卡片再提问。</p>
+            <p>先确认目标，再选择问题或输入自己的问题。</p>
             <label className="direction-goal">
               <span>设计目标</span>
               <textarea value={assistantGoal} onChange={(event) => setAssistantGoal(event.target.value)} placeholder="例如：做一套户外品牌夏季活动页，年轻但不幼稚，后续还要批量换主题。" />
@@ -1906,16 +1912,16 @@ function WorkspaceCanvas() {
               <button onClick={() => void askDesignAssistant("找出这些参考之间互相冲突的设计做法，并给出明确取舍。")} disabled={assistantBusy || !assistantGoal.trim()}>哪里冲突</button>
               <button onClick={() => void askDesignAssistant("根据当前目标给出一条明确的设计方向，包括结构、视觉和组件取舍。")} disabled={assistantBusy || !assistantGoal.trim()}>给出方向</button>
             </div>
-            {assistantBusy && <div className="direction-loading"><i /><span>正在对照目标与参考…</span></div>}
+            {assistantBusy && <div className="direction-loading"><i /><span>正在核对参考…</span></div>}
             {assistantMessages.filter((message) => message.role === "assistant").slice(-1).map((message, index) => (
               <article className="direction-result" key={message.id ?? index}>
-                <header><strong>方向建议</strong><small>{assistantScope === "selection" ? `所选 ${selectedIds.length} 张` : "整张画布"}</small></header>
+                <header><strong>可执行建议</strong><small>{assistantScope === "selection" ? `所选 ${selectedIds.length} 张` : "整张画布"}</small></header>
                 <p>{message.content}</p>
                 {!message.content.startsWith("未能完成：") && <div className="direction-result-actions"><button onClick={() => placeDirectionOnCanvas(message)}>放到画布</button>{message.id && (message.feedback ? <small>{message.feedback === "helpful" ? "✓ 有帮助" : "✓ 需改进"}</small> : <><button onClick={() => void submitAssistantFeedback(message, "helpful")}>有用</button><button onClick={() => void submitAssistantFeedback(message, "needs-work", "not-actionable")}>不够具体</button></>)}</div>}
               </article>
             ))}
             <form className="direction-question" onSubmit={(event) => { event.preventDefault(); void askDesignAssistant(); }}>
-              <label htmlFor="direction-question">继续追问</label>
+              <label htmlFor="direction-question">自定义问题</label>
               <div><textarea id="direction-question" value={assistantQuestion} onChange={(event) => setAssistantQuestion(event.target.value)} placeholder="例如：导航应该更克制，还是保留强品牌感？" /><button disabled={assistantBusy || !assistantGoal.trim() || !assistantQuestion.trim()}>发送</button></div>
             </form>
           </aside>
@@ -1925,36 +1931,36 @@ function WorkspaceCanvas() {
 
       <aside className="inspector" style={{ width: rightRailWidth }}>
         <div className="inspector-tabs">
-          <button className={rightTab === "asset" ? "active" : ""} onClick={() => setRightTab("asset")}><span>1</span>拆解</button>
-          <button className={rightTab === "baseline" ? "active" : ""} onClick={() => setRightTab("baseline")}><span>2</span>方案</button>
-          <button className={rightTab === "export" ? "active" : ""} onClick={() => setRightTab("export")}><span>3</span>输出</button>
+          <button className={rightTab === "asset" ? "active" : ""} onClick={() => setRightTab("asset")}>参考</button>
+          <button className={rightTab === "baseline" ? "active" : ""} onClick={() => setRightTab("baseline")}>方案</button>
+          <button className={rightTab === "export" ? "active" : ""} onClick={() => setRightTab("export")}>输出</button>
         </div>
         {rightTab === "asset" ? (
           selectedIds.length > 1 ? (
             <section className="multi-inspector">
               <small>已选择</small><h2>{selectedIds.length} 张卡片</h2>
-              <p>可以一起移动、分组、对齐或整理；选择多个拆解结果时可整合为一套方案。</p>
-              {selectedNodes.some(isAnalyzableNode) && <button className="analyze-button" onClick={() => void analyzeSelected()}>✦ 批量拆解所选参考</button>}
-              {selectedNodes.filter((node) => node.data.workflowStage === "analysis" && node.data.status === "ready").length > 1 && <button className="analyze-button" onClick={() => openContractSetup(selectedNodes.filter((node) => node.data.workflowStage === "analysis").map((node) => node.id))}>◇ 整合所选拆解</button>}
+              <p>拆解后即可整合；对齐、分组与删除在画布上方。</p>
+              {selectedNodes.some(isAnalyzableNode) && <button className="analyze-button" onClick={() => void analyzeSelected()}><WorkspaceIcon name="analyze" size={16} />拆解所选</button>}
+              {selectedNodes.filter((node) => node.data.workflowStage === "analysis" && node.data.status === "ready").length > 1 && <button className="analyze-button" onClick={() => openContractSetup(selectedNodes.filter((node) => node.data.workflowStage === "analysis").map((node) => node.id))}><WorkspaceIcon name="archive" size={16} />整合为方案</button>}
               <button className="button soft wide" onClick={previewOrganize}>整理所选卡片</button>
             </section>
           ) : selected ? (
             <>
               <section className="inspect-title">
-                <span className={"inspect-icon " + selected.data.kind}>◫</span>
+                <span className={"inspect-icon " + selected.data.kind}><WorkspaceIcon name={selected.data.note ? "note" : selected.data.kind === "group" ? "folder" : "archive"} /></span>
                 <div><small>{selected.data.kind === "group" ? "分组" : selected.data.workflowStage === "analysis" ? "拆解结果" : selected.data.workflowStage === "contract" ? "设计方案" : selected.data.note ? "备注" : "参考卡片"}</small><h2>{selected.data.title}</h2></div>
               </section>
-              {isAnalyzableNode(selected) && <button className="analyze-button" onClick={() => void analyze(selected.id)} disabled={selected.data.status === "processing"}>✦ {selected.data.analysisSummary ? "重新拆解这个参考" : "拆解这个参考"}<small>使用已连接模型</small></button>}
+              {isAnalyzableNode(selected) && <button className="analyze-button" onClick={() => void analyze(selected.id)} disabled={selected.data.status === "processing"}><WorkspaceIcon name="analyze" size={16} />{selected.data.status === "processing" ? "正在拆解" : selected.data.analysisSummary ? "重新拆解" : "拆解参考"}</button>}
               {!!selected.data.colors?.length && <section className="inspect-block"><div className="block-heading"><h3>颜色参考</h3><button onClick={() => navigator.clipboard.writeText(selected.data.colors?.join(", ") || "")}>复制全部</button></div><div className="palette-list">{selected.data.colors.map((color) => <button key={color} onClick={() => navigator.clipboard.writeText(color)}><i style={{ background: color }} /><span>颜色</span><code>{color}</code></button>)}</div></section>}
               {!!selected.data.principles?.length && <section className="inspect-block"><h3>可复用的设计要点</h3><ol className="principle-list">{selected.data.principles.map((item) => <li key={item}>{item}</li>)}</ol></section>}
               {!!selected.data.regions?.length && <section className="inspect-block"><div className="block-heading"><h3>识别到的组件</h3><small>生成方案时自动汇总</small></div><div className="region-list simple">{selected.data.regions.map((region) => <div key={region.id}><span className="region-preview">{region.type}</span><div><strong>{region.label}</strong><small>{Math.round((region.confidence ?? 0) * 100)}% 可信</small></div></div>)}</div></section>}
             </>
-          ) : <div className="empty-inspector"><strong>从画布开始</strong><p>拖动空白处框选多张卡片，或选择一张参考查看拆解结果。</p></div>
+          ) : <div className="empty-inspector"><WorkspaceIcon name="archive" size={22} /><strong>选择一个参考</strong><p>拆解结果与来源会显示在这里。</p></div>
         ) : rightTab === "baseline" ? (
           <section className="contract-panel">
-            <span className="step-kicker">第 2 步</span><h2>设计方案</h2>
-            <p>汇总已拆解的参考。选中卡片后只汇总所选；未选择时使用全部已拆解参考。</p>
-            <button className="analyze-button" onClick={() => openContractSetup()} disabled={contractBusy}>✦ {contractBusy ? "正在汇总…" : selectedNodes.some(isAnalyzableNode) ? `整合所选 ${selectedNodes.filter(isAnalyzableNode).length} 张` : "开始整合参考"}</button>
+            <span className="step-kicker">方案</span><h2>整合参考</h2>
+            <p>选中卡片时只使用所选内容；否则使用全部拆解结果。</p>
+            <button className="analyze-button" onClick={() => openContractSetup()} disabled={contractBusy}><WorkspaceIcon name="archive" size={16} />{contractBusy ? "正在汇总" : selectedNodes.some(isAnalyzableNode) ? `整合所选 ${selectedNodes.filter(isAnalyzableNode).length} 张` : "整合参考"}</button>
             {contract && <div className="contract-content">
               <div className="contract-title"><div><h3>{contract.title}</h3><small>{contract.sourceAssetIds.length} 张参考</small></div><span>点 × 移除不采用的内容</span></div>
               <h4>设计原则</h4><div className="contract-items">{contract.principles.map((item, index) => <div key={item}><span>{item}<ContractEvidenceLink assetIds={evidenceAssetIds("principles", item)} /></span><button onClick={() => removeContractItem("principles", index)} aria-label="移除设计原则">×</button></div>)}</div>

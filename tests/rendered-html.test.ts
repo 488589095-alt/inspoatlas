@@ -39,7 +39,7 @@ test("画布入口覆盖框选、多选、分组、附着分析和持久化", as
   assert.match(workspace, /SelectionMode\.Full/);
   assert.match(workspace, /Delete/);
   assert.match(workspace, /onlyRenderVisibleElements/);
-  assert.match(workspace, /Background id="fine-dots"/);
+  assert.doesNotMatch(workspace, /Background id="fine-dots"/);
   assert.match(card, /NodeResizer/);
   assert.match(card, /analysis-drawer/);
   assert.match(card, /inline-title-input/);

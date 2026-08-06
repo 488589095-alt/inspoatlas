@@ -34,9 +34,9 @@ test("卡片选择、检索导航、缩略图和专注浮层保持联动", async
   assert.match(workspace, /focusSearchMatch/);
   assert.match(workspace, /fitView\(\{ nodes: \[\{ id \}\]/);
   assert.match(workspace, /<MiniMap pannable zoomable/);
-  assert.match(workspace, /<small>上传<\/small>/);
+  assert.match(workspace, /上传图片/);
   assert.match(workspace, /<small>添加<\/small>/);
-  assert.match(workspace, /<b>⛶<\/b><small>定位/);
+  assert.match(workspace, /<WorkspaceIcon name="fit" \/><small>定位/);
   assert.match(styles, /\.workspace-shell\.focus-mode \.relation-view/);
   assert.match(styles, /right: 154px !important/);
 });
