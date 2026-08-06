@@ -1724,7 +1724,17 @@ function WorkspaceCanvas() {
             <div
               key={board.id}
               className={"nav-item " + (board.id === boardId ? "active" : "")}
+              role="button"
+              tabIndex={0}
+              aria-current={board.id === boardId ? "page" : undefined}
+              aria-label={`打开画布：${board.title}`}
               onClick={() => setBoardId(board.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  setBoardId(board.id);
+                }
+              }}
               onDoubleClick={(event) => {
                 event.stopPropagation();
                 startBoardRename(board.id, board.title, "sidebar");
@@ -1783,11 +1793,9 @@ function WorkspaceCanvas() {
             </div>
           </div>}
         </div>}
-        <div className="canvas-toolbar" role="toolbar" aria-label="画布工具">
+        {hasCanvasContent && <div className="canvas-toolbar" role="toolbar" aria-label="画布工具">
           <button className={!hasCanvasContent ? "is-primary" : ""} onClick={() => setModal("import")} title="添加网页、文字或文件夹"><WorkspaceIcon name="add" /><small>添加</small></button>
-          {!hasCanvasContent ? (
-            <button className="is-context" onClick={() => { setResearchError(""); setModal("research"); }} title="从公开网页找候选"><WorkspaceIcon name="search" /><small>探索</small></button>
-          ) : hasSelection ? <>
+          {hasSelection ? <>
             {selected?.data.kind === "image" && <button className="is-context" onClick={() => setEditingImage({ assetId: String(selected.data.assetId), sourceUrl: String(selected.data.imageUrl), title: selected.data.title, nodeId: selected.id })} title="裁剪、旋转、蒙版并保存副本"><WorkspaceIcon name="archive" /><small>编辑素材</small></button>}
             {selectionCanAnalyze && <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()} title="拆解所选参考"><WorkspaceIcon name="analyze" /><small>拆解</small></button>}
             {selectedIds.length > 1 && <button className="is-context" onClick={() => createGroup()} title="将所选卡片组成分组"><WorkspaceIcon name="folder" /><small>分组</small></button>}
@@ -1801,16 +1809,16 @@ function WorkspaceCanvas() {
             <button onClick={() => void fitView({ padding: 0.18, duration: 320 })} title="快速定位全部内容"><WorkspaceIcon name="fit" /><small>定位</small></button>
             <ToolbarMoreMenu onUpload={() => fileInput.current?.click()} onNote={() => createNote()} onGroup={() => createGroup()} linkMode={linkMode} onLink={() => { const next = !linkMode; setLinkMode(next); if (next) { setRelationView("all"); notify("从卡片端口拖到目标卡片即可连线"); } }} />
           </>}
-        </div>
+        </div>}
         {!hasCanvasContent && <section className="canvas-empty" aria-label="开始画布">
           <span><WorkspaceIcon name="archive" size={21} /></span>
-          <h1>把参考放到画布里</h1>
-          <p>导入图片、拖入文件，或从公开网页筛选候选。</p>
+          <h1>从一条参考开始</h1>
+          <p>导入图片、链接或文字；也可以直接把文件拖到这里。</p>
           <div className="empty-actions">
-            <button className="button primary" onClick={() => setModal("import")}>添加参考</button>
-            <button className="button soft" onClick={() => { setResearchError(""); setModal("research"); }}>探索灵感</button>
+            <button className="button primary" onClick={() => setModal("import")}>导入参考</button>
+            <button className="button soft" onClick={() => { setResearchError(""); setModal("research"); }}>浏览候选</button>
           </div>
-          <span className="empty-hint">支持图片、网页链接和文件夹</span>
+          <span className="empty-hint">图片 · 网页链接 · 文字 · 文件夹</span>
         </section>}
         {selectedIds.length > 1 && !organizePreview && (
           <div className="multi-toolbar">
@@ -2022,7 +2030,7 @@ function WorkspaceCanvas() {
               {!!selected.data.principles?.length && <section className="inspect-block"><h3>可复用的设计要点</h3><ol className="principle-list">{selected.data.principles.map((item) => <li key={item}>{item}</li>)}</ol></section>}
               {!!selected.data.regions?.length && <section className="inspect-block"><div className="block-heading"><h3>识别到的组件</h3><small>生成方案时自动汇总</small></div><div className="region-list simple">{selected.data.regions.map((region) => <div key={region.id}><span className="region-preview">{region.type}</span><div><strong>{region.label}</strong><small>{Math.round((region.confidence ?? 0) * 100)}% 可信</small></div></div>)}</div></section>}
             </>
-          ) : <div className="empty-inspector"><WorkspaceIcon name="archive" size={22} /><strong>从一张参考开始</strong><p>导入后可拆解版式、颜色和来源信息。</p><button className="button primary" onClick={() => setModal("import")}>添加参考</button><button className="empty-secondary" onClick={() => { setResearchError(""); setModal("research"); }}>探索灵感</button></div>
+          ) : <div className="empty-inspector"><WorkspaceIcon name="archive" size={22} /><strong>等待参考</strong><p>选中素材后，拆解结果与来源会显示在这里。</p><span>采集 → 拆解 → 方案 → 输出</span></div>
         ) : rightTab === "baseline" ? (
           <section className="contract-panel">
             <span className="step-kicker">方案</span><h2>整合参考</h2>

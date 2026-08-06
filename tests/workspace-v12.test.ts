@@ -65,6 +65,13 @@ test("深色创作工作台使用单一 token 基线并按状态收敛操作", a
   assert.match(workspace, /canvas-empty/);
   assert.match(workspace, /hasCanvasContent/);
   assert.match(workspace, /inspectorOpen/);
+  assert.match(workspace, /hasCanvasContent && <div className="canvas-toolbar"/);
+  assert.match(workspace, /等待参考/);
+  assert.match(workspace, /role="button"/);
+  assert.match(styles, /\.visually-hidden/);
+  assert.match(styles, /var\(--left-rail-width, 242px\)/);
+  assert.match(styles, /\.rail-resizer-left/);
+  assert.match(styles, /@container \(min-width: 170px\)/);
   assert.match(workspace, /<small>添加<\/small>/);
   assert.match(workspace, /<small>拆解<\/small>/);
   assert.match(workspace, /<small>整理<\/small>/);
