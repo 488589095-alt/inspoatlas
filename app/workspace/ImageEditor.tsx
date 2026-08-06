@@ -23,6 +23,13 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
   const displayRef = useRef<HTMLCanvasElement>(null);
   const maskRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
+  const lastStrokePoint = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onClose]);
 
   useEffect(() => {
     const next = new Image();
@@ -70,7 +77,9 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
     const context = maskRef.current.getContext("2d"); if (!context) return;
     context.save(); context.lineCap = "round"; context.lineJoin = "round"; context.lineWidth = brushSize * image.naturalWidth / bounds.width;
     context.globalCompositeOperation = brushMode === "erase" ? "destination-out" : "source-over";
-    context.strokeStyle = "#fff"; context.beginPath(); context.moveTo(x, y); context.lineTo(x + .01, y + .01); context.stroke(); context.restore();
+    const previous = lastStrokePoint.current ?? { x, y };
+    context.strokeStyle = "#fff"; context.beginPath(); context.moveTo(previous.x, previous.y); context.lineTo(x, y); context.stroke(); context.restore();
+    lastStrokePoint.current = { x, y };
     setCrop((value) => ({ ...value }));
   };
 
@@ -130,12 +139,26 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
     finally { setSaving(false); }
   };
 
+  const downloadPng = async () => {
+    setError("");
+    try {
+      const png = await renderPng();
+      const url = URL.createObjectURL(png);
+      const link = document.createElement("a");
+      link.href = url; link.download = `${title}-${maskEnabled ? "图层" : "编辑副本"}.png`;
+      document.body.appendChild(link); link.click(); link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch (cause) { setError(cause instanceof Error ? cause.message : "PNG 导出失败"); }
+  };
+
+  const finishStroke = () => { drawing.current = false; lastStrokePoint.current = null; };
+
   return <div className="image-editor-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
     <section className="image-editor" role="dialog" aria-modal="true" aria-label="编辑素材">
       <header><div><h2>编辑素材</h2><p>原图保持不变，保存后生成可追溯副本。</p></div><button onClick={onClose} aria-label="关闭">×</button></header>
       <div className="image-editor-layout">
         <div className="image-editor-preview">
-          <canvas ref={displayRef} onPointerDown={(event) => { if (maskEnabled) { drawing.current = true; event.currentTarget.setPointerCapture(event.pointerId); paint(event); } }} onPointerMove={paint} onPointerUp={() => { drawing.current = false; }} onPointerCancel={() => { drawing.current = false; }} />
+          <canvas ref={displayRef} onPointerDown={(event) => { if (maskEnabled) { drawing.current = true; lastStrokePoint.current = null; event.currentTarget.setPointerCapture(event.pointerId); paint(event); } }} onPointerMove={paint} onPointerUp={finishStroke} onPointerCancel={finishStroke} onPointerLeave={finishStroke} />
           {maskEnabled && <p>蒙版：{brushMode === "keep" ? "保留" : "擦除"}笔刷</p>}
         </div>
         <aside className="image-editor-controls">
@@ -145,7 +168,7 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
           {error && <p className="image-editor-error" role="alert">{error}</p>}
         </aside>
       </div>
-      <footer><button onClick={onClose}>取消</button><button className="primary" disabled={!image || saving} onClick={() => void save()}>{saving ? "正在保存…" : "保存为副本"}</button></footer>
+      <footer><button onClick={onClose}>取消</button><div><button disabled={!image || saving} onClick={() => void downloadPng()}>导出 PNG</button><button className="primary" disabled={!image || saving} onClick={() => void save()}>{saving ? "正在保存…" : "保存为副本"}</button></div></footer>
     </section>
   </div>;
 }

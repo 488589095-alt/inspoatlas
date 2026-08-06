@@ -33,7 +33,7 @@ test("端口拖出下一步、连线文字编辑与节点搜索均在画布内",
   const [workspace, edge, styles] = await Promise.all([
     readFile(new URL("../app/InspoWorkspace.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/workspace/RelationEdge.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/workspace-v11.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
   assert.match(workspace, /onConnectEnd=\{\(event\) => finishConnection\(event\)\}/);
   assert.match(workspace, /className="next-step-menu"/);
@@ -42,27 +42,29 @@ test("端口拖出下一步、连线文字编辑与节点搜索均在画布内",
   assert.match(edge, /点击修改连线说明/);
   assert.match(workspace, /node-search-results/);
   assert.match(workspace, /searchKindOptions/);
-  assert.match(styles, /\.workspace-shell\.focus-mode[\s\S]*grid-template: 1fr \/ minmax\(0, 1fr\) !important/);
+  assert.match(styles, /\.workspace-shell\.focus-mode/);
   assert.match(styles, /\.assistant-orb/);
-  assert.match(styles, /background: var\(--desk-iris\)/);
+  assert.match(styles, /background: var\(--desk-accent\)/);
 });
 
-test("深色创作工作台统一 token、操作层级与减少动态效果", async () => {
+test("深色创作工作台使用单一 token 基线并按状态收敛操作", async () => {
   const [workspace, styles, exportStyles, icon] = await Promise.all([
     readFile(new URL("../app/InspoWorkspace.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/workspace-v13.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
     readFile(new URL("../app/export.css", import.meta.url), "utf8"),
     readFile(new URL("../app/workspace/WorkspaceIcon.tsx", import.meta.url), "utf8"),
   ]);
 
-  assert.match(exportStyles, /@import "\.\/workspace-v12\.css"/);
-  assert.match(exportStyles, /@import "\.\/workspace-v13\.css"/);
-  assert.match(styles, /--desk-accent: #98b872/);
+  assert.doesNotMatch(exportStyles, /@import "\.\/workspace-v/);
+  assert.match(styles, /--desk-accent: #9abf72/);
   assert.match(styles, /"Microsoft YaHei UI"/);
   assert.match(styles, /:focus-visible/);
   assert.match(styles, /prefers-reduced-motion: reduce/);
   assert.match(styles, /radial-gradient/);
   assert.match(workspace, /ToolbarMoreMenu/);
+  assert.match(workspace, /canvas-empty/);
+  assert.match(workspace, /hasCanvasContent/);
+  assert.match(workspace, /inspectorOpen/);
   assert.match(workspace, /<small>添加<\/small>/);
   assert.match(workspace, /<small>拆解<\/small>/);
   assert.match(workspace, /<small>整理<\/small>/);
@@ -71,4 +73,5 @@ test("深色创作工作台统一 token、操作层级与减少动态效果", as
   assert.match(workspace, /正在拆解/);
   assert.match(workspace, /disabled=\{contractBusy\}/);
   assert.match(icon, /stroke="currentColor"/);
+  assert.match(icon, /trash:/);
 });

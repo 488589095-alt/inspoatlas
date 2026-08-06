@@ -15,6 +15,7 @@ export type WorkspaceIconName =
   | "note"
   | "redo"
   | "search"
+  | "trash"
   | "undo"
   | "upload";
 
@@ -35,6 +36,7 @@ const paths: Record<WorkspaceIconName, ReactNode> = {
   note: <><path d="M5 3.5h10l4 4v13H5z" /><path d="M15 3.5v4h4" /><path d="M8.5 12h7" /><path d="M8.5 15.5h5" /></>,
   redo: <><path d="M18 7h-7a6 6 0 1 0 5.2 9" /><path d="m18 7-3-3" /><path d="m18 7-3 3" /></>,
   search: <><circle cx="10.5" cy="10.5" r="5.5" /><path d="m15 15 4 4" /></>,
+  trash: <><path d="M4.5 7h15" /><path d="M9 7V4.5h6V7" /><path d="m6.5 7 .8 13h9.4l.8-13" /><path d="M10 10.5v5.5" /><path d="M14 10.5v5.5" /></>,
   undo: <><path d="M6 7h7a6 6 0 1 1-5.2 9" /><path d="m6 7 3-3" /><path d="m6 7 3 3" /></>,
   upload: <><path d="M12 15V4" /><path d="m8 8 4-4 4 4" /><path d="M5 14v5h14v-5" /></>,
 };
