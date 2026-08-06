@@ -152,9 +152,9 @@ function WorkspaceCanvas() {
   const [exportDestination, setExportDestination] = useState<ExportDestination>("figma-design");
   const [exportBusy, setExportBusy] = useState(false);
   const [exportComplete, setExportComplete] = useState<false | "quick" | "full">(false);
-  const [credentialState, setCredentialState] = useState<Array<{ provider: string; model: string; lastFour: string; supportsVision: boolean; active: boolean }>>([]);
+  const [credentialState, setCredentialState] = useState<Array<{ provider: string; model: string; baseUrl?: string; lastFour: string; supportsVision: boolean; active: boolean }>>([]);
   const [managedAi, setManagedAi] = useState<ManagedAiState>({ available: false, provider: null, model: null, supportsVision: false });
-  const [credentialForm, setCredentialForm] = useState<{ provider: ProviderId; apiKey: string; model: string; region: string }>({ provider: "qwen", apiKey: "", model: providerCatalog.qwen.models[0], region: "intl" });
+  const [credentialForm, setCredentialForm] = useState<{ provider: ProviderId; apiKey: string; model: string; baseUrl: string }>({ provider: "qwen", apiKey: "", model: providerCatalog.qwen.models[0], baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" });
   const [loadingCredential, setLoadingCredential] = useState(false);
   const [credentialToDelete, setCredentialToDelete] = useState<ProviderId | null>(null);
 
@@ -1594,7 +1594,7 @@ function WorkspaceCanvas() {
       setCredentialState(rows);
       if (payload.managed) setManagedAi(payload.managed);
       const qwen = rows.find((item) => item.provider === "qwen");
-      setCredentialForm({ provider: "qwen", apiKey: "", model: providerCatalog.qwen.models[0], region: "intl" });
+      setCredentialForm({ provider: "qwen", apiKey: "", model: providerCatalog.qwen.models[0], baseUrl: qwen?.baseUrl || "https://dashscope.aliyuncs.com/compatible-mode/v1" });
       if (qwen) setCredentialForm((value) => ({ ...value, apiKey: "" }));
     }
     setModal("credentials");
@@ -2133,7 +2133,7 @@ function WorkspaceCanvas() {
 
       {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal model-service-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><h2>连接百炼</h2><p>固定使用 Qwen 3.7 Plus。</p>
         <div className="model-fixed-card"><div><span>{managedAi.available || qwenCredential ? "已连接" : "尚未连接"}</span><strong>Qwen 3.7 Plus</strong></div><small>{managedAi.available ? "由工作区提供" : qwenCredential ? `百炼 Key · •••• ${qwenCredential.lastFour}` : "粘贴百炼 API Key 后连接"}</small></div>
-        {!managedAi.available && <div className="credential-form"><label><span>百炼 API Key</span><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value, provider: "qwen", model: providerCatalog.qwen.models[0] })} placeholder={qwenCredential ? "留空则使用已保存 Key" : "粘贴 API Key"} /></label><div className="credential-actions"><a href={providerCatalog.qwen.platformUrl} target="_blank" rel="noreferrer">打开百炼 ↗</a><button className="button primary" disabled={(!credentialForm.apiKey && !qwenCredential) || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "验证中…" : qwenCredential && !credentialForm.apiKey ? "重新验证" : "连接"}</button></div></div>}
+        {!managedAi.available && <div className="credential-form"><label><span>百炼 API Key</span><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value, provider: "qwen", model: providerCatalog.qwen.models[0] })} placeholder={qwenCredential ? "留空则使用已保存 Key" : "粘贴 API Key"} /></label><label><span>工作区兼容端点</span><input value={credentialForm.baseUrl} onChange={(event) => setCredentialForm({ ...credentialForm, baseUrl: event.target.value })} placeholder="https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1" /></label><div className="credential-actions"><a href={providerCatalog.qwen.platformUrl} target="_blank" rel="noreferrer">打开百炼 ↗</a><button className="button primary" disabled={(!credentialForm.apiKey && !qwenCredential) || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "验证中…" : qwenCredential && !credentialForm.apiKey ? "重新验证" : "连接"}</button></div></div>}
         {!managedAi.available && qwenCredential && <button className="credential-remove-link" onClick={() => setCredentialToDelete("qwen")}>移除已保存的 API Key</button>}
       </section></div>}
       {credentialToDelete && <div className="modal-backdrop"><section className="modal credential-delete-modal"><h2>移除百炼 API Key？</h2><p>移除后无法使用拆解、定位和搜索。</p><div className="confirm-actions"><button className="button soft" onClick={() => setCredentialToDelete(null)}>取消</button><button className="button danger" onClick={() => void deleteCredential(credentialToDelete)}>删除</button></div></section></div>}
