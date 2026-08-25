@@ -6,6 +6,8 @@ import type { CanvasNode } from "./model";
 
 const labels = {
   image: "图片",
+  video: "视频",
+  audio: "音频",
   web: "网页",
   text: "文字",
   analysis: "拆解",
@@ -94,7 +96,15 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
           <span className="card-kind">{data.note ? "备注" : labels[data.kind]}</span>
           <button className="node-menu nodrag" aria-label="卡片操作" onClick={(event) => { event.stopPropagation(); action("menu", event); }}>•••</button>
         </header>
-        {data.imageUrl && (
+        {data.imageUrl && (data.kind === "video" || data.kind === "audio") && (
+          <div className={"card-media card-" + data.kind + " nodrag nowheel"}>
+            {data.kind === "video"
+              ? <video controls preload="metadata" src={data.imageUrl} aria-label={`${data.title} 视频预览`} />
+              : <audio controls preload="metadata" src={data.imageUrl} aria-label={`${data.title} 音频预览`} />}
+            <span className="source-chip">{data.kind === "video" ? "本地视频" : "本地音频"}</span>
+          </div>
+        )}
+        {data.imageUrl && data.kind !== "video" && data.kind !== "audio" && (
           <div className={"card-image" + (data.kind === "web" ? " web-shot nodrag nowheel" : "")}>
             {data.kind === "web"
               ? Array.from({ length: Math.max(1, Number(data.screenshotPartCount) || 1) }, (_, index) => (

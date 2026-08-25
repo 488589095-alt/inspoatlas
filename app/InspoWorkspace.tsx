@@ -47,6 +47,8 @@ const edgeTypes = { relation: RelationEdge };
 const sourceKinds = new Set(["image", "web", "text"]);
 const defaultSize: Record<CardData["kind"], { width: number; height: number }> = {
   image: { width: 300, height: 340 },
+  video: { width: 320, height: 260 },
+  audio: { width: 300, height: 190 },
   web: { width: 320, height: 280 },
   text: { width: 290, height: 190 },
   analysis: { width: 350, height: 310 },
@@ -55,9 +57,9 @@ const defaultSize: Record<CardData["kind"], { width: number; height: number }> =
 };
 const canvasSnapGrid: [number, number] = [8, 8];
 
-type WorkspaceModal = "import" | "credentials" | "research" | null;
+type WorkspaceModal = "import" | "credentials" | null;
 type RelationView = "hidden" | "selection" | "all";
-type SearchKind = "all" | "image" | "web" | "text" | "analysis" | "contract" | "group";
+type SearchKind = "all" | "image" | "video" | "audio" | "web" | "text" | "analysis" | "contract" | "group";
 type NextStepMenu = { sourceId: string; x: number; y: number };
 type ContextMenu = { kind: "node" | "board"; id: string; x: number; y: number };
 type DeleteRequest = { kind: "board" | "nodes"; ids: string[]; title: string; body: string };
@@ -79,6 +81,8 @@ type ResearchCandidate = { title: string; domain: string; url: string; quote: st
 const searchKindOptions: Array<{ id: SearchKind; label: string; icon: string }> = [
   { id: "all", label: "全部", icon: "⌕" },
   { id: "image", label: "图片", icon: "▧" },
+  { id: "video", label: "视频", icon: "▷" },
+  { id: "audio", label: "音频", icon: "♪" },
   { id: "web", label: "网页", icon: "◎" },
   { id: "text", label: "文字", icon: "≡" },
   { id: "analysis", label: "拆解", icon: "✦" },
@@ -103,6 +107,11 @@ const productionGoalByPurpose: Record<DesignPurpose, ProductionGoal | null> = {
   "campaign-system": "scale",
   organize: null,
 };
+const agentPromptPresets = [
+  { title: "找招聘网站参考", goal: "为创意岗位招聘网站寻找简洁、清晰的参考", question: "优先找信息层级明确、投递路径短的页面，并说明各自适合参考什么。" },
+  { title: "校对视觉方向", goal: "基于当前参考校对视觉方向", question: "指出最值得保留的规则，以及会造成风格冲突的部分。" },
+  { title: "整理素材", goal: "把当前画布整理成可继续工作的参考组", question: "按版式、视觉语言和可复用组件给出整理建议。" },
+] as const;
 const purposeIconById: Record<DesignPurpose, WorkspaceIconName> = {
   "web-ui-recreate": "archive",
   "brand-extension": "ask",
@@ -838,9 +847,10 @@ function WorkspaceCanvas() {
     notify(isUrl ? "网页来源卡已保存" : "文字参考已保存");
   }
 
-  async function exploreResearch() {
-    const brief = researchBrief.trim();
+  async function exploreResearch(briefOverride?: string) {
+    const brief = (briefOverride ?? researchBrief).trim();
     if (brief.length < 4) return setResearchError("写下项目、受众或想找的方向。");
+    setResearchBrief(brief);
     setResearchBusy(true); setResearchError("");
     try {
       const response = await fetch(`/api/boards/${encodeURIComponent(boardId)}/research`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ brief, limit: 10 }) });
@@ -936,12 +946,12 @@ function WorkspaceCanvas() {
     window.addEventListener("pointercancel", onUp);
   }
 
-  async function addImages(input: File[] | FileList, asFolder = false) {
+  async function addMedia(input: File[] | FileList, asFolder = false) {
     const allFiles = Array.from(input);
-    const files = allFiles.filter((file) => /^image\/(jpeg|png|webp)$/.test(file.type) && file.size <= 20 * 1024 * 1024);
-    if (!files.length) return notify("没有找到 20 MB 内的 JPG、PNG 或 WebP");
+    const files = allFiles.filter((file) => supportedLocalMedia(file));
+    if (!files.length) return notify("没有找到可导入的图片、视频或音频文件");
 
-    const uploaded: Array<{ asset: { id: string; title: string; contentUrl?: string } }> = [];
+    const uploaded: Array<{ asset: { id: string; title: string; kind: "image" | "video" | "audio"; contentUrl?: string } }> = [];
     let failed = allFiles.length - files.length;
     for (const file of files) {
       const form = new FormData();
@@ -955,7 +965,7 @@ function WorkspaceCanvas() {
       }
       uploaded.push(await response.json());
     }
-    if (!uploaded.length) return notify("图片上传失败，请稍后重试");
+    if (!uploaded.length) return notify("素材上传失败，请稍后重试");
 
     remember();
     const rootFolder = asFolder
@@ -969,13 +979,13 @@ function WorkspaceCanvas() {
           type: "inspo",
           position: { x: 100 + (current.length + index) * 18, y: 120 + (current.length + index) * 14 },
           data: {
-            kind: "image",
+            kind: asset.kind,
             title: asset.title,
             assetId: asset.id,
             imageUrl: asset.contentUrl || "/api/assets/" + asset.id + "/content",
-            tags: ["待拆解"],
+            tags: [asset.kind === "image" ? "待拆解" : asset.kind === "video" ? "视频素材" : "音频素材"],
           },
-          style: defaultSize.image,
+          style: defaultSize[asset.kind],
           zIndex: 10,
         }));
         return [...current, ...cards];
@@ -983,7 +993,7 @@ function WorkspaceCanvas() {
 
       const columns = Math.min(3, Math.max(1, uploaded.length));
       const rows = Math.ceil(uploaded.length / columns);
-      const groupWidth = 48 + columns * 300 + (columns - 1) * 24;
+      const groupWidth = 48 + columns * 320 + (columns - 1) * 24;
       const groupHeight = 90 + rows * 340 + Math.max(0, rows - 1) * 24 + 28;
       const group: CanvasNode = {
         id: groupId,
@@ -998,22 +1008,22 @@ function WorkspaceCanvas() {
         type: "inspo",
         parentId: groupId,
         extent: "parent",
-        position: { x: 24 + (index % columns) * 324, y: 70 + Math.floor(index / columns) * 364 },
+        position: { x: 24 + (index % columns) * 344, y: 70 + Math.floor(index / columns) * 364 },
         data: {
-          kind: "image",
+          kind: asset.kind,
           title: asset.title,
           assetId: asset.id,
           imageUrl: asset.contentUrl || "/api/assets/" + asset.id + "/content",
-          tags: ["待拆解"],
+          tags: [asset.kind === "image" ? "待拆解" : asset.kind === "video" ? "视频素材" : "音频素材"],
         },
-        style: defaultSize.image,
+        style: defaultSize[asset.kind],
         zIndex: 10,
       }));
       return [...current, group, ...cards];
     });
     setSelectedIds(uploaded.map(({ asset }) => asset.id));
     setModal(null);
-    notify(`已加入 ${uploaded.length} 张图片${rootFolder ? `，并建立“${rootFolder}”分组` : ""}${failed ? `，跳过 ${failed} 个不支持的文件` : ""}`);
+    notify(`已加入 ${uploaded.length} 个素材${rootFolder ? `，并建立“${rootFolder}”分组` : ""}${failed ? `，跳过 ${failed} 个不支持的文件` : ""}`);
   }
 
 
@@ -1681,7 +1691,7 @@ function WorkspaceCanvas() {
       onDrop={(event) => {
         event.preventDefault();
         const files = event.dataTransfer.files;
-        if (files.length) void addImages(files);
+        if (files.length) void addMedia(files);
       }}
     >
       <header className="topbar">
@@ -1712,7 +1722,7 @@ function WorkspaceCanvas() {
           <button className="button ghost icon-button" onClick={undo} title="撤销" aria-label="撤销"><WorkspaceIcon name="undo" /></button>
           <button className="button ghost icon-button" onClick={redo} title="重做" aria-label="重做"><WorkspaceIcon name="redo" /></button>
           <button className={"button soft focus-top-button" + (focusMode ? " active" : "")} onClick={() => setFocusMode((value) => !value)}>{focusMode ? "退出专注" : "专注模式"}</button>
-          <UserMenu />
+          <UserMenu onOpenAiSettings={() => setModal("credentials")} />
         </div>
       </header>
 
@@ -1793,8 +1803,14 @@ function WorkspaceCanvas() {
             </div>
           </div>}
         </div>}
-        {hasCanvasContent && <div className="canvas-toolbar" role="toolbar" aria-label="画布工具">
+        <div className="canvas-toolbar" role="toolbar" aria-label="画布工具">
           <button className={!hasCanvasContent ? "is-primary" : ""} onClick={() => setModal("import")} title="添加网页、文字或文件夹"><WorkspaceIcon name="add" /><small>添加</small></button>
+          <button className={searchExpanded ? "is-active" : ""} onClick={() => setSearchExpanded((value) => !value)} disabled={!hasCanvasContent} title="搜索并定位画布节点"><WorkspaceIcon name="search" /><small>搜索</small></button>
+          <button onClick={previewOrganize} disabled={!hasCanvasContent} title="按设计重点整理画布"><WorkspaceIcon name="arrange" /><small>整理</small></button>
+          <button onClick={() => void fitView({ padding: 0.18, duration: 320 })} disabled={!hasCanvasContent} title="定位全部节点"><WorkspaceIcon name="fit" /><small>定位</small></button>
+          <button className={showMiniMap ? "is-active" : ""} onClick={() => setShowMiniMap((value) => !value)} disabled={!hasCanvasContent} title={showMiniMap ? "收起小地图" : "打开小地图"}><WorkspaceIcon name="map" /><small>小地图</small></button>
+          <span aria-hidden="true" />
+          <button className={"agent-launcher" + (assistantOpen ? " is-active" : "")} onClick={() => { setAssistantScope(selectedIds.length ? "selection" : "board"); setAssistantOpen((value) => !value); }} title="打开灵感 Agent" aria-label={assistantOpen ? "关闭灵感 Agent" : "打开灵感 Agent"}><WorkspaceIcon name="ask" /><small>Agent</small></button>
           {hasSelection ? <>
             {selected?.data.kind === "image" && <button className="is-context" onClick={() => setEditingImage({ assetId: String(selected.data.assetId), sourceUrl: String(selected.data.imageUrl), title: selected.data.title, nodeId: selected.id })} title="裁剪、旋转、蒙版并保存副本"><WorkspaceIcon name="archive" /><small>编辑素材</small></button>}
             {selectionCanAnalyze && <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()} title="拆解所选参考"><WorkspaceIcon name="analyze" /><small>拆解</small></button>}
@@ -1804,21 +1820,16 @@ function WorkspaceCanvas() {
             <button onClick={() => requestDeleteNodes(selectedIds)} title="删除所选"><WorkspaceIcon name="trash" /><small>删除</small></button>
             <ToolbarMoreMenu onUpload={() => fileInput.current?.click()} onNote={() => createNote()} onGroup={() => createGroup()} linkMode={linkMode} onLink={() => { const next = !linkMode; setLinkMode(next); if (next) { setRelationView("all"); notify("从卡片端口拖到目标卡片即可连线"); } }} />
           </> : <>
-            <button onClick={() => { setResearchError(""); setModal("research"); }} title="从公开网页找候选"><WorkspaceIcon name="search" /><small>探索</small></button>
-            <button onClick={previewOrganize} title="按设计重点整理画布"><WorkspaceIcon name="arrange" /><small>整理</small></button>
-            <button onClick={() => void fitView({ padding: 0.18, duration: 320 })} title="快速定位全部内容"><WorkspaceIcon name="fit" /><small>定位</small></button>
             <ToolbarMoreMenu onUpload={() => fileInput.current?.click()} onNote={() => createNote()} onGroup={() => createGroup()} linkMode={linkMode} onLink={() => { const next = !linkMode; setLinkMode(next); if (next) { setRelationView("all"); notify("从卡片端口拖到目标卡片即可连线"); } }} />
           </>}
-        </div>}
+        </div>
         {!hasCanvasContent && <section className="canvas-empty" aria-label="开始画布">
           <span><WorkspaceIcon name="archive" size={21} /></span>
           <h1>从一条参考开始</h1>
           <p>导入图片、链接或文字；也可以直接把文件拖到这里。</p>
           <div className="empty-actions">
             <button className="button primary" onClick={() => setModal("import")}>导入参考</button>
-            <button className="button soft" onClick={() => { setResearchError(""); setModal("research"); }}>浏览候选</button>
           </div>
-          <span className="empty-hint">图片 · 网页链接 · 文字 · 文件夹</span>
         </section>}
         {selectedIds.length > 1 && !organizePreview && (
           <div className="multi-toolbar">
@@ -1833,7 +1844,7 @@ function WorkspaceCanvas() {
             <button className="danger" onClick={() => requestDeleteNodes(selectedIds)}>删除</button>
           </div>
         )}
-        <input ref={fileInput} className="visually-hidden" type="file" multiple accept="image/jpeg,image/png,image/webp" onChange={(event) => event.target.files?.length && void addImages(event.target.files)} />
+        <input ref={fileInput} className="visually-hidden" type="file" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/ogg,audio/mp4" onChange={(event) => event.target.files?.length && void addMedia(event.target.files)} />
         <input
           ref={(node) => {
             folderInput.current = node;
@@ -1843,8 +1854,8 @@ function WorkspaceCanvas() {
           className="visually-hidden"
           type="file"
           multiple
-          accept="image/jpeg,image/png,image/webp"
-          onChange={(event) => event.target.files?.length && void addImages(event.target.files, true)}
+          accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/ogg,audio/mp4"
+          onChange={(event) => event.target.files?.length && void addMedia(event.target.files, true)}
         />
         {hasCanvasContent && <label className="relation-view" title="关联线只用于辅助整理，默认仅显示当前卡片相关关系">
           <span>{connecting ? "松开完成" : linkMode ? "拖到目标端口" : "连线显示"}</span>
@@ -1890,8 +1901,6 @@ function WorkspaceCanvas() {
         >
           {showMiniMap && nodes.length > 0 && <MiniMap pannable zoomable nodeColor={miniMapNodeColor} maskColor="rgba(8,12,11,.76)" ariaLabel="画布缩略图" />}
         </ReactFlow>
-        {hasCanvasContent && <button className={"minimap-toggle" + (showMiniMap ? " is-open" : "")} onClick={() => setShowMiniMap((value) => !value)} title={showMiniMap ? "收起缩略图" : "打开缩略图"} aria-label={showMiniMap ? "收起缩略图" : "打开缩略图"}><WorkspaceIcon name="map" /></button>}
-        {hasCanvasContent && <button className={"assistant-orb" + (assistantOpen ? " is-open" : "")} onClick={() => { setAssistantScope(selectedIds.length ? "selection" : "board"); setAssistantOpen((value) => !value); }} title="打开设计助手" aria-label={assistantOpen ? "关闭设计助手" : "打开设计助手"}><WorkspaceIcon name="ask" /></button>}
         <button className={"inspector-toggle" + (inspectorOpen ? " is-open" : "")} onClick={() => setInspectorOpen((value) => !value)} title={inspectorOpen ? "收起阶段面板" : "打开阶段面板"} aria-label={inspectorOpen ? "收起阶段面板" : "打开阶段面板"}><WorkspaceIcon name="archive" /></button>
         {focusMode && <button className="focus-exit-button" onClick={() => setFocusMode(false)}>退出专注 <kbd>Esc</kbd></button>}
 
@@ -1968,19 +1977,36 @@ function WorkspaceCanvas() {
         )}
 
         {assistantOpen && !organizePreview && (
-          <aside className="canvas-director" aria-label="方向校对">
-            <header>
-              <div><h2>方向校对</h2></div>
-              <button onClick={() => setAssistantOpen(false)} aria-label="关闭方向校对"><WorkspaceIcon name="close" size={16} /></button>
+          <aside className="canvas-director agent-drawer" aria-label="灵感 Agent">
+            <header className="agent-header">
+              <div><span>灵感 Agent</span><h2>搜索、校对与整理</h2></div>
+              <button onClick={() => setAssistantOpen(false)} aria-label="关闭灵感 Agent"><WorkspaceIcon name="close" size={16} /></button>
             </header>
+            <section className="agent-presets" aria-label="示范任务">
+              {agentPromptPresets.map((preset) => <button key={preset.title} onClick={() => { setAssistantGoal(preset.goal); setAssistantQuestion(preset.question); setResearchBrief(preset.goal); }}><strong>{preset.title}</strong><small>{preset.question}</small></button>)}
+            </section>
             <label className="direction-goal">
-              <span>目标</span>
-              <textarea value={assistantGoal} onChange={(event) => setAssistantGoal(event.target.value)} placeholder="例如：户外品牌夏季活动页，年轻但不幼稚。" />
+              <span>这次想完成什么</span>
+              <textarea value={assistantGoal} onChange={(event) => setAssistantGoal(event.target.value)} placeholder="例如：为创意岗位招聘网站寻找简洁、清晰的方向。" />
             </label>
+            <section className="assistant-context" aria-label="引用画布节点">
+              <header><span>已引用的节点</span><small>在画布中点选即可引用</small></header>
+              {selectedNodes.length ? <div className="assistant-context-chips">{selectedNodes.slice(0, 6).map((node) => <span key={node.id}>{node.data.title}</span>)}{selectedNodes.length > 6 && <span>+{selectedNodes.length - 6}</span>}</div> : <p>尚未选择节点。可直接询问公开灵感搜索。</p>}
+            </section>
             <div className="assistant-scope" role="group" aria-label="参考范围">
               <button className={assistantScope === "selection" ? "active" : ""} disabled={!selectedIds.length} onClick={() => setAssistantScope("selection")}>所选 {selectedIds.length || ""}</button>
-              <button className={assistantScope === "board" ? "active" : ""} onClick={() => setAssistantScope("board")}>全部参考</button>
+              <button className={assistantScope === "board" ? "active" : ""} onClick={() => setAssistantScope("board")}>整张画布</button>
             </div>
+            <section className="agent-work-actions" aria-label="直接操作">
+              <button disabled={!selectionCanAnalyze} onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()}><WorkspaceIcon name="analyze" size={15} />拆解所选</button>
+              <button disabled={!hasCanvasContent} onClick={previewOrganize}><WorkspaceIcon name="arrange" size={15} />整理画布</button>
+              <button disabled={selectedNodes.filter((node) => node.data.workflowStage === "analysis" && node.data.status === "ready").length < 2} onClick={() => openContractSetup(selectedNodes.filter((node) => node.data.workflowStage === "analysis").map((node) => node.id))}><WorkspaceIcon name="archive" size={15} />整合方案</button>
+            </section>
+            <section className="agent-research" aria-label="公开灵感候选">
+              <header><div><span>公开候选</span><small>搜索结果不会自动加入画布</small></div><button disabled={researchBusy || assistantGoal.trim().length < 4} onClick={() => void exploreResearch(assistantGoal)}>{researchBusy ? "搜索中…" : "探索灵感"}</button></header>
+              {researchError && <p className="research-error" role="alert">{researchError}</p>}
+              {researchCandidates.length > 0 && <div className="agent-candidates">{researchCandidates.map((candidate) => <article key={candidate.url}><small>{candidate.domain}</small><strong>{candidate.title}</strong><p>{candidate.reason}</p><footer><button onClick={() => window.open(candidate.url, "_blank", "noopener,noreferrer")}>打开采集</button><button onClick={() => void addAsset(candidate.url, { title: candidate.title, body: candidate.reason ? `灵感候选 · ${candidate.reason}` : "灵感候选" })}>加入链接</button></footer></article>)}</div>}
+            </section>
             <div className="direction-actions">
               <button onClick={() => void askDesignAssistant("指出最该保留的设计规则，并标注依据。")} disabled={assistantBusy || !assistantGoal.trim()}>保留</button>
               <button onClick={() => void askDesignAssistant("指出需要取舍的冲突，并标注依据。")} disabled={assistantBusy || !assistantGoal.trim()}>取舍</button>
@@ -1995,8 +2021,8 @@ function WorkspaceCanvas() {
               </article>
             ))}
             <form className="direction-question" onSubmit={(event) => { event.preventDefault(); void askDesignAssistant(); }}>
-              <label htmlFor="direction-question">问题</label>
-              <div><textarea id="direction-question" value={assistantQuestion} onChange={(event) => setAssistantQuestion(event.target.value)} placeholder="例如：导航要更克制，还是保留强品牌感？" /><button disabled={assistantBusy || !assistantGoal.trim() || !assistantQuestion.trim()}>发送</button></div>
+              <label htmlFor="direction-question">需求与问题</label>
+              <div><textarea id="direction-question" value={assistantQuestion} onChange={(event) => setAssistantQuestion(event.target.value)} placeholder="描述需求，或基于已引用节点继续提问。" /><button disabled={assistantBusy || !assistantGoal.trim() || !assistantQuestion.trim()}>发送</button></div>
             </form>
           </aside>
         )}
@@ -2164,8 +2190,7 @@ function WorkspaceCanvas() {
 
       {deleteRequest && <div className="modal-backdrop"><section className="modal confirm-modal"><span className="confirm-icon">⌫</span><h2>{deleteRequest.title}</h2><p>{deleteRequest.body}</p><footer><button className="button soft" onClick={() => setDeleteRequest(null)}>取消</button><button className="button danger-fill" onClick={() => deleteRequest.kind === "board" ? void performDeleteBoard(deleteRequest.ids[0]) : performDeleteNodes(deleteRequest.ids)}>确认删除</button></footer></section></div>}
 
-      {modal === "research" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal research-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setModal(null)}>×</button><h2>探索灵感</h2><p>只展示公开候选。确认后才会加入画布。</p><div className="research-query"><textarea autoFocus value={researchBrief} onChange={(event) => setResearchBrief(event.target.value)} placeholder="例如：简洁、清晰引导的招聘网站；面向创意岗位。" /><button className="button primary" disabled={researchBusy} onClick={() => void exploreResearch()}>{researchBusy ? "搜索中…" : "搜索"}</button></div>{researchError && <p className="research-error" role="alert">{researchError}</p>}{researchCandidates.length > 0 && <div className="research-candidates">{researchCandidates.map((candidate) => <article key={candidate.url}><div><small>{candidate.domain}</small><h3>{candidate.title}</h3>{candidate.quote && <p>{candidate.quote}</p>}<em>{candidate.reason}</em></div><footer><button onClick={() => window.open(candidate.url, "_blank", "noopener,noreferrer")}>打开采集</button><button className="button primary" onClick={() => void addAsset(candidate.url, { title: candidate.title, body: candidate.reason ? `灵感候选 · ${candidate.reason}` : "灵感候选" })}>加入链接</button></footer></article>)}</div>}</section></div>}
-      {modal === "import" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal import-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setModal(null)}>×</button><h2>加入当前画布</h2><p>上传图片、文件夹、网页或文字。</p><div className="import-choice"><button className="import-drop" onClick={() => fileInput.current?.click()}><span>⇧</span><strong>上传图片</strong><small>JPG、PNG、WebP · 单张最大 20 MB</small></button><button className="import-drop folder-drop" onClick={() => folderInput.current?.click()}><span>▱</span><strong>上传文件夹</strong><small>自动建立同名分组并排列图片</small></button></div><div className="url-entry"><input autoFocus value={urlValue} onChange={(event) => setUrlValue(event.target.value)} placeholder="公开 URL 或参考文字" /><button onClick={() => urlValue.trim() && void addAsset(urlValue.trim())}>加入</button></div></section></div>}
+      {modal === "import" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal import-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setModal(null)}>×</button><h2>添加节点</h2><p>图片、视频、音频、网页与文字都会保留在当前个人空间。</p><div className="import-choice"><button className="import-drop" onClick={() => fileInput.current?.click()}><span>⇧</span><strong>上传本地素材</strong><small>图片最大 20 MB；视频和音频最大 100 MB</small></button><button className="import-drop folder-drop" onClick={() => folderInput.current?.click()}><span>▱</span><strong>导入文件夹</strong><small>自动建立同名分组，保留图片、视频和音频</small></button></div><div className="url-entry"><input autoFocus value={urlValue} onChange={(event) => setUrlValue(event.target.value)} placeholder="粘贴公开网页链接，或直接写下一段文字" /><button onClick={() => urlValue.trim() && void addAsset(urlValue.trim())}>添加</button></div></section></div>}
 
       {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal model-service-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><h2>连接百炼</h2><p>固定使用 Qwen 3.7 Plus。</p>
         <div className="model-fixed-card"><div><span>{managedAi.available || qwenCredential ? "已连接" : "尚未连接"}</span><strong>Qwen 3.7 Plus</strong></div><small>{managedAi.available ? "由工作区提供" : qwenCredential ? `百炼 Key · •••• ${qwenCredential.lastFour}` : "粘贴百炼 API Key 后连接"}</small></div>
@@ -2189,6 +2214,12 @@ function isAnalyzableNode(node: CanvasNode) {
   return sourceKinds.has(node.data.kind) && !node.data.note && Boolean(node.data.assetId);
 }
 
+function supportedLocalMedia(file: File) {
+  if (/^image\/(jpeg|png|webp)$/.test(file.type)) return file.size <= 20 * 1024 * 1024;
+  if (/^(video\/(mp4|webm|quicktime)|audio\/(mpeg|wav|ogg|mp4))$/.test(file.type)) return file.size <= 100 * 1024 * 1024;
+  return false;
+}
+
 function clamp(value: number, minimum: number, maximum: number) {
   return Math.min(maximum, Math.max(minimum, value));
 }
@@ -2197,6 +2228,8 @@ function miniMapNodeColor(node: CanvasNode) {
   if (node.data.kind === "group") return "#dcd4e7";
   if (node.data.kind === "web") return "#c9d8ef";
   if (node.data.kind === "image") return "#e7cbd9";
+  if (node.data.kind === "video") return "#cfb998";
+  if (node.data.kind === "audio") return "#a8c8cf";
   if (node.data.kind === "element") return "#d8e7d3";
   return "#d7d0dd";
 }
@@ -2232,7 +2265,7 @@ function nodeMatchesSearchKind(node: CanvasNode, kind: SearchKind) {
 function nodeSearchIcon(node: CanvasNode) {
   if (node.data.workflowStage === "analysis") return "✦";
   if (node.data.workflowStage === "contract") return "◇";
-  return node.data.kind === "image" ? "▧" : node.data.kind === "web" ? "◎" : node.data.kind === "group" ? "▱" : "≡";
+  return node.data.kind === "image" ? "▧" : node.data.kind === "video" ? "▷" : node.data.kind === "audio" ? "♪" : node.data.kind === "web" ? "◎" : node.data.kind === "group" ? "▱" : "≡";
 }
 
 function nodeSearchSummary(node: CanvasNode) {

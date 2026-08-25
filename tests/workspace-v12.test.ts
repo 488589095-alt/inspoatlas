@@ -65,7 +65,7 @@ test("深色创作工作台使用单一 token 基线并按状态收敛操作", a
   assert.match(workspace, /canvas-empty/);
   assert.match(workspace, /hasCanvasContent/);
   assert.match(workspace, /inspectorOpen/);
-  assert.match(workspace, /hasCanvasContent && <div className="canvas-toolbar"/);
+  assert.match(workspace, /<div className="canvas-toolbar"/);
   assert.match(workspace, /等待参考/);
   assert.match(workspace, /role="button"/);
   assert.match(styles, /\.visually-hidden/);
@@ -76,7 +76,9 @@ test("深色创作工作台使用单一 token 基线并按状态收敛操作", a
   assert.match(workspace, /<small>拆解<\/small>/);
   assert.match(workspace, /<small>整理<\/small>/);
   assert.match(workspace, /<small>定位<\/small>/);
-  assert.match(workspace, /方向校对/);
+  assert.match(workspace, /灵感 Agent/);
+  assert.match(workspace, /<small>搜索<\/small>/);
+  assert.match(workspace, /<small>小地图<\/small>/);
   assert.match(workspace, /正在拆解/);
   assert.match(workspace, /disabled=\{contractBusy\}/);
   assert.match(icon, /stroke="currentColor"/);

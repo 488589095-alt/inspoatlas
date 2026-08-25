@@ -1,10 +1,11 @@
 import { z } from "zod";
 
 export const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
+export const MAX_MEDIA_BYTES = 100 * 1024 * 1024;
 export const MAX_TEXT_LENGTH = 50_000;
 export const MAX_ASSETS_PER_USER = 500;
-export const assetKinds = ["image", "web", "text"] as const;
-export const canvasItemTypes = ["image", "web", "text", "analysis", "element", "group"] as const;
+export const assetKinds = ["image", "video", "audio", "web", "text"] as const;
+export const canvasItemTypes = ["image", "video", "audio", "web", "text", "analysis", "element", "group"] as const;
 export const relationTypes = ["analysis-of", "element-of", "contract-derived-from", "similar-style", "same-component", "complements", "contrasts", "same-project"] as const;
 export const relationLayers = ["provenance", "association"] as const;
 export const relationStatuses = ["confirmed", "suggested", "rejected"] as const;

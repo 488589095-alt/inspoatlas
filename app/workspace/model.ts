@@ -1,7 +1,7 @@
 import type { Edge, Node, Viewport } from "@xyflow/react";
 import type { BoardSceneV2, DesignContract, Relation } from "@/packages/domain/src";
 
-export type CardKind = "image" | "web" | "text" | "analysis" | "element" | "group";
+export type CardKind = "image" | "video" | "audio" | "web" | "text" | "analysis" | "element" | "group";
 export type CardData = Record<string, unknown> & {
   kind: CardKind;
   title: string;
@@ -79,7 +79,11 @@ export function sceneToFlow(scene: BoardSceneV2): { nodes: CanvasNode[]; edges: 
         ...item.data,
         ...analysisByAsset.get(assetId),
         kind: item.kind,
-        workflowStage: item.kind === "analysis" ? "analysis" : item.data.workflowStage,
+        workflowStage: item.kind === "analysis"
+          ? "analysis"
+          : item.data.workflowStage === "analysis" || item.data.workflowStage === "contract"
+            ? item.data.workflowStage
+            : undefined,
         title: String(item.data.title || "未命名"),
       },
       style: { width: item.width, height: item.height },

@@ -15,7 +15,7 @@ export const boards = sqliteTable("boards", {
 
 export const assets = sqliteTable("assets", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), boardId: text("board_id").notNull(),
-  kind: text("kind", { enum: ["image", "web", "text"] }).notNull(), title: text("title").notNull(), sourceUrl: text("source_url"),
+  kind: text("kind", { enum: ["image", "video", "audio", "web", "text"] }).notNull(), title: text("title").notNull(), sourceUrl: text("source_url"),
   objectKey: text("object_key"), extractedText: text("extracted_text"), metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>().notNull().default({}),
   status: text("status", { enum: ["idle", "queued", "processing", "ready", "failed"] }).notNull().default("idle"),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),

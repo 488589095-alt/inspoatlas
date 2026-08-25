@@ -1,14 +1,23 @@
+import { count, desc, eq } from "drizzle-orm";
+import { assets, boards } from "@/db/schema";
+import { ensureCoreTables, getDb } from "@/db";
 import { currentUser, errorResponse } from "../_lib";
 
 export async function GET(request: Request) {
   try {
-    const user = currentUser(request);
+    const user = currentUser(request); await ensureCoreTables();
     const encodedName = request.headers.get("oai-authenticated-user-full-name");
     const encoding = request.headers.get("oai-authenticated-user-full-name-encoding");
     const fullName = encodedName && encoding === "percent-encoded-utf-8"
       ? safeDecode(encodedName)
       : null;
     const displayName = fullName || user.email.split("@")[0];
+    const db = getDb();
+    const [[boardTotal], [assetTotal], recentBoards] = await Promise.all([
+      db.select({ value: count() }).from(boards).where(eq(boards.ownerId, user.id)),
+      db.select({ value: count() }).from(assets).where(eq(assets.ownerId, user.id)),
+      db.select({ id: boards.id, title: boards.title, updatedAt: boards.updatedAt }).from(boards).where(eq(boards.ownerId, user.id)).orderBy(desc(boards.updatedAt)).limit(4),
+    ]);
     return Response.json({
       user: {
         id: user.id,
@@ -17,6 +26,7 @@ export async function GET(request: Request) {
         initials: getInitials(displayName),
       },
       access: "invite-only",
+      space: { boardCount: boardTotal?.value ?? 0, assetCount: assetTotal?.value ?? 0, recentBoards },
     }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     return errorResponse(error);
