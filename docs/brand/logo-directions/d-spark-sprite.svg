@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="方向 D：火花精灵">
+  <rect width="128" height="128" rx="30" fill="#101914"/>
+  <path d="M64 18c5 0 8 5 10 12l5 15 15 5c7 2 12 5 12 10s-5 8-12 10l-15 5-5 15c-2 7-5 12-10 12s-8-5-10-12l-5-15-15-5c-7-2-12-5-12-10s5-8 12-10l15-5 5-15c2-7 5-12 10-12Z" fill="#A9D789"/>
+  <circle cx="55" cy="62" r="3.2" fill="#17241B"/>
+  <circle cx="73" cy="62" r="3.2" fill="#17241B"/>
+  <circle cx="99" cy="29" r="5" fill="#E8F5D6"/>
+</svg>

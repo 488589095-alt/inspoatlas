@@ -77,12 +77,7 @@ export async function POST(request: Request) {
     const objectKey = asset.objectKey ?? metadata.screenshotKeys?.[0];
     const needsVision = asset.kind === "image" || Boolean(objectKey);
     const credential = await loadCredential(user.id, input.provider, needsVision);
-    if (!credential) {
-      throw new HttpError(
-        409,
-        needsVision ? "请先配置支持图片输入的 OpenAI 或 Qwen Key" : "请先添加模型 Key",
-      );
-    }
+    if (!credential) throw new HttpError(503, "工作区 AI 服务暂不可用，请稍后重试");
 
     const [existing] = await db.select().from(analyses)
       .where(and(eq(analyses.assetId, asset.id), eq(analyses.ownerId, user.id)))

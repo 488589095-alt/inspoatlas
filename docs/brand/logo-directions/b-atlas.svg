@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="方向 B：地图折页">
+  <rect x="8" y="8" width="104" height="104" rx="27" fill="#151c19"/>
+  <path d="M26 33 47 26 72 34 94 27v60l-22 7-25-8-21 7V33Z" fill="none" stroke="#edf2ed" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M47 27v59M72 34v60" fill="none" stroke="#667c6a" stroke-width="3"/>
+  <path d="m37 68 18-19 15 13 17-16" fill="none" stroke="#b5d98c" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="37" cy="68" r="5" fill="#b5d98c"/><circle cx="87" cy="46" r="5" fill="#b5d98c"/>
+</svg>

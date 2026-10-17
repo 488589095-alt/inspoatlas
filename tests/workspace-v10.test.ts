@@ -16,17 +16,17 @@ test("辅助连线默认只显示当前相关且连接热区更大", async () =>
   const [workspace, card, styles] = await Promise.all([
     readFile(new URL("../app/InspoWorkspace.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/workspace/CardNode.tsx", import.meta.url), "utf8"),
-    readFile(new URL("../app/workspace-v11.css", import.meta.url), "utf8"),
+    readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
-  assert.match(workspace, /从卡片端口拖到目标卡片/);
+  assert.match(workspace, /onConnect=\{organizePreview \? undefined : onConnect\}/);
   assert.match(workspace, /selectedSet\.has\(edge\.source\) \|\| selectedSet\.has\(edge\.target\)/);
   assert.match(workspace, /connectionRadius=\{48\}/);
   assert.match(workspace, /type: "complements"/);
   assert.doesNotMatch(workspace, /relation-modal/);
   assert.match(card, /node-port-output/);
   assert.match(card, /node-port-input/);
-  assert.match(styles, /width: 28px !important/);
-  assert.match(styles, /cursor: grabbing !important/);
+  assert.match(styles, /width: 48px !important/);
+  assert.match(styles, /\.node-handle:hover::before/);
 });
 
 test("备注、分组说明和左右侧栏均可直接编辑", async () => {
@@ -41,7 +41,7 @@ test("备注、分组说明和左右侧栏均可直接编辑", async () => {
   assert.match(toolbar, /新建备注/);
   assert.match(workspace, /rail-resizer-left/);
   assert.match(workspace, /rail-resizer-right/);
-  assert.match(workspace, /connectedModelLabel/);
+  assert.match(workspace, /newWorkTitle/);
   assert.match(card, /function InlineBody/);
   assert.match(card, /action: "update-body"/);
   assert.match(organize, /AI 根据 \$\{analyzedCount\} 张卡片的拆解结果归纳/);

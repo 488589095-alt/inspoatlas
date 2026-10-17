@@ -28,7 +28,7 @@ test("画布入口覆盖框选、多选、分组、附着分析和持久化", as
     "startBoardRename",
     "requestDeleteBoard",
     "previewBaseline",
-    "saveCredential",
+    "startExportWizard",
     "exportPackage",
     "alignSelected",
     "previewOrganize",

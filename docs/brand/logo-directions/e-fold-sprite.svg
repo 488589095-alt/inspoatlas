@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="方向 E：折页精灵">
+  <rect width="128" height="128" rx="30" fill="#101914"/>
+  <path d="M30 36c0-7 5-12 12-12h39l17 17v45c0 10-8 18-18 18H48c-10 0-18-8-18-18V36Z" fill="#DCECCB"/>
+  <path d="M81 24v17h17L81 24Z" fill="#8DBF83"/>
+  <path d="M30 74c12-8 22-8 34 0s22 8 34 0v12c0 10-8 18-18 18H48c-10 0-18-8-18-18V74Z" fill="#A9D789"/>
+  <circle cx="53" cy="55" r="3.5" fill="#17241B"/>
+  <circle cx="74" cy="55" r="3.5" fill="#17241B"/>
+  <circle cx="101" cy="87" r="5" fill="#A9D789"/>
+</svg>

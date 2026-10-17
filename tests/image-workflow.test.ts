@@ -19,16 +19,17 @@ test("衍生图层不会覆盖原图，且可沿 element-of 回溯", async () =>
   assert.doesNotMatch(model, /scene\.nodes\.filter\(\(item\) => item\.kind !== "element"\)/);
 });
 
-test("灵感搜索是临时候选，只有用户确认才加入来源", async () => {
-  const [route, workspace, ai] = await Promise.all([
+test("灵感搜索候选不改写画布，并通过对话提供可打开的来源", async () => {
+  const [route, assistant, workspace, ai] = await Promise.all([
     readFile(new URL("../app/api/boards/[id]/research/route.ts", import.meta.url), "utf8"),
+    readFile(new URL("../app/api/boards/[id]/design-assistant/route.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/InspoWorkspace.tsx", import.meta.url), "utf8"),
     readFile(new URL("../packages/ai/src/index.ts", import.meta.url), "utf8"),
   ]);
   assert.match(route, /Search results deliberately do not touch the board or asset tables/);
   assert.match(route, /researchWithQwen/);
   assert.match(ai, /enable_search: true/);
-  assert.match(workspace, /探索灵感/);
-  assert.match(workspace, /加入链接/);
-  assert.match(workspace, /打开采集/);
+  assert.match(assistant, /searchCandidates/);
+  assert.match(assistant, /researchWithQwen/);
+  assert.match(workspace, /className="agent-sources"/);
 });

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { createPortal } from "react-dom";
 import {
   addEdge,
   applyNodeChanges,
@@ -16,7 +17,7 @@ import {
   useReactFlow,
   type Viewport,
 } from "@xyflow/react";
-import { providerCatalog, type AnalysisResult, type DesignBrief, type DesignContract, type DesignPurpose, type ProviderId, type Relation } from "@/packages/domain/src";
+import { type AnalysisResult, type DesignBrief, type DesignContract, type DesignPurpose, type Relation } from "@/packages/domain/src";
 import {
   exportDestinationsByGoal,
   productionGoalOptions,
@@ -57,7 +58,7 @@ const defaultSize: Record<CardData["kind"], { width: number; height: number }> =
 };
 const canvasSnapGrid: [number, number] = [8, 8];
 
-type WorkspaceModal = "import" | "credentials" | null;
+type WorkspaceModal = "import" | "new-work" | null;
 type RelationView = "hidden" | "selection" | "all";
 type SearchKind = "all" | "image" | "video" | "audio" | "web" | "text" | "analysis" | "contract" | "group";
 type NextStepMenu = { sourceId: string; x: number; y: number };
@@ -70,14 +71,28 @@ type AssistantMessage = {
   id?: string;
   role: "user" | "assistant";
   content: string;
+  followUps?: string[];
+  sources?: Array<{ title: string; url: string; reason: string }>;
   provider?: string;
   model?: string;
   promptVersion?: string;
   runMode?: "managed" | "byok";
   feedback?: "helpful" | "needs-work";
 };
-type ManagedAiState = { available: boolean; provider: ProviderId | null; model: string | null; supportsVision: boolean };
-type ResearchCandidate = { title: string; domain: string; url: string; quote: string; reason: string; searchTerms: string[] };
+type BrowserSpeechRecognition = {
+  lang: string;
+  interimResults: boolean;
+  continuous: boolean;
+  onresult: ((event: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: ((event: { error: string }) => void) | null;
+  onend: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+type SpeechWindow = Window & {
+  SpeechRecognition?: new () => BrowserSpeechRecognition;
+  webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
+};
 const searchKindOptions: Array<{ id: SearchKind; label: string; icon: string }> = [
   { id: "all", label: "全部", icon: "⌕" },
   { id: "image", label: "图片", icon: "▧" },
@@ -108,10 +123,36 @@ const productionGoalByPurpose: Record<DesignPurpose, ProductionGoal | null> = {
   organize: null,
 };
 const agentPromptPresets = [
-  { title: "找招聘网站参考", goal: "为创意岗位招聘网站寻找简洁、清晰的参考", question: "优先找信息层级明确、投递路径短的页面，并说明各自适合参考什么。" },
-  { title: "校对视觉方向", goal: "基于当前参考校对视觉方向", question: "指出最值得保留的规则，以及会造成风格冲突的部分。" },
-  { title: "整理素材", goal: "把当前画布整理成可继续工作的参考组", question: "按版式、视觉语言和可复用组件给出整理建议。" },
+  "我想参考一些网站，做一个新的网站。你能帮我找设计方向吗？",
+  "我收集了几张参考图，你能帮我找出它们共同的视觉语言吗？",
+  "我只有一个模糊的想法，你能陪我理清目标和下一步吗？",
 ] as const;
+const agentWelcome = "我是你的设计小助手小in。跟我聊聊你的想法吧。";
+function TypewriterText({ text, animate = true, speed = 72, onComplete }: { text: string; animate?: boolean; speed?: number; onComplete?: () => void }) {
+  const [visible, setVisible] = useState(animate ? "" : text);
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => { onCompleteRef.current = onComplete; }, [onComplete]);
+  useEffect(() => {
+    if (!animate || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setVisible(text);
+      onCompleteRef.current?.();
+      return;
+    }
+    const chars = Array.from(text);
+    let index = 0;
+    setVisible("");
+    const timer = window.setInterval(() => {
+      index = Math.min(chars.length, index + 1);
+      setVisible(chars.slice(0, index).join(""));
+      if (index === chars.length) {
+        window.clearInterval(timer);
+        onCompleteRef.current?.();
+      }
+    }, speed);
+    return () => window.clearInterval(timer);
+  }, [text, animate, speed]);
+  return <span className="typewriter-text" aria-label={text}><span aria-hidden="true">{animate ? visible : text}</span>{animate && visible.length < text.length && <span className="typewriter-cursor" aria-hidden="true" />}</span>;
+}
 const purposeIconById: Record<DesignPurpose, WorkspaceIconName> = {
   "web-ui-recreate": "archive",
   "brand-extension": "ask",
@@ -138,8 +179,10 @@ function WorkspaceCanvas() {
   const [searchCursor, setSearchCursor] = useState(0);
   const [showMiniMap, setShowMiniMap] = useState(true);
   const [focusMode, setFocusMode] = useState(false);
+  const [theme, setTheme] = useState<"light" | "dark">("light");
+  const [themeHydrated, setThemeHydrated] = useState(false);
   const [savedState, setSavedState] = useState("正在读取");
-  const [rightTab, setRightTab] = useState<"asset" | "baseline" | "export">("asset");
+  const [rightTab, setRightTab] = useState<"asset" | "baseline">("asset");
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [relationView, setRelationView] = useState<RelationView>("selection");
   const [modal, setModal] = useState<WorkspaceModal>(null);
@@ -151,6 +194,7 @@ function WorkspaceCanvas() {
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
   const [editingBoardSurface, setEditingBoardSurface] = useState<"header" | "sidebar" | null>(null);
   const [boardDraft, setBoardDraft] = useState("");
+  const [newWorkTitle, setNewWorkTitle] = useState("");
   const [contract, setContract] = useState<DesignContract | null>(null);
   const [contractBusy, setContractBusy] = useState(false);
   const [contractSourceNodeIds, setContractSourceNodeIds] = useState<string[]>([]);
@@ -162,24 +206,20 @@ function WorkspaceCanvas() {
   const [exportDestination, setExportDestination] = useState<ExportDestination>("figma-design");
   const [exportBusy, setExportBusy] = useState(false);
   const [exportComplete, setExportComplete] = useState<false | "quick" | "full">(false);
-  const [credentialState, setCredentialState] = useState<Array<{ provider: string; model: string; baseUrl?: string; lastFour: string; supportsVision: boolean; active: boolean }>>([]);
-  const [managedAi, setManagedAi] = useState<ManagedAiState>({ available: false, provider: null, model: null, supportsVision: false });
-  const [credentialForm, setCredentialForm] = useState<{ provider: ProviderId; apiKey: string; model: string; baseUrl: string }>({ provider: "qwen", apiKey: "", model: providerCatalog.qwen.models[0], baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1" });
-  const [loadingCredential, setLoadingCredential] = useState(false);
-  const [credentialToDelete, setCredentialToDelete] = useState<ProviderId | null>(null);
+  const [exportStep, setExportStep] = useState<1 | 2 | 3>(1);
 
-  const [assistantScope, setAssistantScope] = useState<AssistantScope>("board");
-  const [assistantGoal, setAssistantGoal] = useState("");
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([]);
   const [assistantBusy, setAssistantBusy] = useState(false);
+  const [assistantHasInteracted, setAssistantHasInteracted] = useState(false);
+  const [completedAnswerId, setCompletedAnswerId] = useState<string | null>(null);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [voiceListening, setVoiceListening] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [researchBrief, setResearchBrief] = useState("");
-  const [researchCandidates, setResearchCandidates] = useState<ResearchCandidate[]>([]);
-  const [researchBusy, setResearchBusy] = useState(false);
-  const [researchError, setResearchError] = useState("");
+  const [agentRevealed, setAgentRevealed] = useState(false);
+  const [agentHintVisible, setAgentHintVisible] = useState(false);
+  const [portalReady, setPortalReady] = useState(false);
   const [editingImage, setEditingImage] = useState<{ assetId: string; sourceUrl: string; title: string; nodeId: string } | null>(null);
-  const [linkMode, setLinkMode] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [leftRailWidth, setLeftRailWidth] = useState(242);
   const [rightRailWidth, setRightRailWidth] = useState(322);
@@ -200,7 +240,47 @@ function WorkspaceCanvas() {
   const edgesRef = useRef<Edge[]>([]);
   const connectionSourceRef = useRef<string | null>(null);
   const connectionCompletedRef = useRef(false);
+  const assistantBoardRef = useRef("");
+  const assistantScrollRef = useRef<HTMLDivElement>(null);
+  const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const assistantRequestPendingRef = useRef(false);
   const { fitView, screenToFlowPosition, setViewport: setFlowViewport } = useReactFlow();
+
+  useEffect(() => {
+    setPortalReady(true);
+    const speechWindow = window as SpeechWindow;
+    setVoiceSupported(Boolean(speechWindow.SpeechRecognition || speechWindow.webkitSpeechRecognition));
+    return () => speechRecognitionRef.current?.stop();
+  }, []);
+
+  useEffect(() => {
+    if (!agentRevealed || assistantOpen) {
+      setAgentHintVisible(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setAgentHintVisible(true), 450);
+    return () => window.clearTimeout(timer);
+  }, [agentRevealed, assistantOpen]);
+
+  useEffect(() => {
+    assistantBoardRef.current = boardId;
+    setAssistantMessages([]);
+    setAssistantQuestion("");
+    setAssistantHasInteracted(false);
+    setCompletedAnswerId(null);
+    speechRecognitionRef.current?.stop();
+  }, [boardId]);
+
+  useEffect(() => {
+    if (!assistantOpen) return;
+    window.requestAnimationFrame(() => {
+      if (assistantScrollRef.current) assistantScrollRef.current.scrollTop = assistantScrollRef.current.scrollHeight;
+    });
+  }, [assistantOpen, assistantMessages.length, assistantBusy]);
+
+  useEffect(() => {
+    if (!assistantOpen) speechRecognitionRef.current?.stop();
+  }, [assistantOpen]);
 
   useEffect(() => {
     edgesRef.current = edges;
@@ -257,8 +337,6 @@ function WorkspaceCanvas() {
     });
   }, [edges, relationView, selectedIds]);
   const persistableSignature = useMemo(() => sceneSignature(nodes, edges, viewportState), [nodes, edges, viewportState]);
-  const qwenCredential = credentialState.find((item) => item.provider === "qwen");
-  const connectedModelLabel = "Qwen 3.7 Plus";
 
   useEffect(() => {
     signatureRef.current = persistableSignature;
@@ -275,18 +353,15 @@ function WorkspaceCanvas() {
   }, []);
 
   useEffect(() => {
-    let active = true;
-    void fetch("/api/ai-credentials", { cache: "no-store" })
-      .then(async (response) => response.ok ? response.json() : { credentials: [], managed: { available: false, provider: null, model: null, supportsVision: false } })
-      .then((payload: { credentials?: typeof credentialState; managed?: ManagedAiState }) => {
-        if (!active) return;
-        const managed = payload.managed ?? { available: false, provider: null, model: null, supportsVision: false };
-        setCredentialState(payload.credentials ?? []);
-        setManagedAi(managed);
-      })
-      .catch(() => undefined);
-    return () => { active = false; };
+    if (window.localStorage.getItem("inspoatlas:theme") === "dark") setTheme("dark");
+    setThemeHydrated(true);
   }, []);
+
+  useEffect(() => {
+    if (!themeHydrated) return;
+    document.documentElement.classList.toggle("theme-light-root", theme === "light");
+    window.localStorage.setItem("inspoatlas:theme", theme);
+  }, [theme, themeHydrated]);
 
   useEffect(() => {
     const stopRightPan = () => setRightPanning(false);
@@ -320,7 +395,7 @@ function WorkspaceCanvas() {
       const created = await fetch("/api/boards", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ title: "我的灵感图谱" }),
+        body: JSON.stringify({ title: "我的第一个作品" }),
       });
       if (!created.ok) throw new Error("无法创建初始画布");
       const payload = await created.json().catch(() => null) as { board?: BoardSummary } | null;
@@ -511,11 +586,6 @@ function WorkspaceCanvas() {
         setSelectedIds([detail.id]);
         setRightTab("asset");
       }
-      if (detail.action === "open-export") {
-        const node = nodes.find((item) => item.id === detail.id);
-        if (node?.data.contract) openExport(node.data.contract);
-        setSelectedIds([detail.id]);
-      }
       if (detail.action === "focus-contract") {
         const node = nodes.find((item) => item.id === detail.id);
         if (node?.data.contract) setContract(node.data.contract);
@@ -659,7 +729,7 @@ function WorkspaceCanvas() {
     const completed = connectionCompletedRef.current;
     connectionSourceRef.current = null;
     window.setTimeout(() => { connectionCompletedRef.current = false; }, 0);
-    if (!sourceId || completed) return;
+    if (!sourceId || completed || nodes.some((node) => node.id === sourceId && node.data.workflowStage === "contract")) return;
     const point = "changedTouches" in event ? event.changedTouches[0] : event;
     setNextStepMenu({
       sourceId,
@@ -668,7 +738,7 @@ function WorkspaceCanvas() {
     });
   }
 
-  function runNextStep(action: "analyze" | "contract" | "export") {
+  function runNextStep(action: "analyze" | "contract") {
     const menu = nextStepMenu;
     if (!menu) return;
     const node = nodes.find((item) => item.id === menu.sourceId);
@@ -682,7 +752,6 @@ function WorkspaceCanvas() {
       const ids = selectedAnalysisIds.includes(node.id) ? selectedAnalysisIds : [node.id];
       return openContractSetup(ids);
     }
-    if (node.data.contract) openExport(node.data.contract);
   }
   const onSelectionChange = useCallback(({ nodes: selection }: { nodes: CanvasNode[] }) => {
     const next = selection.map((node) => node.id);
@@ -748,17 +817,19 @@ function WorkspaceCanvas() {
     });
   }, [setNodes]);
 
-  async function createBoard(sourceBoardId?: string) {
+  async function createBoard(sourceBoardId?: string, title?: string) {
     const response = await fetch("/api/boards", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title: sourceBoardId ? boardTitle + " 副本" : "未命名画布", sourceBoardId }),
+      body: JSON.stringify({ title: sourceBoardId ? boardTitle + " 副本" : title?.trim() || "未命名作品", sourceBoardId }),
     });
-    if (!response.ok) return notify("新建画布失败");
+    if (!response.ok) return notify("新建作品失败");
     const { board } = await response.json();
     setBoards((current) => [board, ...current]);
     setBoardId(board.id);
-    notify(sourceBoardId ? "画布已复制" : "新画布已创建");
+    setModal(null);
+    setNewWorkTitle("");
+    notify(sourceBoardId ? "作品已复制" : "新作品已创建");
   }
 
   function startBoardRename(id: string, title: string, surface: "header" | "sidebar" = "sidebar") {
@@ -845,24 +916,6 @@ function WorkspaceCanvas() {
     setModal(null);
     setUrlValue("");
     notify(isUrl ? "网页来源卡已保存" : "文字参考已保存");
-  }
-
-  async function exploreResearch(briefOverride?: string) {
-    const brief = (briefOverride ?? researchBrief).trim();
-    if (brief.length < 4) return setResearchError("写下项目、受众或想找的方向。");
-    setResearchBrief(brief);
-    setResearchBusy(true); setResearchError("");
-    try {
-      const response = await fetch(`/api/boards/${encodeURIComponent(boardId)}/research`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ brief, limit: 10 }) });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        if (response.status === 409) setModal("credentials");
-        throw new Error(payload.error || "灵感搜索失败");
-      }
-      setResearchCandidates(Array.isArray(payload.candidates) ? payload.candidates : []);
-      if (!payload.candidates?.length) setResearchError("没有找到可确认的公开来源，请换一组更具体的搜索词。");
-    } catch (cause) { setResearchError(cause instanceof Error ? cause.message : "灵感搜索失败"); }
-    finally { setResearchBusy(false); }
   }
 
   function addDerivativeLayer(derivative: { id: string; sourceAssetId: string; title: string; operation: string; contentUrl: string; metadata?: Record<string, unknown> }) {
@@ -1075,7 +1128,7 @@ function WorkspaceCanvas() {
     const response = await fetch("/api/analyses", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ assetId, mode: "replace", ...(!managedAi.available ? { provider: "openai" } : {}) }),
+      body: JSON.stringify({ assetId, mode: "replace" }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
@@ -1083,7 +1136,6 @@ function WorkspaceCanvas() {
         ...item,
         data: { ...item.data, status: item.data.analysisSummary ? "ready" : "failed", analysisError: friendlyAnalysisError(payload.error) },
       } : item));
-      if (response.status === 409) setModal("credentials");
       return notify(friendlyAnalysisError(payload.error));
     }
     const result = payload.analysis.result as AnalysisResult;
@@ -1119,39 +1171,79 @@ function WorkspaceCanvas() {
     for (const id of ids) await analyze(id, false);
   }
 
+  function toggleVoiceInput() {
+    if (speechRecognitionRef.current) {
+      speechRecognitionRef.current.stop();
+      return;
+    }
+    const speechWindow = window as SpeechWindow;
+    const SpeechRecognition = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition;
+    if (!SpeechRecognition) return notify("当前浏览器暂不支持语音输入，请使用文字提问");
+    const recognition = new SpeechRecognition();
+    const existingQuestion = assistantQuestion.trim();
+    recognition.lang = "zh-CN";
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    recognition.onresult = (event) => {
+      const transcript = Array.from(event.results).map((result) => result[0]?.transcript ?? "").join("").trim();
+      if (!transcript) return;
+      setAssistantHasInteracted(true);
+      setAssistantQuestion([existingQuestion, transcript].filter(Boolean).join(" "));
+    };
+    recognition.onerror = (event) => {
+      if (event.error !== "aborted" && event.error !== "no-speech") notify("没有听清楚，请重试或改用文字输入");
+    };
+    recognition.onend = () => {
+      speechRecognitionRef.current = null;
+      setVoiceListening(false);
+    };
+    speechRecognitionRef.current = recognition;
+    try {
+      recognition.start();
+      setVoiceListening(true);
+    } catch {
+      speechRecognitionRef.current = null;
+      setVoiceListening(false);
+      notify("语音输入未能启动，请使用文字提问");
+    }
+  }
+
   async function askDesignAssistant(requestedQuestion?: string) {
-    const goal = assistantGoal.trim();
     const question = (requestedQuestion ?? assistantQuestion).trim();
-    if (!goal) return notify("请先说明你要设计什么");
     if (!question) return notify("请输入你想讨论的问题");
-    if (assistantScope === "selection" && !selectedIds.length) return notify("请先选择要分析的卡片");
+    if (!boardId || assistantRequestPendingRef.current) return;
+    assistantRequestPendingRef.current = true;
+    speechRecognitionRef.current?.stop();
+    const scope: AssistantScope = selectedIds.length ? "selection" : "board";
 
     const nextMessages: AssistantMessage[] = [...assistantMessages, { role: "user", content: question }];
     setAssistantMessages(nextMessages);
     setAssistantQuestion("");
+    setAssistantHasInteracted(true);
+    setCompletedAnswerId(null);
     setAssistantBusy(true);
     try {
       const response = await fetch(`/api/boards/${encodeURIComponent(boardId)}/design-assistant`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
-          goal,
           question,
-          ...(!managedAi.available ? { provider: "qwen" } : {}),
-          scope: assistantScope,
-          selectedNodeIds: assistantScope === "selection" ? selectedIds : [],
-          history: assistantMessages.slice(-6),
+          scope,
+          selectedNodeIds: scope === "selection" ? selectedIds : [],
+          history: assistantMessages.slice(-8),
         }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) {
-        if (response.status === 409) setModal("credentials");
         throw new Error(friendlyAnalysisError(payload.error));
       }
+      if (assistantBoardRef.current !== boardId) return;
       setAssistantMessages([...nextMessages, {
         id: String(payload.id || crypto.randomUUID()),
         role: "assistant",
         content: String(payload.answer || "暂时没有生成建议。"),
+        followUps: Array.isArray(payload.followUps) ? payload.followUps.filter((item: unknown): item is string => typeof item === "string").slice(0, 3) : [],
+        sources: Array.isArray(payload.sources) ? payload.sources.filter((item: unknown): item is { title: string; url: string; reason: string } => Boolean(item && typeof item === "object" && "title" in item && "url" in item && typeof item.title === "string" && typeof item.url === "string" && item.url.startsWith("https://"))).slice(0, 3) : [],
         provider: payload.provider,
         model: payload.model,
         promptVersion: payload.promptVersion,
@@ -1159,8 +1251,9 @@ function WorkspaceCanvas() {
       }]);
     } catch (error) {
       const message = error instanceof Error ? error.message : "设计助手暂时不可用";
-      setAssistantMessages([...nextMessages, { role: "assistant", content: `未能完成：${message}` }]);
+      if (assistantBoardRef.current === boardId) setAssistantMessages([...nextMessages, { id: crypto.randomUUID(), role: "assistant", content: `未能完成：${message}` }]);
     } finally {
+      assistantRequestPendingRef.current = false;
       setAssistantBusy(false);
     }
   }
@@ -1456,16 +1549,17 @@ function WorkspaceCanvas() {
     setRightTab("baseline");
   }
 
-  function openExport(nextContract: DesignContract) {
-    const nextGoal = productionGoalByPurpose[nextContract.brief?.purpose ?? "web-ui-recreate"];
-    if (!nextGoal) {
-      setContract(nextContract);
-      setRightTab("baseline");
-      return notify("此方案仅用于整理，确定生产任务后再选择输出工具");
+  function startExportWizard() {
+    const savedContract = selected?.data.workflowStage === "contract" ? selected.data.contract : nodes.find((node) => node.data.workflowStage === "contract")?.data.contract;
+    setContract(savedContract ?? null);
+    if (savedContract) {
+      const goal = productionGoalByPurpose[savedContract.brief?.purpose ?? "web-ui-recreate"];
+      if (goal) {
+        setProductionGoal(goal);
+        setExportDestination(exportDestinationsByGoal[goal][0].id);
+      }
     }
-    setContract(nextContract);
-    setProductionGoal(nextGoal);
-    setExportDestination(exportDestinationsByGoal[nextGoal][0].id);
+    setExportStep(1);
     setExportComplete(false);
     setWorkflowOverlay("export");
   }
@@ -1597,44 +1691,6 @@ function WorkspaceCanvas() {
     notify(quickFigma ? "已下载，直接拖进 Figma 即可" : "已下载完整任务包");
   }
 
-  async function loadCredentials() {
-    const response = await fetch("/api/ai-credentials", { cache: "no-store" });
-    if (response.ok) {
-      const payload = await response.json() as { credentials?: typeof credentialState; managed?: ManagedAiState };
-      const rows = payload.credentials ?? [];
-      setCredentialState(rows);
-      if (payload.managed) setManagedAi(payload.managed);
-      const qwen = rows.find((item) => item.provider === "qwen");
-      setCredentialForm({ provider: "qwen", apiKey: "", model: providerCatalog.qwen.models[0], baseUrl: qwen?.baseUrl || "https://dashscope.aliyuncs.com/compatible-mode/v1" });
-      if (qwen) setCredentialForm((value) => ({ ...value, apiKey: "" }));
-    }
-    setModal("credentials");
-  }
-
-  async function saveCredential() {
-    setLoadingCredential(true);
-    const existing = credentialState.find((item) => item.provider === credentialForm.provider);
-    const response = await fetch("/api/ai-credentials", {
-      method: credentialForm.apiKey ? "POST" : existing ? "PATCH" : "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(credentialForm.apiKey ? credentialForm : { provider: credentialForm.provider, model: credentialForm.model }),
-    });
-    const payload = await response.json().catch(() => ({}));
-    setLoadingCredential(false);
-    if (!response.ok) return notify(payload.error || "模型服务验证失败");
-    setCredentialForm((value) => ({ ...value, apiKey: "" }));
-    await loadCredentials();
-    notify(existing && !credentialForm.apiKey ? "已使用保存的 Key 更新模型" : "模型服务已验证并保存");
-  }
-
-  async function deleteCredential(provider: ProviderId) {
-    const response = await fetch("/api/ai-credentials?provider=" + encodeURIComponent(provider), { method: "DELETE" });
-    if (!response.ok) return notify("删除模型服务失败");
-    setCredentialToDelete(null);
-    await loadCredentials();
-    notify("已删除模型服务");
-  }
-
   function focusSearchMatch(index: number) {
     if (!searchMatchIds.length) return;
     const normalized = (index + searchMatchIds.length) % searchMatchIds.length;
@@ -1682,10 +1738,15 @@ function WorkspaceCanvas() {
   const hasCanvasContent = nodes.length > 0;
   const hasSelection = selectedIds.length > 0;
   const selectionCanAnalyze = selectedNodes.some(isAnalyzableNode);
+  const dockAgent = () => {
+    setAgentRevealed(false);
+    setAssistantOpen(false);
+    setAgentHintVisible(false);
+  };
 
   return (
     <main
-      className={"workspace-shell" + (focusMode ? " focus-mode" : "") + (resizingRail ? " is-resizing" : "") + (linkMode ? " link-mode" : "")}
+      className={"workspace-shell" + (focusMode ? " focus-mode" : "") + (resizingRail ? " is-resizing" : "")}
       style={{ "--left-rail-width": `${leftRailWidth}px`, "--right-rail-width": `${rightRailWidth}px` } as CSSProperties}
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
@@ -1695,10 +1756,10 @@ function WorkspaceCanvas() {
       }}
     >
       <header className="topbar">
-        <div className="brand"><span className="brand-mark"><WorkspaceIcon name="archive" size={18} /></span><div><strong>InspoAtlas</strong><small>参考档案</small></div></div>
+        <div className="brand"><span className="brand-mark" title="小in"><img src="/inspo-sprite.png" alt="小in" /></span><div><strong>InspoAtlas</strong><small>灵感图谱</small></div></div>
         <div
           className="board-title editable"
-          title="双击原位修改画布名称"
+          title="双击重命名当前作品"
           onDoubleClick={() => boardId && startBoardRename(boardId, boardTitle, "header")}
         >
           <span className="live-dot" />
@@ -1721,15 +1782,17 @@ function WorkspaceCanvas() {
         <div className="top-actions">
           <button className="button ghost icon-button" onClick={undo} title="撤销" aria-label="撤销"><WorkspaceIcon name="undo" /></button>
           <button className="button ghost icon-button" onClick={redo} title="重做" aria-label="重做"><WorkspaceIcon name="redo" /></button>
+          <button className="button ghost theme-toggle" onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} title={theme === "light" ? "切换深色模式" : "切换浅色模式"} aria-label={theme === "light" ? "切换深色模式" : "切换浅色模式"}><span aria-hidden="true">{theme === "light" ? "☾" : "☀"}</span></button>
           <button className={"button soft focus-top-button" + (focusMode ? " active" : "")} onClick={() => setFocusMode((value) => !value)}>{focusMode ? "退出专注" : "专注模式"}</button>
-          <UserMenu onOpenAiSettings={() => setModal("credentials")} />
+          <button className="button primary export-top-button" onClick={startExportWizard}><WorkspaceIcon name="upload" size={15} />输出</button>
+          <UserMenu />
         </div>
       </header>
 
       <aside className="left-rail" style={{ width: leftRailWidth }}>
-        <button className="rail-action" onClick={() => setModal("import")}><WorkspaceIcon name="add" size={16} />添加参考</button>
+        <button className="rail-action" onClick={() => setModal("new-work")} title="新建作品"><WorkspaceIcon name="add" size={16} />新建作品</button>
         <nav>
-          <p>我的画布 <button onClick={() => void createBoard()} aria-label="新建画布">＋</button></p>
+          <p>我的作品 <span>{boards.length}</span></p>
           {boards.map((board) => (
             <div
               key={board.id}
@@ -1737,7 +1800,8 @@ function WorkspaceCanvas() {
               role="button"
               tabIndex={0}
               aria-current={board.id === boardId ? "page" : undefined}
-              aria-label={`打开画布：${board.title}`}
+              aria-label={`打开作品：${board.title}`}
+              title={`${board.title} · ${new Date(board.createdAt || board.updatedAt).toLocaleDateString("zh-CN")}`}
               onClick={() => setBoardId(board.id)}
               onKeyDown={(event) => {
                 if (event.key === "Enter" || event.key === " ") {
@@ -1782,11 +1846,6 @@ function WorkspaceCanvas() {
             </div>
           ))}
         </nav>
-        <div className="quota-card">
-          <div><span>AI 服务</span><strong title={connectedModelLabel}>{connectedModelLabel}</strong></div>
-          <p>拆解、定位与搜索统一使用。</p>
-          <button onClick={() => void loadCredentials()}>AI 设置</button>
-        </div>
       </aside>
       <div className="rail-resizer rail-resizer-left" role="separator" aria-label="调整左侧栏宽度" aria-orientation="vertical" title="拖动调整左栏宽度" onDoubleClick={() => setLeftRailWidth(242)} onPointerDown={(event) => startRailResize("left", event)} />
 
@@ -1804,24 +1863,19 @@ function WorkspaceCanvas() {
           </div>}
         </div>}
         <div className="canvas-toolbar" role="toolbar" aria-label="画布工具">
-          <button className={!hasCanvasContent ? "is-primary" : ""} onClick={() => setModal("import")} title="添加网页、文字或文件夹"><WorkspaceIcon name="add" /><small>添加</small></button>
+          <ToolbarMoreMenu onImport={() => setModal("import")} onUpload={() => fileInput.current?.click()} onNote={() => createNote()} onGroup={() => createGroup()} />
           <button className={searchExpanded ? "is-active" : ""} onClick={() => setSearchExpanded((value) => !value)} disabled={!hasCanvasContent} title="搜索并定位画布节点"><WorkspaceIcon name="search" /><small>搜索</small></button>
           <button onClick={previewOrganize} disabled={!hasCanvasContent} title="按设计重点整理画布"><WorkspaceIcon name="arrange" /><small>整理</small></button>
           <button onClick={() => void fitView({ padding: 0.18, duration: 320 })} disabled={!hasCanvasContent} title="定位全部节点"><WorkspaceIcon name="fit" /><small>定位</small></button>
           <button className={showMiniMap ? "is-active" : ""} onClick={() => setShowMiniMap((value) => !value)} disabled={!hasCanvasContent} title={showMiniMap ? "收起小地图" : "打开小地图"}><WorkspaceIcon name="map" /><small>小地图</small></button>
           <span aria-hidden="true" />
-          <button className={"agent-launcher" + (assistantOpen ? " is-active" : "")} onClick={() => { setAssistantScope(selectedIds.length ? "selection" : "board"); setAssistantOpen((value) => !value); }} title="打开灵感 Agent" aria-label={assistantOpen ? "关闭灵感 Agent" : "打开灵感 Agent"}><WorkspaceIcon name="ask" /><small>Agent</small></button>
           {hasSelection ? <>
             {selected?.data.kind === "image" && <button className="is-context" onClick={() => setEditingImage({ assetId: String(selected.data.assetId), sourceUrl: String(selected.data.imageUrl), title: selected.data.title, nodeId: selected.id })} title="裁剪、旋转、蒙版并保存副本"><WorkspaceIcon name="archive" /><small>编辑素材</small></button>}
             {selectionCanAnalyze && <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()} title="拆解所选参考"><WorkspaceIcon name="analyze" /><small>拆解</small></button>}
             {selectedIds.length > 1 && <button className="is-context" onClick={() => createGroup()} title="将所选卡片组成分组"><WorkspaceIcon name="folder" /><small>分组</small></button>}
             {selected?.data.workflowStage === "analysis" && <button className="is-context" onClick={() => openContractSetup([selected.id])} title="整合当前拆解"><WorkspaceIcon name="archive" /><small>整合</small></button>}
-            {selected?.data.workflowStage === "contract" && <button className="is-context" onClick={() => { setRightTab("export"); setInspectorOpen(true); }} title="打开输出"><WorkspaceIcon name="upload" /><small>输出</small></button>}
             <button onClick={() => requestDeleteNodes(selectedIds)} title="删除所选"><WorkspaceIcon name="trash" /><small>删除</small></button>
-            <ToolbarMoreMenu onUpload={() => fileInput.current?.click()} onNote={() => createNote()} onGroup={() => createGroup()} linkMode={linkMode} onLink={() => { const next = !linkMode; setLinkMode(next); if (next) { setRelationView("all"); notify("从卡片端口拖到目标卡片即可连线"); } }} />
-          </> : <>
-            <ToolbarMoreMenu onUpload={() => fileInput.current?.click()} onNote={() => createNote()} onGroup={() => createGroup()} linkMode={linkMode} onLink={() => { const next = !linkMode; setLinkMode(next); if (next) { setRelationView("all"); notify("从卡片端口拖到目标卡片即可连线"); } }} />
-          </>}
+          </> : null}
         </div>
         {!hasCanvasContent && <section className="canvas-empty" aria-label="开始画布">
           <span><WorkspaceIcon name="archive" size={21} /></span>
@@ -1858,7 +1912,7 @@ function WorkspaceCanvas() {
           onChange={(event) => event.target.files?.length && void addMedia(event.target.files, true)}
         />
         {hasCanvasContent && <label className="relation-view" title="关联线只用于辅助整理，默认仅显示当前卡片相关关系">
-          <span>{connecting ? "松开完成" : linkMode ? "拖到目标端口" : "连线显示"}</span>
+          <span>{connecting ? "松开完成" : "连线显示"}</span>
           <select aria-label="连线显示范围" value={relationView} onChange={(event) => setRelationView(event.target.value as RelationView)}>
             <option value="selection">所选卡片</option>
             <option value="hidden">隐藏</option>
@@ -1881,12 +1935,12 @@ function WorkspaceCanvas() {
           onPaneClick={onPaneClick}
           onNodeDragStop={onNodeDragStop}
           onMoveEnd={(_, viewport) => setViewportState(viewport)}
-          selectionOnDrag={!organizePreview && !linkMode}
+          selectionOnDrag={!organizePreview}
           selectionMode={SelectionMode.Full}
           multiSelectionKeyCode={["Shift", "Control", "Meta"]}
           panOnDrag={[2]}
           deleteKeyCode={null}
-          nodesDraggable={!organizePreview && !linkMode}
+          nodesDraggable={!organizePreview}
           nodesConnectable={!organizePreview}
           connectOnClick
           connectionRadius={48}
@@ -1924,7 +1978,6 @@ function WorkspaceCanvas() {
             <header><span>下一步</span><button onClick={() => setNextStepMenu(null)}>×</button></header>
             {isAnalyzableNode(node) && <button onClick={() => runNextStep("analyze")}><i>✦</i><span><strong>{node.data.analysisId ? "重新拆解" : "拆解参考"}</strong><small>提取版式、视觉规则和组件</small></span><b>→</b></button>}
             {node.data.workflowStage === "analysis" && <button onClick={() => runNextStep("contract")}><i>◇</i><span><strong>{selectedAnalysisCount > 1 ? `整合所选 ${selectedAnalysisCount} 张拆解` : "整合为方案"}</strong><small>合并共同点，标出冲突与取舍</small></span><b>→</b></button>}
-            {node.data.workflowStage === "contract" && node.data.contract?.brief?.purpose !== "organize" && <button onClick={() => runNextStep("export")}><i>↗</i><span><strong>选择输出方式</strong><small>按任务准备 Figma、开发或生图文件</small></span><b>→</b></button>}
           </aside>;
         })()}
 
@@ -1961,72 +2014,78 @@ function WorkspaceCanvas() {
           </div>
         )}
 
-        {workflowOverlay === "export" && contract && (
+        {workflowOverlay === "export" && (
           <div className="workflow-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setWorkflowOverlay(null); }}>
-            <section className="workflow-dialog export-dialog">
-              <header><div><small>方案输出</small><h2>{contract.title}</h2><p>{contract.brief?.purpose ? `已确认「${designPurposeLabel(contract.brief.purpose)}」。选择下一步的工作方式。` : "先定义任务，再选择输出。"}</p></div><button onClick={() => setWorkflowOverlay(null)} aria-label="关闭"><WorkspaceIcon name="close" size={16} /></button></header>
-              <div className="export-dialog-grid">
-                {contract.brief?.purpose ? <article className="purpose-export-summary"><small>当前任务</small><strong>{designPurposeLabel(contract.brief.purpose)}</strong><p>{contract.brief.objective}</p><dl><div><dt>场景</dt><dd>{contract.brief.context || "待补充"}</dd></div><div><dt>保留</dt><dd>{contract.brief.keep || "待补充"}</dd></div><div><dt>排除</dt><dd>{contract.brief.avoid || "待补充"}</dd></div></dl></article> : <div><h3>想得到什么</h3><div className="export-goal-list">{productionGoalOptions.map((option) => <button key={option.id} className={productionGoal === option.id ? "is-active" : ""} onClick={() => { setProductionGoal(option.id); setExportDestination(exportDestinationsByGoal[option.id][0].id); setExportComplete(false); }}><i>{option.step}</i><div><strong>{option.title}</strong><small>{option.description}</small></div><span>{productionGoal === option.id ? "✓" : "›"}</span></button>)}</div></div>}
-                <div><h3>接下来在哪里工作</h3><div className="export-destination-list">{exportDestinations.map((option) => <button key={option.id} className={activeDestination.id === option.id ? "is-active" : ""} onClick={() => { setExportDestination(option.id); setExportComplete(false); }}><span className="destination-icon">{option.icon}</span><div><strong>{option.title}</strong><small>{option.description}</small></div><i>{activeDestination.id === option.id ? "✓" : "›"}</i></button>)}</div></div>
+            <section className="workflow-dialog export-dialog export-wizard" role="dialog" aria-modal="true" aria-label="输出任务">
+              <header><div><h2>输出任务</h2><p>选择目标与后续工具，确认后生成对应文件。</p></div><button onClick={() => setWorkflowOverlay(null)} aria-label="关闭"><WorkspaceIcon name="close" size={16} /></button></header>
+              <div className="export-progress" aria-label="输出步骤">
+                <span className={exportStep >= 1 ? "is-active" : ""}><i>1</i>想得到什么</span><b />
+                <span className={exportStep >= 2 ? "is-active" : ""}><i>2</i>在哪里工作</span><b />
+                <span className={exportStep >= 3 ? "is-active" : ""}><i>3</i>确认输出</span>
               </div>
-              <div className="export-result-preview"><span>将为你准备</span><strong>{activeDestination.deliverable}</strong><p>{activeDestination.nextStep}</p></div>
-              <footer><button className="button soft" onClick={() => setWorkflowOverlay(null)}>返回画布</button><button className="button primary" onClick={() => void exportPackage(activeDestination.id === "figma-design" ? "quick" : "full")} disabled={exportBusy}>{exportBusy ? "正在准备…" : activeDestination.action}</button></footer>
-              {exportComplete && <div className="export-receipt" role="status"><span>✓</span><div><strong>已下载</strong><small>{exportComplete === "quick" ? "直接拖进 Figma 即可继续编辑。" : "解压后按使用说明继续。"}</small></div></div>}
+              {exportStep === 1 && <div className="export-wizard-body"><h3>这次想得到什么？</h3><div className="export-goal-list">{productionGoalOptions.map((option) => <button key={option.id} className={productionGoal === option.id ? "is-active" : ""} onClick={() => { setProductionGoal(option.id); setExportDestination(exportDestinationsByGoal[option.id][0].id); setExportComplete(false); }}><i>{option.step}</i><div><strong>{option.title}</strong><small>{option.description}</small></div><span>{productionGoal === option.id ? "✓" : "›"}</span></button>)}</div></div>}
+              {exportStep === 2 && <div className="export-wizard-body"><h3>接下来在哪里工作？</h3><div className="export-destination-list">{exportDestinations.map((option) => <button key={option.id} className={activeDestination.id === option.id ? "is-active" : ""} onClick={() => { setExportDestination(option.id); setExportComplete(false); }}><span className="destination-icon">{option.icon}</span><div><strong>{option.title}{option.recommended && <em>推荐</em>}</strong><small>{option.description}</small></div><i>{activeDestination.id === option.id ? "✓" : "›"}</i></button>)}</div>{activeDestination.glossary && <details className="export-glossary"><summary>{activeDestination.glossary.term}</summary><p>{activeDestination.glossary.explanation}</p></details>}</div>}
+              {exportStep === 3 && <div className="export-wizard-body"><h3>确认输出任务</h3><div className="export-result-preview"><span>将为你准备</span><strong>{activeDestination.deliverable}</strong><p>{activeDestination.nextStep}</p></div>{contract ? <p className="export-source-note">使用方案「{contract.title}」中的参考与取舍。</p> : <p className="export-source-note">还没有保存的设计方案。请先在右侧「方案」中整合并保存参考。</p>}{exportComplete && <div className="export-receipt" role="status"><span>✓</span><div><strong>已下载</strong><small>{exportComplete === "quick" ? "SVG 可直接拖入 Figma 编辑。" : "解压后按使用说明继续。"}</small></div></div>}</div>}
+              <footer><button className="button soft" onClick={() => exportStep === 1 ? setWorkflowOverlay(null) : setExportStep((exportStep - 1) as 1 | 2)}>{exportStep === 1 ? "返回画布" : "上一步"}</button>{exportStep < 3 ? <button className="button primary" onClick={() => setExportStep((exportStep + 1) as 2 | 3)}>下一步</button> : contract ? <button className="button primary" onClick={() => void exportPackage(activeDestination.id === "figma-design" ? "quick" : "full")} disabled={exportBusy}>{exportBusy ? "正在准备…" : activeDestination.action}</button> : <button className="button primary" onClick={() => { setWorkflowOverlay(null); setRightTab("baseline"); setInspectorOpen(true); }}>去制作方案</button>}</footer>
+              {exportStep === 3 && contract && activeDestination.id === "figma-design" && <details className="figma-advanced"><summary>需要 Variables 和组件草稿？</summary><p>完整导入包需在 Figma Desktop 中安装一次本地插件。</p><button onClick={() => void exportPackage("full")} disabled={exportBusy}>下载完整导入包</button></details>}
             </section>
           </div>
         )}
 
-        {assistantOpen && !organizePreview && (
+        {assistantOpen && !organizePreview && portalReady && createPortal(
           <aside className="canvas-director agent-drawer" aria-label="灵感 Agent">
             <header className="agent-header">
-              <div><span>灵感 Agent</span><h2>搜索、校对与整理</h2></div>
+              <div className="agent-header-identity"><img src="/inspo-sprite.png" alt="" /><div><h2>小in</h2><span>你的设计小助手</span></div></div>
               <button onClick={() => setAssistantOpen(false)} aria-label="关闭灵感 Agent"><WorkspaceIcon name="close" size={16} /></button>
             </header>
-            <section className="agent-presets" aria-label="示范任务">
-              {agentPromptPresets.map((preset) => <button key={preset.title} onClick={() => { setAssistantGoal(preset.goal); setAssistantQuestion(preset.question); setResearchBrief(preset.goal); }}><strong>{preset.title}</strong><small>{preset.question}</small></button>)}
-            </section>
-            <label className="direction-goal">
-              <span>这次想完成什么</span>
-              <textarea value={assistantGoal} onChange={(event) => setAssistantGoal(event.target.value)} placeholder="例如：为创意岗位招聘网站寻找简洁、清晰的方向。" />
-            </label>
-            <section className="assistant-context" aria-label="引用画布节点">
-              <header><span>已引用的节点</span><small>在画布中点选即可引用</small></header>
-              {selectedNodes.length ? <div className="assistant-context-chips">{selectedNodes.slice(0, 6).map((node) => <span key={node.id}>{node.data.title}</span>)}{selectedNodes.length > 6 && <span>+{selectedNodes.length - 6}</span>}</div> : <p>尚未选择节点。可直接询问公开灵感搜索。</p>}
-            </section>
-            <div className="assistant-scope" role="group" aria-label="参考范围">
-              <button className={assistantScope === "selection" ? "active" : ""} disabled={!selectedIds.length} onClick={() => setAssistantScope("selection")}>所选 {selectedIds.length || ""}</button>
-              <button className={assistantScope === "board" ? "active" : ""} onClick={() => setAssistantScope("board")}>整张画布</button>
+            <div className="agent-conversation" ref={assistantScrollRef} aria-live="polite">
+              {!assistantMessages.length && <div className="agent-chat-empty">
+                <img src="/inspo-sprite.png" alt="" />
+                <p><TypewriterText text={agentWelcome} /></p>
+                {!assistantHasInteracted && <div className="agent-starters" aria-label="试试这样提问">
+                  {agentPromptPresets.map((question) => <button key={question} onClick={() => void askDesignAssistant(question)} disabled={assistantBusy}><span>{question}</span><WorkspaceIcon name="chevron" size={15} /></button>)}
+                </div>}
+              </div>}
+              {assistantMessages.map((message, index) => (
+                <article className={"agent-chat-message agent-chat-message-" + message.role} key={message.id ?? `${message.role}-${index}`}>
+                  <header><strong>{message.role === "user" ? "你" : "小in"}</strong></header>
+                  <p>{message.role === "assistant" ? <TypewriterText text={message.content} animate={index === assistantMessages.length - 1 && completedAnswerId !== message.id} speed={Math.max(10, Math.min(40, Math.floor(5_000 / message.content.length)))} onComplete={() => setCompletedAnswerId(message.id ?? null)} /> : message.content}</p>
+                  {message.role === "assistant" && (index < assistantMessages.length - 1 || completedAnswerId === message.id) && Boolean(message.sources?.length) && <div className="agent-sources" aria-label="参考网站">{message.sources?.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer"><strong>{source.title}</strong><span>{new URL(source.url).hostname}</span></a>)}</div>}
+                  {message.role === "assistant" && index === assistantMessages.length - 1 && completedAnswerId === message.id && !assistantBusy && Boolean(message.followUps?.length) && <div className="agent-followups" aria-label="继续追问">
+                    {message.followUps?.map((question) => <button key={question} onClick={() => void askDesignAssistant(question)}><span>{question}</span><WorkspaceIcon name="chevron" size={14} /></button>)}
+                  </div>}
+                  {message.role === "assistant" && (index < assistantMessages.length - 1 || completedAnswerId === message.id) && !message.content.startsWith("未能完成：") && <div className="agent-reply-actions"><button onClick={() => placeDirectionOnCanvas(message)}>放到画布</button>{message.id && (message.feedback ? <small>{message.feedback === "helpful" ? "✓ 有帮助" : "✓ 需改进"}</small> : <><button onClick={() => void submitAssistantFeedback(message, "helpful")}>有用</button><button onClick={() => void submitAssistantFeedback(message, "needs-work", "not-actionable")}>不够具体</button></>)}</div>}
+                </article>
+              ))}
+              {assistantBusy && <div className="agent-typing" role="status"><i /><i /><i /><span>小in 正在思考…</span></div>}
             </div>
-            <section className="agent-work-actions" aria-label="直接操作">
-              <button disabled={!selectionCanAnalyze} onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()}><WorkspaceIcon name="analyze" size={15} />拆解所选</button>
-              <button disabled={!hasCanvasContent} onClick={previewOrganize}><WorkspaceIcon name="arrange" size={15} />整理画布</button>
-              <button disabled={selectedNodes.filter((node) => node.data.workflowStage === "analysis" && node.data.status === "ready").length < 2} onClick={() => openContractSetup(selectedNodes.filter((node) => node.data.workflowStage === "analysis").map((node) => node.id))}><WorkspaceIcon name="archive" size={15} />整合方案</button>
-            </section>
-            <section className="agent-research" aria-label="公开灵感候选">
-              <header><div><span>公开候选</span><small>搜索结果不会自动加入画布</small></div><button disabled={researchBusy || assistantGoal.trim().length < 4} onClick={() => void exploreResearch(assistantGoal)}>{researchBusy ? "搜索中…" : "探索灵感"}</button></header>
-              {researchError && <p className="research-error" role="alert">{researchError}</p>}
-              {researchCandidates.length > 0 && <div className="agent-candidates">{researchCandidates.map((candidate) => <article key={candidate.url}><small>{candidate.domain}</small><strong>{candidate.title}</strong><p>{candidate.reason}</p><footer><button onClick={() => window.open(candidate.url, "_blank", "noopener,noreferrer")}>打开采集</button><button onClick={() => void addAsset(candidate.url, { title: candidate.title, body: candidate.reason ? `灵感候选 · ${candidate.reason}` : "灵感候选" })}>加入链接</button></footer></article>)}</div>}
-            </section>
-            <div className="direction-actions">
-              <button onClick={() => void askDesignAssistant("指出最该保留的设计规则，并标注依据。")} disabled={assistantBusy || !assistantGoal.trim()}>保留</button>
-              <button onClick={() => void askDesignAssistant("指出需要取舍的冲突，并标注依据。")} disabled={assistantBusy || !assistantGoal.trim()}>取舍</button>
-              <button onClick={() => void askDesignAssistant("给出一条可以立即执行的方向。")} disabled={assistantBusy || !assistantGoal.trim()}>建议</button>
-            </div>
-            {assistantBusy && <div className="direction-loading"><i /><span>核对中…</span></div>}
-            {assistantMessages.filter((message) => message.role === "assistant").slice(-1).map((message, index) => (
-              <article className="direction-result" key={message.id ?? index}>
-                <header><strong>建议</strong><small>{assistantScope === "selection" ? `所选 ${selectedIds.length} 张` : "整张画布"}</small></header>
-                <p>{message.content}</p>
-                {!message.content.startsWith("未能完成：") && <div className="direction-result-actions"><button onClick={() => placeDirectionOnCanvas(message)}>放到画布</button>{message.id && (message.feedback ? <small>{message.feedback === "helpful" ? "✓ 有帮助" : "✓ 需改进"}</small> : <><button onClick={() => void submitAssistantFeedback(message, "helpful")}>有用</button><button onClick={() => void submitAssistantFeedback(message, "needs-work", "not-actionable")}>不够具体</button></>)}</div>}
-              </article>
-            ))}
-            <form className="direction-question" onSubmit={(event) => { event.preventDefault(); void askDesignAssistant(); }}>
-              <label htmlFor="direction-question">需求与问题</label>
-              <div><textarea id="direction-question" value={assistantQuestion} onChange={(event) => setAssistantQuestion(event.target.value)} placeholder="描述需求，或基于已引用节点继续提问。" /><button disabled={assistantBusy || !assistantGoal.trim() || !assistantQuestion.trim()}>发送</button></div>
+            <form className="agent-composer" onSubmit={(event) => { event.preventDefault(); void askDesignAssistant(); }}>
+              {selectedIds.length > 0 && <span className="agent-composer-context">已引用画布中的 {selectedIds.length} 张卡片</span>}
+              <label htmlFor="direction-question" className="sr-only">给小in发送消息</label>
+              <textarea id="direction-question" value={assistantQuestion} onChange={(event) => { setAssistantQuestion(event.target.value); if (event.target.value.trim()) setAssistantHasInteracted(true); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void askDesignAssistant(); } }} placeholder="和小in聊聊你的想法…" rows={3} />
+              <div className="agent-composer-footer"><span>{voiceListening ? "正在听你说…" : "Enter 发送 · Shift + Enter 换行"}</span><div><button type="button" className={voiceListening ? "agent-voice is-listening" : "agent-voice"} onClick={toggleVoiceInput} disabled={assistantBusy || !voiceSupported} aria-label={voiceListening ? "停止语音输入" : "语音输入"} title={voiceSupported ? "语音输入" : "当前浏览器不支持语音输入"}><WorkspaceIcon name="mic" size={18} /></button><button type="submit" className="agent-send" disabled={assistantBusy || !assistantQuestion.trim()}>发送 <WorkspaceIcon name="chevron" size={15} /></button></div></div>
             </form>
-          </aside>
+          </aside>, document.body
         )}
       </section>
+      {portalReady && createPortal(
+        <div className={"agent-entry" + (agentRevealed ? "" : " is-peeking") + (assistantOpen ? " is-chatting" : "")}>
+          {agentRevealed && !assistantOpen && agentHintVisible && <div className="agent-hint"><TypewriterText text={agentWelcome} speed={110} /><button onClick={() => setAgentHintVisible(false)} aria-label="关闭提示">×</button></div>}
+          <button
+            className={"assistant-orb" + (assistantOpen ? " is-open" : "")}
+            onClick={() => {
+              if (!agentRevealed) { setAgentRevealed(true); return; }
+              setAssistantOpen((value) => !value);
+              setAgentHintVisible(false);
+            }}
+            onContextMenu={(event) => { if (agentRevealed) { event.preventDefault(); dockAgent(); } }}
+            title={agentRevealed ? "小in · 灵感 Agent" : "看看小in"}
+            aria-label={agentRevealed ? (assistantOpen ? "关闭小in设计助手" : "打开小in设计助手") : "让小in露出全身"}
+            aria-expanded={assistantOpen}
+          ><img src="/inspo-sprite.png" alt="" /></button>
+          {agentRevealed && <button className="agent-dock-button" onClick={dockAgent} aria-label="收起小in到侧边" title="收起小in到侧边"><span>收起</span><WorkspaceIcon name="chevron" size={16} /></button>}
+        </div>, document.body
+      )}
       <div className="rail-resizer rail-resizer-right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" title="拖动调整右栏宽度" onDoubleClick={() => setRightRailWidth(322)} onPointerDown={(event) => startRailResize("right", event)} />
 
       <aside className={"inspector" + (inspectorOpen ? " is-open" : "")} style={{ width: rightRailWidth }}>
@@ -2034,7 +2093,6 @@ function WorkspaceCanvas() {
         <div className="inspector-tabs">
           <button className={rightTab === "asset" ? "active" : ""} onClick={() => { setRightTab("asset"); setInspectorOpen(true); }}>参考</button>
           <button className={rightTab === "baseline" ? "active" : ""} onClick={() => { setRightTab("baseline"); setInspectorOpen(true); }}>方案</button>
-          <button className={rightTab === "export" ? "active" : ""} onClick={() => { setRightTab("export"); setInspectorOpen(true); }}>输出</button>
         </div>
         {rightTab === "asset" ? (
           selectedIds.length > 1 ? (
@@ -2057,7 +2115,7 @@ function WorkspaceCanvas() {
               {!!selected.data.regions?.length && <section className="inspect-block"><div className="block-heading"><h3>识别到的组件</h3><small>生成方案时自动汇总</small></div><div className="region-list simple">{selected.data.regions.map((region) => <div key={region.id}><span className="region-preview">{region.type}</span><div><strong>{region.label}</strong><small>{Math.round((region.confidence ?? 0) * 100)}% 可信</small></div></div>)}</div></section>}
             </>
           ) : <div className="empty-inspector"><WorkspaceIcon name="archive" size={22} /><strong>等待参考</strong><p>选中素材后，拆解结果与来源会显示在这里。</p><span>采集 → 拆解 → 方案 → 输出</span></div>
-        ) : rightTab === "baseline" ? (
+        ) : (
           <section className="contract-panel">
             <span className="step-kicker">方案</span><h2>整合参考</h2>
             <p>选中卡片时只使用所选内容；否则使用全部拆解结果。</p>
@@ -2073,87 +2131,6 @@ function WorkspaceCanvas() {
               <button className="button soft wide" onClick={() => setWorkflowOverlay("contract")}>检查证据与取舍</button>
               <button className="button primary wide" onClick={() => void confirmBaseline()}>保存设计方案</button>
             </div>}
-          </section>        ) : (
-          <section className="export-panel export-flow">
-            <span className="step-kicker">第 3 步</span>
-            <h2>输出</h2>
-            <p>选择用途和接下来使用的工具。</p>
-
-            <div className="export-progress" aria-label="导出步骤">
-              <span className="is-active"><i>1</i>想做什么</span>
-              <b />
-              <span className="is-active"><i>2</i>去哪里用</span>
-              <b />
-              <span><i>3</i>开始制作</span>
-            </div>
-
-            <div className="export-section-heading"><small>第一步</small><h3>你想得到什么？</h3></div>
-            <div className="export-goal-list">
-              {productionGoalOptions.map((option) => (
-                <button
-                  key={option.id}
-                  className={productionGoal === option.id ? "is-active" : ""}
-                  onClick={() => {
-                    setProductionGoal(option.id);
-                    setExportDestination(exportDestinationsByGoal[option.id][0].id);
-                    setExportComplete(false);
-                  }}
-                >
-                  <i>{option.step}</i>
-                  <div><strong>{option.title}</strong><small>{option.description}</small></div>
-                  <span>{productionGoal === option.id ? "✓" : "›"}</span>
-                </button>
-              ))}
-            </div>
-
-            <div className="export-section-heading"><small>第二步</small><h3>接下来在哪里工作？</h3></div>
-            <div className="export-destination-list">
-              {exportDestinations.map((option) => (
-                <button
-                  key={option.id}
-                  className={activeDestination.id === option.id ? "is-active" : ""}
-                  onClick={() => { setExportDestination(option.id); setExportComplete(false); }}
-                >
-                  <span className="destination-icon">{option.icon}</span>
-                  <div>
-                    <strong>{option.title}{option.recommended && <em>推荐</em>}</strong>
-                    <small>{option.description}</small>
-                  </div>
-                  <i>{activeDestination.id === option.id ? "✓" : "›"}</i>
-                </button>
-              ))}
-            </div>
-
-            {activeDestination.glossary && (
-              <details className="export-glossary">
-                <summary>{activeDestination.glossary.term}</summary>
-                <p>{activeDestination.glossary.explanation}</p>
-              </details>
-            )}
-
-            <div className="export-result-preview">
-              <span>将为你准备</span>
-              <strong>{activeDestination.deliverable}</strong>
-              <p><b>下一步：</b>{activeDestination.nextStep}</p>
-            </div>
-
-            <button className="button primary wide export-now" onClick={() => void exportPackage(activeDestination.id === "figma-design" ? "quick" : "full")} disabled={exportBusy}>
-              {exportBusy ? "正在准备…" : activeDestination.action}
-            </button>
-
-            {activeDestination.id === "figma-design" && (
-              <details className="figma-advanced">
-                <summary>需要真正的 Variables 和组件？</summary>
-                <p>快速画板是可编辑图层；完整导入包会再创建 Variables 和组件草稿，但需要在 Figma Desktop 里安装一次本地插件。</p>
-                <button onClick={() => void exportPackage("full")} disabled={exportBusy}>下载完整导入包</button>
-              </details>
-            )}
-            {exportComplete && (
-              <div className="export-receipt" role="status">
-                <span>✓</span>
-                <div><strong>已下载</strong><small>{exportComplete === "quick" ? "把 SVG 文件直接拖进 Figma，文字、色块和图形都能继续编辑。" : "解压后查看“使用说明.txt”。"}</small></div>
-              </div>
-            )}
           </section>
         )}
       </aside>
@@ -2190,14 +2167,40 @@ function WorkspaceCanvas() {
 
       {deleteRequest && <div className="modal-backdrop"><section className="modal confirm-modal"><span className="confirm-icon">⌫</span><h2>{deleteRequest.title}</h2><p>{deleteRequest.body}</p><footer><button className="button soft" onClick={() => setDeleteRequest(null)}>取消</button><button className="button danger-fill" onClick={() => deleteRequest.kind === "board" ? void performDeleteBoard(deleteRequest.ids[0]) : performDeleteNodes(deleteRequest.ids)}>确认删除</button></footer></section></div>}
 
-      {modal === "import" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><section className="modal import-modal" onMouseDown={(event) => event.stopPropagation()}><button className="modal-close" onClick={() => setModal(null)}>×</button><h2>添加节点</h2><p>图片、视频、音频、网页与文字都会保留在当前个人空间。</p><div className="import-choice"><button className="import-drop" onClick={() => fileInput.current?.click()}><span>⇧</span><strong>上传本地素材</strong><small>图片最大 20 MB；视频和音频最大 100 MB</small></button><button className="import-drop folder-drop" onClick={() => folderInput.current?.click()}><span>▱</span><strong>导入文件夹</strong><small>自动建立同名分组，保留图片、视频和音频</small></button></div><div className="url-entry"><input autoFocus value={urlValue} onChange={(event) => setUrlValue(event.target.value)} placeholder="粘贴公开网页链接，或直接写下一段文字" /><button onClick={() => urlValue.trim() && void addAsset(urlValue.trim())}>添加</button></div></section></div>}
+      {modal === "new-work" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><form className="modal new-work-modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); void createBoard(undefined, newWorkTitle); }}><button type="button" className="modal-close" onClick={() => setModal(null)} aria-label="关闭"><WorkspaceIcon name="close" size={16} /></button><span className="modal-kicker">你的下一次灵感记录</span><h2>新建作品</h2><p>每件作品对应一张独立画布，参考、连线和方案会保存在这件作品里。</p><label htmlFor="new-work-title">作品名称</label><input id="new-work-title" autoFocus maxLength={120} value={newWorkTitle} onChange={(event) => setNewWorkTitle(event.target.value)} placeholder="例如：旅行品牌视觉探索" /><footer><button type="button" className="button soft" onClick={() => setModal(null)}>取消</button><button type="submit" className="button primary" disabled={!newWorkTitle.trim()}>创建作品</button></footer></form></div>}
 
-      {modal === "credentials" && <div className="modal-backdrop"><section className="modal credential-modal model-service-modal"><button className="modal-close" onClick={() => setModal(null)}>×</button><h2>连接百炼</h2><p>固定使用 Qwen 3.7 Plus。</p>
-        <div className="model-fixed-card"><div><span>{managedAi.available || qwenCredential ? "已连接" : "尚未连接"}</span><strong>Qwen 3.7 Plus</strong></div><small>{managedAi.available ? "由工作区提供" : qwenCredential ? `百炼 Key · •••• ${qwenCredential.lastFour}` : "粘贴百炼 API Key 后连接"}</small></div>
-        {!managedAi.available && <div className="credential-form"><label><span>百炼 API Key</span><input type="password" value={credentialForm.apiKey} onChange={(event) => setCredentialForm({ ...credentialForm, apiKey: event.target.value, provider: "qwen", model: providerCatalog.qwen.models[0] })} placeholder={qwenCredential ? "留空则使用已保存 Key" : "粘贴 API Key"} /></label><label><span>工作区兼容端点</span><input value={credentialForm.baseUrl} onChange={(event) => setCredentialForm({ ...credentialForm, baseUrl: event.target.value })} placeholder="https://{WorkspaceId}.cn-beijing.maas.aliyuncs.com/compatible-mode/v1" /></label><div className="credential-actions"><a href={providerCatalog.qwen.platformUrl} target="_blank" rel="noreferrer">打开百炼 ↗</a><button className="button primary" disabled={(!credentialForm.apiKey && !qwenCredential) || loadingCredential} onClick={() => void saveCredential()}>{loadingCredential ? "验证中…" : qwenCredential && !credentialForm.apiKey ? "重新验证" : "连接"}</button></div></div>}
-        {!managedAi.available && qwenCredential && <button className="credential-remove-link" onClick={() => setCredentialToDelete("qwen")}>移除已保存的 API Key</button>}
-      </section></div>}
-      {credentialToDelete && <div className="modal-backdrop"><section className="modal credential-delete-modal"><h2>移除百炼 API Key？</h2><p>移除后无法使用拆解、定位和搜索。</p><div className="confirm-actions"><button className="button soft" onClick={() => setCredentialToDelete(null)}>取消</button><button className="button danger" onClick={() => void deleteCredential(credentialToDelete)}>删除</button></div></section></div>}
+      {modal === "import" && (
+        <div className="modal-backdrop" onMouseDown={() => setModal(null)}>
+          <section className="modal import-modal" role="dialog" aria-modal="true" aria-labelledby="import-modal-title" onMouseDown={(event) => event.stopPropagation()}>
+            <button type="button" className="modal-close" onClick={() => setModal(null)} aria-label="关闭"><WorkspaceIcon name="close" size={17} /></button>
+            <header className="import-modal-header">
+              <img className="import-modal-mascot" src="/inspo-sprite.png" alt="小in" />
+              <div>
+                <h2 id="import-modal-title">添加节点</h2>
+                <p>图片、视频、音频、网页与文字都会保留在当前个人空间。</p>
+              </div>
+            </header>
+            <div className="import-choice">
+              <button type="button" className="import-drop" onClick={() => fileInput.current?.click()}>
+                <span className="import-drop-icon"><WorkspaceIcon name="upload" size={22} /></span>
+                <strong>上传本地素材</strong>
+                <small>图片最大 20 MB；视频和音频最大 100 MB</small>
+              </button>
+              <button type="button" className="import-drop folder-drop" onClick={() => folderInput.current?.click()}>
+                <span className="import-drop-icon"><WorkspaceIcon name="folder" size={22} /></span>
+                <strong>导入文件夹</strong>
+                <small>自动建立同名分组，保留图片、视频和音频</small>
+              </button>
+            </div>
+            <div className="url-entry">
+              <input aria-label="公开网页链接" autoFocus value={urlValue} onChange={(event) => setUrlValue(event.target.value)} placeholder="粘贴公开网页链接" />
+              <button type="button" onClick={() => urlValue.trim() && void addAsset(urlValue.trim())}>添加</button>
+            </div>
+          </section>
+        </div>
+      )}
+
+
 
       {editingImage && <ImageEditor assetId={editingImage.assetId} sourceUrl={editingImage.sourceUrl} title={editingImage.title} onClose={() => setEditingImage(null)} onSaved={addDerivativeLayer} />}
 
@@ -2317,9 +2320,9 @@ function mergeAnalysis(node: CanvasNode, analysis: Record<string, unknown>): Can
 function friendlyAnalysisError(value: unknown) {
   if (typeof value !== "string" || !value.trim()) return "拆解失败，请重试。";
   const message = value.trim();
-  if (/aborted|aborterror|timed? out|timeout/i.test(message)) return "视觉分析用时超过当前限制。系统已保留素材，请重试；若仍超时，可先缩小截图或更换响应更快的视觉模型。";
+  if (/aborted|aborterror|timed? out|timeout/i.test(message)) return "视觉分析超时。系统已保留素材，请缩小截图后重试。";
   if (/JSON 无法解析|invalid_(?:type|value)|expected|zod|too_(?:big|small)|\[\s*\{/i.test(message) || message.length > 260) {
-    return "模型返回的分析格式不完整，系统已保留原素材。请重试；若持续失败，请在 AI 设置中更换支持结构化输出的模型。";
+    return "模型返回的分析格式不完整，系统已保留原素材。请稍后重试。";
   }
   return message;
 }

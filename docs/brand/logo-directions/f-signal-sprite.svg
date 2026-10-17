@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="方向 F：信号精灵">
+  <rect width="128" height="128" rx="30" fill="#101914"/>
+  <path d="M64 25c-23 0-40 17-40 39s17 39 40 39 40-17 40-39-17-39-40-39Z" fill="#A9D789"/>
+  <path d="M40 73c0-8 6-14 14-14h20c8 0 14 6 14 14v4c0 8-6 14-14 14H54c-8 0-14-6-14-14v-4Z" fill="#17241B"/>
+  <circle cx="55" cy="75" r="3.5" fill="#E8F5D6"/>
+  <circle cx="73" cy="75" r="3.5" fill="#E8F5D6"/>
+  <path d="M64 25V17" stroke="#A9D789" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="64" cy="14" r="5" fill="#E8F5D6"/>
+  <circle cx="104" cy="35" r="4" fill="#A9D789"/>
+</svg>

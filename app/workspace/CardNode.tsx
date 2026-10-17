@@ -65,19 +65,18 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
   if (data.workflowStage === "contract") {
     const contract = data.contract;
     const reviewCount = (contract?.conflicts.length || 0) + (contract?.unresolved.length || 0);
-    const isOrganizeOnly = contract?.brief?.purpose === "organize";
     const purposeLabel = contract?.brief?.purpose === "web-ui-recreate" ? "网页 / UI 复刻" : contract?.brief?.purpose === "brand-extension" ? "品牌视觉延展" : contract?.brief?.purpose === "campaign-system" ? "批量活动页系统" : contract?.brief?.purpose === "organize" ? "仅整理灵感" : "待确定任务";
     return (
       <article className={"canvas-card workflow-card contract-workflow-card" + (selected ? " is-selected" : "")}>
         <NodeResizer minWidth={280} minHeight={190} isVisible={selected} />
         <Handle id="input" type="target" position={Position.Left} className="node-handle node-port-input nodrag" title="连接拆解结果" />
-        {!isOrganizeOnly && <Handle id="output" type="source" position={Position.Right} className="node-handle node-port-output nodrag" title="拖出并选择输出" />}
-        <button className="contract-card-button nodrag" onClick={(event) => { event.stopPropagation(); action(isOrganizeOnly ? "focus-contract" : "open-export"); }}>
+        <Handle id="output" type="source" position={Position.Right} className="node-handle node-port-output nodrag" title="连接其他卡片" />
+        <button className="contract-card-button nodrag" onClick={(event) => { event.stopPropagation(); action("focus-contract"); }}>
           <span className="card-kind">方案</span>
           <InlineTitle id={id} value={data.title} />
           <small>{purposeLabel} · {contract?.sourceAssetIds.length || 0} 张参考{reviewCount ? ` · ${reviewCount} 项待核对` : " · 证据已汇总"}</small>
-          <p>{contract?.principles.slice(0, 2).join("；") || "打开后检查方案并选择输出方式"}</p>
-          <b>{isOrganizeOnly ? "在方案面板继续整理" : "打开输出选项"} <span>→</span></b>
+          <p>{contract?.principles.slice(0, 2).join("；") || "打开后检查方案内容与来源"}</p>
+          <b>查看方案 <span>→</span></b>
         </button>
       </article>
     );
@@ -277,7 +276,7 @@ function InlineBody({ id, value, className = "", placeholder, multiline = false 
 function displayAnalysisError(value: string | undefined) {
   if (!value) return "拆解失败，请重试。";
   if (/JSON 无法解析|invalid_(?:type|value)|expected|zod|too_(?:big|small)|\[\s*\{/i.test(value) || value.length > 260) {
-    return "模型返回的分析格式不完整。请重试；若持续失败，请在 AI 设置中更换支持结构化输出的模型。";
+    return "模型返回的分析格式不完整。请稍后重试。";
   }
   return value;
 }

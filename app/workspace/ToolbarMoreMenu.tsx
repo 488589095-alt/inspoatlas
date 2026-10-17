@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { WorkspaceIcon } from "./WorkspaceIcon";
 
-export function ToolbarMoreMenu({ onUpload, onNote, onGroup, linkMode, onLink }: { onUpload(): void; onNote(): void; onGroup(): void; linkMode: boolean; onLink(): void }) {
+export function ToolbarMoreMenu({ onImport, onUpload, onNote, onGroup }: { onImport(): void; onUpload(): void; onNote(): void; onGroup(): void }) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -28,12 +28,12 @@ export function ToolbarMoreMenu({ onUpload, onNote, onGroup, linkMode, onLink }:
 
   const run = (callback: () => void) => { callback(); setOpen(false); };
   return <>
-    <button ref={triggerRef} className={open ? "is-active" : ""} onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-haspopup="menu" title="更多画布操作"><WorkspaceIcon name="note" /><small>更多</small></button>
+    <button ref={triggerRef} className={open ? "is-active" : ""} onClick={() => setOpen((value) => !value)} aria-expanded={open} aria-haspopup="menu" title="添加节点"><WorkspaceIcon name="add" /><small>添加</small></button>
     {open && typeof document !== "undefined" && createPortal(<div ref={menuRef} className="toolbar-more-popover" role="menu" style={{ top: position.top, left: position.left }}>
-      <button autoFocus role="menuitem" onClick={() => run(onUpload)}><WorkspaceIcon name="upload" />上传图片</button>
+      <button autoFocus role="menuitem" onClick={() => run(onImport)}><WorkspaceIcon name="add" />添加参考</button>
+      <button role="menuitem" onClick={() => run(onUpload)}><WorkspaceIcon name="upload" />上传图片</button>
       <button role="menuitem" onClick={() => run(onNote)}><WorkspaceIcon name="note" />新建备注</button>
       <button role="menuitem" onClick={() => run(onGroup)}><WorkspaceIcon name="folder" />新建分组</button>
-      <button role="menuitem" className={linkMode ? "is-active" : ""} onClick={() => run(onLink)}><WorkspaceIcon name="connect" />{linkMode ? "完成连线" : "连接卡片"}</button>
     </div>, document.body)}
   </>;
 }

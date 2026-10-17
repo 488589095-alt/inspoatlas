@@ -56,7 +56,7 @@ test("深色创作工作台使用单一 token 基线并按状态收敛操作", a
   ]);
 
   assert.doesNotMatch(exportStyles, /@import "\.\/workspace-v/);
-  assert.match(styles, /--desk-accent: #9abf72/);
+  assert.match(styles, /--desk-accent: #bbaaf2/);
   assert.match(styles, /"Microsoft YaHei UI"/);
   assert.match(styles, /:focus-visible/);
   assert.match(styles, /prefers-reduced-motion: reduce/);
@@ -72,7 +72,7 @@ test("深色创作工作台使用单一 token 基线并按状态收敛操作", a
   assert.match(styles, /var\(--left-rail-width, 242px\)/);
   assert.match(styles, /\.rail-resizer-left/);
   assert.match(styles, /@container \(min-width: 170px\)/);
-  assert.match(workspace, /<small>添加<\/small>/);
+  assert.match(workspace, /<ToolbarMoreMenu onImport=/);
   assert.match(workspace, /<small>拆解<\/small>/);
   assert.match(workspace, /<small>整理<\/small>/);
   assert.match(workspace, /<small>定位<\/small>/);

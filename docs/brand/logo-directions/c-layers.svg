@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="方向 C：参考叠层">
+  <rect x="8" y="8" width="104" height="104" rx="27" fill="#151c19"/>
+  <rect x="24" y="31" width="57" height="57" rx="8" fill="none" stroke="#657c6b" stroke-width="5"/>
+  <rect x="38" y="22" width="58" height="58" rx="8" fill="#151c19" stroke="#edf2ed" stroke-width="5"/>
+  <path d="M49 64 61 47 72 56 85 37" fill="none" stroke="#b5d98c" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="85" cy="37" r="6" fill="#b5d98c"/>
+</svg>

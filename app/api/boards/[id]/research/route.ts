@@ -18,7 +18,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const [board] = await getDb().select({ id: boards.id }).from(boards).where(and(eq(boards.id, boardId), eq(boards.ownerId, user.id))).limit(1);
     if (!board) throw new HttpError(404, "画布不存在");
     const credential = await loadCredential(user.id, "qwen", false);
-    if (!credential) throw new HttpError(409, "请先连接百炼 Qwen");
+    if (!credential) throw new HttpError(503, "工作区 AI 服务暂不可用，请稍后重试");
     const startedAt = Date.now();
     const candidates = await researchWithQwen(input, credential);
     await getDb().insert(events).values({

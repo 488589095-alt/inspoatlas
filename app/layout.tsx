@@ -11,7 +11,7 @@ export async function generateMetadata(): Promise<Metadata> {
     metadataBase,
     title: { default: "InspoAtlas 灵感图谱", template: "%s · InspoAtlas" },
     description: "面向 UI/产品设计师的 AI 灵感工作台。",
-    icons: { icon: "/favicon.svg", shortcut: "/favicon.svg" },
+    icons: { icon: "/inspo-sprite.png", shortcut: "/inspo-sprite.png" },
     openGraph: {
       type: "website", locale: "zh_CN", siteName: "InspoAtlas 灵感图谱",
       title: "InspoAtlas 灵感图谱", description: "让零散灵感，变成可复用的设计语言。",
@@ -22,6 +22,6 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <html lang="zh-CN"><body>{children}</body></html>;
+  return <html lang="zh-CN" className="theme-light-root"><body>{children}</body></html>;
 }
 

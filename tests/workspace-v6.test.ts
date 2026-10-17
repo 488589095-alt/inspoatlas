@@ -19,8 +19,8 @@ test("画布采用底部工具坞、单一专注入口且分析错误不会原�
   assert.match(workspace, /专注模式/);
   assert.ok(workspace.includes("fitView({ padding: 0.18, duration: 320 })"));
   assert.match(workspace, />定位</);
-  assert.match(workspace, />AI 设置<\/button>/);
-  assert.match(workspace, /providerCatalog/);
+  assert.doesNotMatch(workspace, />AI 设置<\/button>/);
+  assert.match(workspace, /agentWelcome/);
   assert.match(workspace, /friendlyAnalysisError/);
   assert.match(card, /displayAnalysisError/);
   assert.ok(styles.includes("grid-template-columns: repeat(3, minmax(0, 1fr)) !important"));

@@ -18,7 +18,7 @@ type PersonalSpace = {
 
 type SessionPayload = { user?: SessionUser; space?: PersonalSpace };
 
-export function UserMenu({ onOpenAiSettings }: { onOpenAiSettings: () => void }) {
+export function UserMenu() {
   const [session, setSession] = useState<SessionPayload | null>(null);
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
@@ -61,13 +61,13 @@ export function UserMenu({ onOpenAiSettings }: { onOpenAiSettings: () => void })
               <div><strong>{user.displayName}</strong><small>{user.email}</small></div>
             </header>
             <div className="account-status"><i />个人空间</div>
-            <dl className="space-metrics"><div><dt>画布</dt><dd>{space?.boardCount ?? 0}</dd></div><div><dt>素材</dt><dd>{space?.assetCount ?? 0}</dd></div></dl>
-            <section className="recent-boards"><span>最近画布</span>{space?.recentBoards?.length ? space.recentBoards.map((board) => <Link key={board.id} href={`/?board=${encodeURIComponent(board.id)}`} onClick={() => setOpen(false)}>{board.title}</Link>) : <small>还没有画布</small>}</section>
-            <footer><button onClick={() => { setOpen(false); onOpenAiSettings(); }}>AI 设置</button><a href="/signout-with-chatgpt?return_to=/">退出登录</a></footer>
+            <dl className="space-metrics"><div><dt>作品</dt><dd>{space?.boardCount ?? 0}</dd></div><div><dt>素材</dt><dd>{space?.assetCount ?? 0}</dd></div></dl>
+            <section className="recent-boards"><span>最近作品</span>{space?.recentBoards?.length ? space.recentBoards.map((board) => <Link key={board.id} href={`/?board=${encodeURIComponent(board.id)}`} onClick={() => setOpen(false)}>{board.title}</Link>) : <small>还没有作品</small>}</section>
+            <footer><span>AI 服务由工作区统一提供</span><a href="/signout-with-chatgpt?return_to=/" target="_top">退出登录</a></footer>
           </> : <>
             <header><span>IA</span><div><strong>登录 InspoAtlas</strong><small>登录后即可创建个人空间</small></div></header>
-            <p className="account-empty">你的画布、素材和 AI 使用记录会归入个人空间。</p>
-            <footer><Link href="/">登录</Link></footer>
+            <p className="account-empty">你的作品、素材和 AI 使用记录会归入个人空间。</p>
+            <footer><a href="/signin-with-chatgpt?return_to=/" target="_top">登录</a></footer>
           </>}
         </section>
       )}

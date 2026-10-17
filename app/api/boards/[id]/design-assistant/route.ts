@@ -1,16 +1,17 @@
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { generateTextWithProvider, type TextMessage } from "@/packages/ai/src";
+import { generateTextWithProvider, researchWithQwen, type TextMessage } from "@/packages/ai/src";
 import { providerIds } from "@/packages/domain/src";
 import { ensureCoreTables, getDb } from "@/db";
 import { analyses, assets, boards, events } from "@/db/schema";
 import { loadCredential } from "../../../_credentials";
 import { currentUser, errorResponse, HttpError, newId } from "../../../_lib";
+import { parseAssistantTurn } from "@/app/workspace/assistantConversation";
 
-export const DESIGN_ASSISTANT_PROMPT_VERSION = "direction-v3";
+export const DESIGN_ASSISTANT_PROMPT_VERSION = "chat-v4";
 
 const inputSchema = z.object({
-  goal: z.string().trim().min(2).max(2_000),
+  goal: z.string().trim().max(2_000).optional(),
   provider: z.enum(providerIds).optional(),
   question: z.string().trim().min(1).max(2_000),
   scope: z.enum(["selection", "board"]).default("board"),
@@ -31,7 +32,11 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!board) throw new HttpError(404, "画布不存在");
 
     const credential = await loadCredential(user.id, input.provider, false);
-    if (!credential) throw new HttpError(409, "请先添加一个可用的模型服务");
+    if (!credential) throw new HttpError(503, "工作区 AI 服务暂不可用，请稍后重试");
+    const searchCandidates = credential.provider === "qwen" && /(?:找|推荐|搜索|搜|参考).{0,12}(?:网站|网页|站点|案例)|(?:网站|网页|站点).{0,12}(?:参考|推荐|案例)/.test(input.question)
+      ? await researchWithQwen({ brief: input.question.slice(0, 1_200), limit: 8 }, credential).catch(() => [])
+      : [];
+    const sources = searchCandidates.slice(0, 3).map(({ title, url, reason }) => ({ title, url, reason }));
 
     const assetRows = await db.select().from(assets)
       .where(and(eq(assets.boardId, boardId), eq(assets.ownerId, user.id)));
@@ -45,8 +50,6 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const scene = asRecord(board.scene);
     const sceneNodes = Array.isArray(scene.nodes) ? scene.nodes.map(asRecord) : [];
     const scopedNodes = sceneNodes.filter((node) => input.scope === "board" || selected.has(String(node.id ?? ""))).slice(0, 60);
-    if (!scopedNodes.length) throw new HttpError(400, input.scope === "selection" ? "所选内容里没有可分析的卡片" : "画布里还没有参考内容");
-
     const references = scopedNodes.map((node, index) => {
       const data = asRecord(node.data);
       const assetId = String(data.assetId ?? node.id ?? "");
@@ -70,21 +73,22 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     }).join("\n\n");
 
     const prompt = [
-      "这是设计流程里的“定方向”环节，不是自由聊天。只帮助用户判断参考中什么该保留、调整或避开。",
-      "只使用卡片中真实存在的信息；关键判断用【卡片标题】标注依据。不要虚构图片细节、设计规范或来源。",
-      "目标过于模糊时只提出最多 2 个关键问题；否则严格按‘保留、调整、避开、下一步’四段回答，每段不超过 3 条，总字数不超过 600 字。",
-      "用直接、具体、可执行的中文，不说‘赋能、打造、沉浸式、智能化’等空泛词，不介绍自己的身份。",
-      `设计目标：${input.goal}`,
-      `分析范围：${input.scope === "selection" ? "当前选择" : "整张画布"}`,
-      `参考卡片：\n${references}`,
+      "你是设计助手小in，和用户进行自然的一对一对话。帮助用户澄清需求、寻找网站或视觉方向、比较参考、整理灵感并确定可执行的下一步。直接回答当前问题，不强制套用固定的设计流程。",
+      "用自然、具体的中文回答。需求不清时先给一个可行方向，再问最多两个关键问题。回答尽量控制在 600 字内。",
+      "画布参考仅是可用的上下文。引用具体卡片时用【卡片标题】标注依据；不要声称看过没有提供的页面、图片或搜索结果。若没有画布参考，也要基于用户描述正常交流，并明确哪些细节需要用户补充。不要编造网址或实时搜索结果。",
+      sources.length ? `已验证的公开网站候选（只能使用这些链接，不要编造其他网址）：\n${sources.map((source) => `${source.title}：${source.url}。适配理由：${source.reason}`).join("\n")}` : "当前没有已验证的公开网站候选。如果用户想找参考网站，先给搜索思路，不要虚构具体链接。",
+      "只返回一个 JSON 对象，不要 Markdown 代码围栏。格式：{\"answer\":\"给用户的直接回答\",\"followUps\":[\"用户可能会问的第一人称问题\",\"第二个问题\",\"第三个问题\"]}。followUps 给 2 到 3 个自然且与本次回答相关的问题，写成用户可以直接点击发送的口吻，不重复原问题。",
+      input.goal ? `补充目标：${input.goal}` : "",
+      `参考范围：${input.scope === "selection" ? "当前选择" : "整张画布"}`,
+      scopedNodes.length ? `参考卡片：\n${references}` : "当前画布没有可引用的参考卡片。",
       `用户问题：${input.question}`,
-    ].join("\n\n");
+    ].filter(Boolean).join("\n\n");
     const messages: TextMessage[] = [
       ...input.history.map((item) => ({ role: item.role, content: item.content })),
       { role: "user", content: prompt },
     ];
     const startedAt = Date.now();
-    const answer = await generateTextWithProvider(messages, credential);
+    const { answer, followUps } = parseAssistantTurn(await generateTextWithProvider(messages, credential));
     const responseId = newId("assistant-turn");
     await db.insert(events).values({
       id: newId("event"),
@@ -102,6 +106,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         referenceCount: scopedNodes.length,
         historyCount: input.history.length,
         responseCharacters: answer.length,
+        followUpCount: followUps.length,
+        sourceCount: sources.length,
         latencyMs: Date.now() - startedAt,
       },
       createdAt: new Date().toISOString(),
@@ -109,6 +115,8 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     return Response.json({
       id: responseId,
       answer,
+      followUps,
+      sources,
       provider: credential.provider,
       model: credential.model,
       promptVersion: DESIGN_ASSISTANT_PROMPT_VERSION,

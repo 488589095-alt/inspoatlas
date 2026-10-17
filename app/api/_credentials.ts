@@ -1,9 +1,5 @@
 import { env } from "cloudflare:workers";
-import { desc, eq } from "drizzle-orm";
-import { assertProviderConfig, decryptApiKey, providerDefaults, type ProviderConfig } from "@/packages/ai/src";
-import { providerIds, type ProviderId } from "@/packages/domain/src";
-import { getDb } from "@/db";
-import { aiCredentials } from "@/db/schema";
+import { assertProviderConfig, providerDefaults, type ProviderConfig } from "@/packages/ai/src";
 import { HttpError } from "./_lib";
 
 const developmentKey = "5c497cd39f8ccf5cf8c96f430db1a1f78f6b9810f103811492442076c9537730";
@@ -20,33 +16,27 @@ export type AiRunMode = "managed" | "byok";
 export type LoadedCredential = ProviderConfig & { runMode: AiRunMode };
 
 type ManagedAiEnv = {
-  MANAGED_AI_PROVIDER?: string;
   MANAGED_AI_API_KEY?: string;
-  MANAGED_AI_MODEL?: string;
   MANAGED_AI_BASE_URL?: string;
 };
 
 function managedEnv(): ManagedAiEnv {
   const runtime = env as unknown as ManagedAiEnv;
   return {
-    MANAGED_AI_PROVIDER: runtime.MANAGED_AI_PROVIDER ?? process.env.MANAGED_AI_PROVIDER,
     MANAGED_AI_API_KEY: runtime.MANAGED_AI_API_KEY ?? process.env.MANAGED_AI_API_KEY,
-    MANAGED_AI_MODEL: runtime.MANAGED_AI_MODEL ?? process.env.MANAGED_AI_MODEL,
     MANAGED_AI_BASE_URL: runtime.MANAGED_AI_BASE_URL ?? process.env.MANAGED_AI_BASE_URL,
   };
 }
 
 export function managedAiSummary() {
   const values = managedEnv();
-  const provider = providerIds.includes(values.MANAGED_AI_PROVIDER as ProviderId)
-    ? values.MANAGED_AI_PROVIDER as ProviderId
-    : values.MANAGED_AI_API_KEY ? "qwen" as const : null;
+  const provider = values.MANAGED_AI_API_KEY ? "qwen" as const : null;
   if (!provider) return { available: false as const, provider: null, model: null, supportsVision: false };
   const defaults = providerDefaults[provider];
   return {
     available: Boolean(values.MANAGED_AI_API_KEY),
     provider,
-    model: values.MANAGED_AI_MODEL || defaults.model,
+    model: defaults.model,
     supportsVision: defaults.supportsVision,
   };
 }
@@ -59,7 +49,7 @@ function managedCredential(needsVision: boolean): LoadedCredential | null {
   const config: LoadedCredential = {
     provider: summary.provider,
     apiKey: values.MANAGED_AI_API_KEY,
-    model: values.MANAGED_AI_MODEL || defaults.model,
+    model: defaults.model,
     baseUrl: values.MANAGED_AI_BASE_URL ?? defaults.baseUrl,
     supportsVision: defaults.supportsVision,
     runMode: "managed",
@@ -68,13 +58,7 @@ function managedCredential(needsVision: boolean): LoadedCredential | null {
   return config;
 }
 
-export async function loadCredential(ownerId: string, provider?: string, needsVision = false) {
-  const managed = !provider ? managedCredential(needsVision) : null;
-  if (managed) return managed;
-  const rows = await getDb().select().from(aiCredentials).where(eq(aiCredentials.ownerId, ownerId)).orderBy(desc(aiCredentials.updatedAt));
-  const row = rows.find((item) => item.provider === (provider ?? "qwen") && (!needsVision || item.supportsVision))
-    ?? rows.find((item) => (!provider || item.provider === provider) && (!needsVision || item.supportsVision));
-  if (!row) return null;
-  const apiKey = await decryptApiKey({ ciphertext: row.ciphertext, iv: row.iv, authTag: row.authTag }, credentialMasterKey());
-  return { provider: row.provider, apiKey, model: row.provider === "openai" ? providerDefaults.openai.model : row.model, baseUrl: row.baseUrl, supportsVision: row.supportsVision, runMode: "byok" } satisfies LoadedCredential;
+export async function loadCredential(_ownerId: string, _provider?: string, needsVision = false) {
+  // User requests always use the workspace-managed model. Existing personal keys stay stored for migration.
+  return managedCredential(needsVision);
 }

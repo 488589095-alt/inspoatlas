@@ -16,7 +16,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     if (!asset) throw new HttpError(404, "图片素材不存在");
     if (asset.kind !== "image" || !asset.objectKey) throw new HttpError(400, "只能拆分图片素材");
     const credential = await loadCredential(user.id, "qwen", true);
-    if (!credential) throw new HttpError(409, "请先连接百炼 Qwen");
+    if (!credential) throw new HttpError(503, "工作区 AI 服务暂不可用，请稍后重试");
     const object = await getAssetBucket().get(asset.objectKey);
     if (!object) throw new HttpError(404, "图片文件不存在");
     const contentType = String((asset.metadata as { contentType?: string }).contentType || object.httpMetadata?.contentType || "image/png");
