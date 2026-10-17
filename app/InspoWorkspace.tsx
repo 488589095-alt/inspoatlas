@@ -1902,18 +1902,21 @@ function WorkspaceCanvas() {
         >
           <span className="live-dot" />
           {editingBoardId === boardId && editingBoardSurface === "header" ? (
-            <input
-              autoFocus
-              value={boardDraft}
-              onClick={(event) => event.stopPropagation()}
-              onDoubleClick={(event) => event.stopPropagation()}
-              onChange={(event) => setBoardDraft(event.target.value)}
-              onBlur={() => void commitBoardRename(boardId)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") void commitBoardRename(boardId);
-                if (event.key === "Escape") { setEditingBoardId(null); setEditingBoardSurface(null); }
-              }}
-            />
+            <span className="board-name-editor" data-value={boardDraft || " "}>
+              <input
+                autoFocus
+                aria-label="作品名称"
+                value={boardDraft}
+                onClick={(event) => event.stopPropagation()}
+                onDoubleClick={(event) => event.stopPropagation()}
+                onChange={(event) => setBoardDraft(event.target.value)}
+                onBlur={() => void commitBoardRename(boardId)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") void commitBoardRename(boardId);
+                  if (event.key === "Escape") { setEditingBoardId(null); setEditingBoardSurface(null); }
+                }}
+              />
+            </span>
           ) : <b>{boardTitle}</b>}
           <small>{savedState}</small>
         </div>
@@ -1958,18 +1961,22 @@ function WorkspaceCanvas() {
             >
               <span className="nav-thumb cool" />
               {editingBoardId === board.id && editingBoardSurface === "sidebar" ? (
-                <input
-                  autoFocus
-                  value={boardDraft}
-                  onClick={(event) => event.stopPropagation()}
-                  onChange={(event) => setBoardDraft(event.target.value)}
-                  onBlur={() => void commitBoardRename(board.id)}
-                  onKeyDown={(event) => {
-                    event.stopPropagation();
-                    if (event.key === "Enter") void commitBoardRename(board.id);
-                    if (event.key === "Escape") { setEditingBoardId(null); setEditingBoardSurface(null); }
-                  }}
-                />
+                <span className="board-name-editor" data-value={boardDraft || " "}>
+                  <input
+                    autoFocus
+                    aria-label="作品名称"
+                    value={boardDraft}
+                    onClick={(event) => event.stopPropagation()}
+                    onDoubleClick={(event) => event.stopPropagation()}
+                    onChange={(event) => setBoardDraft(event.target.value)}
+                    onBlur={() => void commitBoardRename(board.id)}
+                    onKeyDown={(event) => {
+                      event.stopPropagation();
+                      if (event.key === "Enter") void commitBoardRename(board.id);
+                      if (event.key === "Escape") { setEditingBoardId(null); setEditingBoardSurface(null); }
+                    }}
+                  />
+                </span>
               ) : (
                 <span>{board.title}</span>
               )}

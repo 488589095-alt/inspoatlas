@@ -32,7 +32,7 @@
 html, body { width: 100%; min-width: 0; min-height: 100%; margin: 0; }
 body { overflow: hidden; color: var(--desk-text); background: var(--desk-canvas); font-family: "PingFang SC", "Microsoft YaHei UI", "Noto Sans CJK SC", system-ui, sans-serif; font-size: 14px; }
 button, input, textarea, select { font: inherit; }
-button { color: inherit; }
+button { color: inherit; white-space: nowrap; word-break: keep-all; writing-mode: horizontal-tb; }
 button:not(:disabled), summary { cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: .46; }
 ::selection { color: #241d3d; background: var(--desk-accent-strong); }
@@ -60,7 +60,7 @@ code, kbd, .board-title small, .quota-card strong, .relation-view, .card-meta, .
   z-index: 30;
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: var(--left-rail-width, 242px) minmax(0, 1fr) var(--right-rail-width, 322px);
+  grid-template-columns: var(--left-rail-width, 242px) minmax(0, 1fr) max-content;
   align-items: center;
   gap: 0;
   min-width: 0;
@@ -77,9 +77,12 @@ code, kbd, .board-title small, .quota-card strong, .relation-view, .card-meta, .
 .board-title.editable { border: 0; background: transparent; text-align: left; }
 .board-title b { overflow: hidden; max-width: min(36vw, 440px); text-overflow: ellipsis; white-space: nowrap; }
 .board-title small { padding-left: 9px; border-left: 1px solid var(--desk-line); color: var(--desk-faint); font-size: 11px; font-weight: 500; }
-.board-title input { min-width: 140px; border: 0; border-bottom: 1px solid var(--desk-accent); outline: 0; color: inherit; background: transparent; }
+.board-name-editor { display: inline-grid; grid-template-columns: minmax(0, max-content); width: max-content; min-width: 2.5em; max-width: 100%; vertical-align: middle; font: inherit; line-height: inherit; }
+.board-name-editor::after { content: attr(data-value) " "; grid-area: 1 / 1; padding: 3px 7px; visibility: hidden; white-space: pre; font: inherit; }
+.board-name-editor input { grid-area: 1 / 1; box-sizing: border-box; width: 0; min-width: 100%; height: auto; padding: 3px 7px; border: 1px solid var(--desk-line-strong); border-radius: 7px; outline: 0; color: inherit; background: var(--desk-field); font: inherit; line-height: inherit; box-shadow: none; }
+.board-name-editor input:focus-visible { border-color: var(--desk-accent); outline: 0; box-shadow: 0 0 0 2px var(--desk-accent-wash); }
 .live-dot { width: 8px; height: 8px; flex: none; border-radius: 50%; background: var(--desk-accent); box-shadow: 0 0 0 4px var(--desk-accent-wash); }
-.top-actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
+.top-actions { display: flex; align-items: center; justify-content: flex-end; min-width: max-content; gap: 5px; }
 .user-menu { position: relative; }
 .user-trigger > span { display: grid; place-items: center; width: 28px; height: 28px; border: 1px solid var(--desk-line-strong); border-radius: 8px; color: var(--desk-accent-strong); background: var(--desk-field); font-size: 10px; font-weight: 750; letter-spacing: .03em; }
 .user-popover { position: absolute; z-index: 80; top: calc(100% + 10px); right: 0; display: grid; width: min(320px, calc(100vw - 32px)); gap: 14px; padding: 15px; border: 1px solid var(--desk-line-strong); border-radius: 12px; color: var(--desk-text); background: var(--desk-panel-raised); box-shadow: var(--desk-shadow-raised); }
@@ -118,7 +121,7 @@ code, kbd, .board-title small, .quota-card strong, .relation-view, .card-meta, .
 .rail-action svg { width: 19px; height: 19px; }
 .rail-action:not(:disabled):hover { background: var(--desk-accent-strong); }
 .rail-action:not(:disabled):active { transform: translateY(1px); }
-.left-rail nav { display: grid; width: 100%; min-height: 0; max-height: 48vh; margin-top: 18px; gap: 6px; overflow-y: auto; }
+.left-rail nav { display: grid; width: 100%; min-height: 0; max-height: 48vh; margin-top: 18px; gap: 6px; overflow-x: hidden; overflow-y: auto; }
 .left-rail nav > p, .left-rail .nav-item > span:not(.nav-thumb), .left-rail .board-menu-button, .left-rail .quota-card p, .left-rail .quota-card > div > span { display: none; }
 .nav-item { display: grid; place-items: center; width: 44px; min-height: 44px; margin: 0 auto; padding: 0; border: 1px solid transparent; border-radius: 10px; color: var(--desk-muted); background: transparent; cursor: pointer; }
 .nav-item:hover, .nav-item.active { border-color: var(--desk-line-strong); color: var(--desk-accent-strong); background: var(--desk-accent-wash); }
@@ -139,6 +142,7 @@ code, kbd, .board-title small, .quota-card strong, .relation-view, .card-meta, .
   .nav-item { grid-template-columns: 16px minmax(0, 1fr) 22px; place-items: unset; align-items: center; width: 100%; min-height: 42px; padding: 0 8px; }
   .nav-thumb { width: 10px; height: 10px; border-radius: 3px; }
   .left-rail .nav-item > span:not(.nav-thumb) { display: block; overflow: hidden; padding-left: 8px; font-size: 12px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .left-rail .nav-item > .board-name-editor { display: inline-grid; width: max-content; max-width: 100%; padding-left: 8px; overflow: hidden; text-overflow: clip; }
   .left-rail .board-menu-button { display: block; width: 22px; height: 28px; border: 0; color: var(--desk-faint); background: transparent; font-size: 13px; }
   .left-rail .board-menu-button:hover { color: var(--desk-accent-strong); }
   .quota-card { width: 100%; min-height: 66px; padding: 9px 10px; border-radius: 10px; }
@@ -199,8 +203,10 @@ code, kbd, .board-title small, .quota-card strong, .relation-view, .card-meta, .
 .node-search-results { max-height: 330px; overflow: auto; padding: 5px; }
 .node-search-results button { display: grid; grid-template-columns: 20px minmax(0, 1fr) auto; width: 100%; gap: 7px; padding: 8px; border-radius: 7px; text-align: left; }
 .node-search-results strong, .node-search-results small { display: block; }.node-search-results small { overflow: hidden; color: var(--desk-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.node-search-results b { font-size: 10px; }
-.relation-view { position: absolute; z-index: 11; top: 18px; right: 18px; display: flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 10px; border-radius: 10px; color: var(--desk-muted); font-size: 11px; }
-.relation-view select { border: 0; color: var(--desk-text); background: transparent; }
+.relation-view { position: absolute; z-index: 11; top: 18px; right: 18px; display: flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 10px; border-radius: 14px; color: var(--desk-muted); font-size: 11px; white-space: nowrap; }
+.relation-view select { max-width: 120px; padding: 6px 7px; border: 1px solid var(--desk-line); border-radius: 9px; outline: 0; color: var(--desk-text); background: var(--desk-field); cursor: pointer; }
+.relation-view select:focus-visible { border-color: var(--desk-accent); outline: 0; box-shadow: 0 0 0 2px var(--desk-accent-wash); }
+.relation-view option { color: var(--desk-text); background: var(--desk-panel-raised); }
 .minimap-toggle, .assistant-orb, .inspector-toggle { position: absolute; z-index: 12; display: grid; place-items: center; width: 52px; height: 52px; padding: 0; border-radius: 50%; }
 .minimap-toggle { right: 18px; bottom: 18px; }
 .assistant-orb { right: 78px; bottom: 18px; color: #241d3d; border-color: var(--desk-accent); background: var(--desk-accent); }
