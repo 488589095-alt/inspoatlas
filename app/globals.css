@@ -260,8 +260,7 @@ code, kbd, .board-title small, .quota-card strong, .relation-view, .card-meta, .
 .agent-drawer { position: fixed; z-index: 309; top: auto; right: 22px; bottom: 84px; width: min(430px, calc(100vw - 32px)); max-height: min(760px, calc(100dvh - 108px)); overflow-y: auto; border: 1px solid #625e82; border-radius: 14px; color: var(--desk-ink); background: #24243b; box-shadow: 0 24px 70px rgba(0,0,0,.5); }
 .agent-drawer textarea, .agent-drawer input { color: var(--desk-ink); background: #1d1d31; }
 
-.canvas-area .react-flow__minimap { left: 16px !important; right: auto !important; top: 78px !important; bottom: auto !important; width: 176px; height: 122px; }
-.canvas-area:has(.node-search.is-open) .react-flow__minimap { top: 330px !important; }
+.canvas-area .react-flow__minimap { left: 16px !important; right: auto !important; top: auto !important; bottom: 18px !important; width: 176px; height: 122px; }
 .node-search.is-open { left: 16px; width: min(560px, calc(100% - 32px)); transform: none; }
 .node-search.is-open .node-search-panel { width: 100%; }
 .node-search-kinds { overflow-x: auto; }
@@ -271,13 +270,13 @@ code, kbd, .board-title small, .quota-card strong, .relation-view, .card-meta, .
 .node-search-results > button > b { display: none; }
 .node-search-results > p { grid-column: 1 / -1; }
 
-.node-handle { width: 48px !important; height: 48px !important; border: 0 !important; background: transparent !important; box-shadow: none !important; opacity: .72; }
+.node-handle { width: 48px !important; height: 48px !important; border: 0 !important; background: transparent !important; box-shadow: none !important; opacity: .72; transform: translateY(-50%) !important; }
 .node-handle.react-flow__handle-left { left: -25px !important; }
 .node-handle.react-flow__handle-right { right: -25px !important; }
 .node-handle:hover { transform: translateY(-50%) !important; }
 .node-handle::before { content: ""; position: absolute; top: 50%; left: 50%; width: 18px; height: 18px; border: 3px solid #25243a; border-radius: 50%; background: var(--desk-accent); box-shadow: 0 0 0 1px var(--desk-accent); transform: translate(-50%, -50%) scale(1); transition: transform .16s ease, box-shadow .16s ease; pointer-events: none; }
 .node-port-input::before { background: #25243a; box-shadow: inset 0 0 0 3px var(--desk-accent), 0 0 0 1px var(--desk-accent); }
-.node-handle:hover::before, .node-handle.connecting::before, .node-handle.valid::before { transform: translate(-50%, -50%) scale(1.65); box-shadow: 0 0 0 4px rgba(187,170,242,.25); }
+.node-handle:hover::before, .node-handle.connecting::before, .node-handle.valid::before { transform: translate(-50%, -50%) scale(1.55); box-shadow: 0 0 0 4px rgba(187,170,242,.25); }
 .node-port-output::after { inset: 0; font-size: 14px; color: #241d3d; pointer-events: none; }
 .node-port-output:hover::after { font-size: 18px; }
 
@@ -292,8 +291,7 @@ code, kbd, .board-title small, .quota-card strong, .relation-view, .card-meta, .
 @media (max-width: 680px) {
   .assistant-orb { right: 12px; bottom: 78px; }
   .agent-drawer { right: 8px; bottom: 140px; width: calc(100vw - 16px); max-height: calc(100dvh - 156px); }
-  .canvas-area .react-flow__minimap { width: 132px; height: 92px; }
-  .canvas-area:has(.node-search.is-open) .react-flow__minimap { display: none; }
+  .canvas-area .react-flow__minimap { bottom: 86px !important; width: 132px; height: 92px; }
   .export-top-button { min-width: 62px; padding: 0 9px; }
 }
 
@@ -552,3 +550,34 @@ html.theme-light-root {
 @keyframes import-mascot-float { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-5px) rotate(2deg); } }
 @media (max-width: 520px) { .import-modal { padding: 22px 20px; } .import-modal-header { gap: 12px; margin-bottom: 17px; } .import-modal-mascot { width: 50px; height: 50px; } .import-choice { grid-template-columns: 1fr; gap: 10px; } .import-choice .import-drop { min-height: 104px; padding: 12px 15px; } .import-drop-icon { width: 30px; height: 30px; margin-bottom: 5px; } }
 @media (prefers-reduced-motion: reduce) { .import-modal-mascot { animation: none; } }
+
+/* Keep imported images inside the React Flow node that owns the resize frame. */
+.canvas-card:not(.card-group), .canvas-card > .card-surface { min-width: 0; max-width: 100%; }
+.canvas-card > .card-surface { flex: 1 1 auto; }
+.card-image { min-width: 0; overflow: hidden; }
+.card-image img { display: block; width: 100%; height: 100%; object-fit: cover; user-select: none; }
+
+.redesign-dialog { width: min(620px, calc(100vw - 32px)); padding: 24px; }
+.redesign-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.redesign-dialog > header h2 { margin: 4px 0 7px; }
+.redesign-dialog > header p { margin: 0; color: var(--desk-muted); font-size: 12px; line-height: 1.5; }
+.redesign-dialog > header button { width: 32px; height: 32px; flex: none; border: 0; border-radius: 8px; color: var(--desk-muted); background: transparent; font-size: 22px; }
+.redesign-dialog > header button:hover { color: var(--desk-text); background: var(--desk-accent-wash); }
+.redesign-dialog-preview { display: flex; align-items: center; gap: 12px; margin: 20px 0; padding: 10px; border: 1px solid var(--desk-line); border-radius: 12px; background: var(--desk-field); }
+.redesign-dialog-preview img { width: 70px; height: 70px; flex: none; border-radius: 8px; object-fit: cover; }
+.redesign-dialog-preview span { min-width: 0; }
+.redesign-dialog-preview strong, .redesign-dialog-preview small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.redesign-dialog-preview small { margin-top: 4px; color: var(--desk-muted); font-size: 11px; }
+.redesign-dialog label { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 700; }
+.redesign-dialog textarea { width: 100%; min-height: 126px; padding: 12px 14px; border: 1px solid var(--desk-line-strong); border-radius: 11px; color: var(--desk-text); background: var(--desk-field); line-height: 1.6; resize: vertical; }
+.redesign-dialog textarea:focus { outline: 2px solid var(--desk-accent); outline-offset: 1px; }
+.redesign-dialog-error { margin: 10px 0 0; color: var(--desk-danger); font-size: 12px; }
+.redesign-dialog > footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; }
+.redesign-dialog > footer small { color: var(--desk-faint); font-size: 11px; }
+.redesign-dialog > footer div { display: flex; gap: 8px; }
+.redesign-dialog > footer button { min-height: 36px; padding: 0 13px; border: 1px solid var(--desk-line-strong); border-radius: 9px; background: var(--desk-panel-raised); font-size: 12px; }
+.redesign-dialog > footer button.primary { border-color: var(--desk-accent); color: #241d3d; background: var(--desk-accent); font-weight: 700; }
+@media (max-width: 520px) { .redesign-dialog { padding: 18px; } .redesign-dialog > footer { align-items: stretch; flex-direction: column; } .redesign-dialog > footer div { justify-content: flex-end; } }
+
+/* The next-step menu uses pointer viewport coordinates and renders above the clipped canvas. */
+.next-step-menu.is-floating { position: fixed; z-index: 500; right: auto; bottom: auto; width: min(300px, calc(100vw - 24px)); }

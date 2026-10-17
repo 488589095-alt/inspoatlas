@@ -220,6 +220,10 @@ function WorkspaceCanvas() {
   const [agentHintVisible, setAgentHintVisible] = useState(false);
   const [portalReady, setPortalReady] = useState(false);
   const [editingImage, setEditingImage] = useState<{ assetId: string; sourceUrl: string; title: string; nodeId: string } | null>(null);
+  const [redesignImage, setRedesignImage] = useState<{ assetId: string; sourceUrl: string; title: string } | null>(null);
+  const [redesignPrompt, setRedesignPrompt] = useState("");
+  const [redesignBusy, setRedesignBusy] = useState(false);
+  const [redesignError, setRedesignError] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [leftRailWidth, setLeftRailWidth] = useState(242);
   const [rightRailWidth, setRightRailWidth] = useState(322);
@@ -733,18 +737,24 @@ function WorkspaceCanvas() {
     const point = "changedTouches" in event ? event.changedTouches[0] : event;
     setNextStepMenu({
       sourceId,
-      x: clamp(point?.clientX ?? window.innerWidth / 2, 180, window.innerWidth - 260),
+      x: clamp(point?.clientX ?? window.innerWidth / 2, 12, window.innerWidth - 320),
       y: clamp(point?.clientY ?? window.innerHeight / 2, 120, window.innerHeight - 260),
     });
   }
 
-  function runNextStep(action: "analyze" | "contract") {
+  function runNextStep(action: "analyze" | "contract" | "redesign") {
     const menu = nextStepMenu;
     if (!menu) return;
     const node = nodes.find((item) => item.id === menu.sourceId);
     setNextStepMenu(null);
     if (!node) return;
     if (action === "analyze") return void analyze(node.id);
+    if (action === "redesign" && node.data.kind === "image" && node.data.assetId && node.data.imageUrl) {
+      setRedesignPrompt("");
+      setRedesignError("");
+      setRedesignImage({ assetId: String(node.data.assetId), sourceUrl: String(node.data.imageUrl), title: node.data.title });
+      return;
+    }
     if (action === "contract") {
       const selectedAnalysisIds = nodes
         .filter((item) => selectedIds.includes(item.id) && item.data.workflowStage === "analysis" && item.data.status === "ready")
@@ -922,16 +932,37 @@ function WorkspaceCanvas() {
     const source = nodes.find((node) => String(node.data.assetId || "") === derivative.sourceAssetId);
     if (!source) return notify("图层已保存；原始素材不在当前画布。");
     const id = `element-${derivative.id}`;
+    const sourcePosition = absoluteNodePosition(nodes, source);
     remember();
     setNodes((current) => [...current, {
-      id, type: "inspo", position: { x: source.position.x + 332, y: source.position.y + 28 },
-      data: { kind: "element", title: derivative.title, derivativeId: derivative.id, sourceAssetId: derivative.sourceAssetId, sourceTitle: source.data.title, imageUrl: derivative.contentUrl, body: derivative.operation === "mask" ? "可编辑图层" : "编辑副本", tags: ["图层"] },
+      id, type: "inspo", position: { x: sourcePosition.x + nodeWidth(source) + 56, y: sourcePosition.y + 28 },
+      data: { kind: "element", title: derivative.title, derivativeId: derivative.id, sourceAssetId: derivative.sourceAssetId, sourceTitle: source.data.title, imageUrl: derivative.contentUrl, body: derivative.operation === "ai-edit" ? "AI 改造版本" : derivative.operation === "mask" ? "可编辑图层" : "编辑副本", tags: [derivative.operation === "ai-edit" ? "AI 改造" : "图层"] },
       style: defaultSize.element, zIndex: 11,
     }]);
     setEdges((current) => [...current, {
       id: `element-of-${derivative.id}`, source: source.id, target: id, type: "relation", label: "来自素材", data: { id: `element-of-${derivative.id}`, sourceId: source.id, targetId: id, type: "element-of", layer: "provenance", status: "confirmed", origin: "human", explanation: "来自素材" }, style: { stroke: "#879b80", strokeWidth: 2 }, zIndex: 0,
     }]);
-    setSelectedIds([id]); setEditingImage(null); notify("图层已保存到画布");
+    setSelectedIds([id]); setEditingImage(null); setRedesignImage(null); notify(derivative.operation === "ai-edit" ? "改造图片已加入画布" : "图层已保存到画布");
+  }
+
+  async function submitImageRedesign() {
+    if (!redesignImage || redesignBusy) return;
+    const prompt = redesignPrompt.trim();
+    if (prompt.length < 5) { setRedesignError("请至少描述 5 个字的改造方向"); return; }
+    setRedesignBusy(true);
+    setRedesignError("");
+    try {
+      const response = await fetch(`/api/assets/${encodeURIComponent(redesignImage.assetId)}/redesign`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ prompt }),
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok || !payload.derivative) throw new Error(String(payload.error || "AI 改造失败，请稍后重试"));
+      addDerivativeLayer(payload.derivative);
+    } catch (error) {
+      setRedesignError(error instanceof Error ? error.message : "AI 改造失败，请稍后重试");
+    } finally {
+      setRedesignBusy(false);
+    }
   }
 
   function createNote(initial?: { title?: string; body?: string }) {
@@ -1971,13 +2002,14 @@ function WorkspaceCanvas() {
 
         {nextStepMenu && (() => {
           const node = nodes.find((item) => item.id === nextStepMenu.sourceId);
-          if (!node) return null;
+          if (!node || !portalReady) return null;
           const selectedAnalysisCount = nodes.filter((item) => selectedIds.includes(item.id) && item.data.workflowStage === "analysis" && item.data.status === "ready").length;
-          return <aside className="next-step-menu" style={{ left: nextStepMenu.x, top: nextStepMenu.y }}>
+          return createPortal(<aside className="next-step-menu is-floating" style={{ left: nextStepMenu.x, top: nextStepMenu.y }}>
             <header><span>下一步</span><button onClick={() => setNextStepMenu(null)}>×</button></header>
             {isAnalyzableNode(node) && <button onClick={() => runNextStep("analyze")}><i>✦</i><span><strong>{node.data.analysisId ? "重新拆解" : "拆解参考"}</strong><small>提取版式、视觉规则和组件</small></span><b>→</b></button>}
+            {node.data.kind === "image" && node.data.assetId && <button onClick={() => runNextStep("redesign")}><i>◈</i><span><strong>AI 改造图片</strong><small>输入提示词，生成新的设计版本</small></span><b>→</b></button>}
             {node.data.workflowStage === "analysis" && <button onClick={() => runNextStep("contract")}><i>◇</i><span><strong>{selectedAnalysisCount > 1 ? `整合所选 ${selectedAnalysisCount} 张拆解` : "整合为方案"}</strong><small>合并共同点，标出冲突与取舍</small></span><b>→</b></button>}
-          </aside>;
+          </aside>, document.body);
         })()}
 
         {workflowOverlay === "purpose" && (
@@ -2202,6 +2234,16 @@ function WorkspaceCanvas() {
 
 
       {editingImage && <ImageEditor assetId={editingImage.assetId} sourceUrl={editingImage.sourceUrl} title={editingImage.title} onClose={() => setEditingImage(null)} onSaved={addDerivativeLayer} />}
+      {redesignImage && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !redesignBusy) setRedesignImage(null); }}>
+        <section className="modal redesign-dialog" role="dialog" aria-modal="true" aria-label="AI 改造图片">
+          <header><div><span className="modal-kicker">从图片继续创作</span><h2>AI 改造图片</h2><p>描述想改变的内容。原图会保留，生成结果作为新卡片加入画布。</p></div><button onClick={() => setRedesignImage(null)} disabled={redesignBusy} aria-label="关闭">×</button></header>
+          <div className="redesign-dialog-preview"><img src={redesignImage.sourceUrl} alt="待改造的原图" /><span><strong>{redesignImage.title}</strong><small>原始素材 · 生成新版本</small></span></div>
+          <label htmlFor="redesign-prompt">你希望如何改造这张图片？</label>
+          <textarea id="redesign-prompt" autoFocus maxLength={600} value={redesignPrompt} onChange={(event) => setRedesignPrompt(event.target.value)} placeholder="例如：保留人物姿态，把背景改为柔和的紫色渐变，并加入轻盈的光影。" />
+          {redesignError && <p className="redesign-dialog-error" role="alert">{redesignError}</p>}
+          <footer><small>{redesignPrompt.length}/600 · 生成可能需要一点时间</small><div><button onClick={() => setRedesignImage(null)} disabled={redesignBusy}>取消</button><button className="primary" onClick={() => void submitImageRedesign()} disabled={redesignBusy || redesignPrompt.trim().length < 5}>{redesignBusy ? "正在改造…" : "生成新版本"}</button></div></footer>
+        </section>
+      </div>}
 
       {toast && <div className="toast"><span>✓</span>{toast}</div>}
     </main>

@@ -86,7 +86,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
   const hasAnalysis = Boolean(data.analysisSummary || data.analysisId || data.status === "processing" || data.analysisError);
 
   return (
-    <article className={"canvas-card card-" + (data.note ? "note" : data.kind) + (selected ? " is-selected" : "") + (data.preview ? " is-preview" : "")}>
+    <article className={"canvas-card card-" + (data.note ? "note" : data.kind === "image" ? "image-node" : data.kind) + (selected ? " is-selected" : "") + (data.preview ? " is-preview" : "")}>
       <NodeResizer minWidth={200} minHeight={130} isVisible={selected} />
       <Handle id="input" type="target" position={Position.Left} className="node-handle node-port-input nodrag" title="连接到这张卡片" aria-label="连接到这张卡片" />
       <Handle id="output" type="source" position={Position.Right} className="node-handle node-port-output nodrag" title="从这里拖到另一张卡片" aria-label="从这里拖到另一张卡片" />
