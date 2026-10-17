@@ -36,7 +36,10 @@ test("端口拖出下一步、连线文字编辑与节点搜索均在画布内",
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
   assert.match(workspace, /onConnectEnd=\{\(event\) => finishConnection\(event\)\}/);
-  assert.match(workspace, /className="next-step-menu"/);
+  assert.match(workspace, /className=\{"next-step-menu is-canvas-menu"/);
+  assert.match(workspace, /data-next-step-action=\{option\.action\}/);
+  assert.match(workspace, /if \(action\) runNextStep\(action, sourceId\)/);
+  assert.match(styles, /\.canvas-area > \.next-step-menu\.is-canvas-menu/);
   assert.match(workspace, /edgeTypes=\{edgeTypes\}/);
   assert.match(edge, /inspo:edge-label/);
   assert.match(edge, /点击修改连线说明/);

@@ -62,6 +62,21 @@ type WorkspaceModal = "import" | "new-work" | null;
 type RelationView = "hidden" | "selection" | "all";
 type SearchKind = "all" | "image" | "video" | "audio" | "web" | "text" | "analysis" | "contract" | "group";
 type NextStepMenu = { sourceId: string; x: number; y: number };
+type NextStepAction = "analyze" | "redesign" | "edit" | "note" | "contract";
+type NextStepOption = { action: NextStepAction; title: string; description: string; icon: WorkspaceIconName };
+
+function nextStepOptions(node: CanvasNode): NextStepOption[] {
+  if (node.data.workflowStage === "contract") return [];
+  const options: NextStepOption[] = [];
+  if (isAnalyzableNode(node)) options.push({ action: "analyze", title: node.data.analysisId ? "重新拆解" : "拆解参考", description: "提取版式、色彩与组件", icon: "analyze" });
+  if (node.data.kind === "image" && node.data.assetId && node.data.imageUrl) {
+    options.push({ action: "redesign", title: "AI 改造图片", description: "写下要求，生成设计新版本", icon: "ask" });
+    options.push({ action: "edit", title: "编辑素材", description: "裁剪、旋转或创建蒙版", icon: "archive" });
+  }
+  if (node.data.workflowStage === "analysis") options.push({ action: "contract", title: "整合为方案", description: "合并要点并梳理设计方向", icon: "arrange" });
+  options.push({ action: "note", title: "添加关联备注", description: "记录这条灵感的想法", icon: "note" });
+  return options;
+}
 type ContextMenu = { kind: "node" | "board"; id: string; x: number; y: number };
 type DeleteRequest = { kind: "board" | "nodes"; ids: string[]; title: string; body: string };
 type AssistantScope = "selection" | "board";
@@ -202,6 +217,7 @@ function WorkspaceCanvas() {
   const [designBrief, setDesignBrief] = useState<DesignBrief>(() => createDesignBrief());
   const [workflowOverlay, setWorkflowOverlay] = useState<"purpose" | "contract" | "export" | null>(null);
   const [nextStepMenu, setNextStepMenu] = useState<NextStepMenu | null>(null);
+  const [hoveredNextStep, setHoveredNextStep] = useState<NextStepAction | null>(null);
   const [productionGoal, setProductionGoal] = useState<ProductionGoal>("recreate");
   const [exportDestination, setExportDestination] = useState<ExportDestination>("figma-design");
   const [exportBusy, setExportBusy] = useState(false);
@@ -244,6 +260,8 @@ function WorkspaceCanvas() {
   const edgesRef = useRef<Edge[]>([]);
   const connectionSourceRef = useRef<string | null>(null);
   const connectionCompletedRef = useRef(false);
+  const canvasAreaRef = useRef<HTMLElement>(null);
+  const nextStepMenuRef = useRef<HTMLElement>(null);
   const assistantBoardRef = useRef("");
   const assistantScrollRef = useRef<HTMLDivElement>(null);
   const speechRecognitionRef = useRef<BrowserSpeechRecognition | null>(null);
@@ -285,6 +303,13 @@ function WorkspaceCanvas() {
   useEffect(() => {
     if (!assistantOpen) speechRecognitionRef.current?.stop();
   }, [assistantOpen]);
+
+  useEffect(() => {
+    if (!connecting) return;
+    const trackTarget = (event: PointerEvent) => setHoveredNextStep(nextStepAt(event.clientX, event.clientY));
+    window.addEventListener("pointermove", trackTarget);
+    return () => window.removeEventListener("pointermove", trackTarget);
+  }, [connecting, nextStepMenu]);
 
   useEffect(() => {
     edgesRef.current = edges;
@@ -703,6 +728,7 @@ function WorkspaceCanvas() {
   function onConnect(value: Connection) {
     if (!value.source || !value.target || value.source === value.target) return;
     connectionCompletedRef.current = true;
+    setNextStepMenu(null);
     if (edges.some((edge) => edge.source === value.source && edge.target === value.target)) return notify("这两张卡片已经连接");
     remember();
     const relation: Relation = {
@@ -727,25 +753,64 @@ function WorkspaceCanvas() {
     notify("已连接");
   }
 
-  function finishConnection(event: MouseEvent | TouchEvent) {
-    setConnecting(false);
-    const sourceId = connectionSourceRef.current;
-    const completed = connectionCompletedRef.current;
-    connectionSourceRef.current = null;
-    window.setTimeout(() => { connectionCompletedRef.current = false; }, 0);
-    if (!sourceId || completed || nodes.some((node) => node.id === sourceId && node.data.workflowStage === "contract")) return;
-    const point = "changedTouches" in event ? event.changedTouches[0] : event;
-    setNextStepMenu({
-      sourceId,
-      x: clamp(point?.clientX ?? window.innerWidth / 2, 12, window.innerWidth - 320),
-      y: clamp(point?.clientY ?? window.innerHeight / 2, 120, window.innerHeight - 260),
-    });
+  function nextStepAt(clientX: number, clientY: number): NextStepAction | null {
+    const buttons = nextStepMenuRef.current?.querySelectorAll<HTMLButtonElement>("[data-next-step-action]");
+    if (!buttons) return null;
+    for (const button of buttons) {
+      const rect = button.getBoundingClientRect();
+      if (clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom) {
+        return button.dataset.nextStepAction as NextStepAction;
+      }
+    }
+    return null;
   }
 
-  function runNextStep(action: "analyze" | "contract" | "redesign") {
-    const menu = nextStepMenu;
-    if (!menu) return;
-    const node = nodes.find((item) => item.id === menu.sourceId);
+  function startConnection(event: MouseEvent | TouchEvent, nodeId: string | null, handleType: string | null) {
+    connectionSourceRef.current = handleType === "source" ? nodeId : null;
+    connectionCompletedRef.current = false;
+    setHoveredNextStep(null);
+    const source = nodes.find((node) => node.id === connectionSourceRef.current);
+    const rect = canvasAreaRef.current?.getBoundingClientRect();
+    if (!source || !rect || source.data.workflowStage === "contract") {
+      setConnecting(false);
+      setNextStepMenu(null);
+      return;
+    }
+    const point = "touches" in event ? event.touches[0] : event;
+    const count = nextStepOptions(source).length;
+    const menuWidth = Math.min(296, Math.max(0, rect.width - 24));
+    const menuHeight = Math.min(rect.height - 24, 44 + count * 62);
+    const pointerX = (point?.clientX ?? rect.left + rect.width / 2) - rect.left;
+    const pointerY = (point?.clientY ?? rect.top + rect.height / 2) - rect.top;
+    const preferredX = pointerX + 76 + menuWidth <= rect.width - 12 ? pointerX + 76 : pointerX - menuWidth - 36;
+    const safeTop = rect.height - menuHeight > 84 ? 72 : 12;
+    setNextStepMenu({
+      sourceId: source.id,
+      x: clamp(preferredX, 12, Math.max(12, rect.width - menuWidth - 12)),
+      y: clamp(pointerY - 46, safeTop, Math.max(safeTop, rect.height - menuHeight - 12)),
+    });
+    setConnecting(true);
+  }
+
+  function finishConnection(event: MouseEvent | TouchEvent) {
+    const sourceId = connectionSourceRef.current;
+    const completed = connectionCompletedRef.current;
+    const point = "changedTouches" in event ? event.changedTouches[0] : event;
+    const action = point ? nextStepAt(point.clientX, point.clientY) : null;
+    setConnecting(false);
+    setHoveredNextStep(null);
+    connectionSourceRef.current = null;
+    window.setTimeout(() => { connectionCompletedRef.current = false; }, 0);
+    if (!sourceId || completed) { setNextStepMenu(null); return; }
+    if (action) runNextStep(action, sourceId);
+  }
+
+  function focusConnectedNodes(sourceId: string, targetId: string) {
+    window.setTimeout(() => { void fitView({ nodes: [{ id: sourceId }, { id: targetId }], padding: 0.2, duration: 320 }); }, 90);
+  }
+
+  function runNextStep(action: NextStepAction, sourceId = nextStepMenu?.sourceId) {
+    const node = nodes.find((item) => item.id === sourceId);
     setNextStepMenu(null);
     if (!node) return;
     if (action === "analyze") return void analyze(node.id);
@@ -753,6 +818,29 @@ function WorkspaceCanvas() {
       setRedesignPrompt("");
       setRedesignError("");
       setRedesignImage({ assetId: String(node.data.assetId), sourceUrl: String(node.data.imageUrl), title: node.data.title });
+      return;
+    }
+    if (action === "edit" && node.data.kind === "image" && node.data.assetId && node.data.imageUrl) {
+      setEditingImage({ assetId: String(node.data.assetId), sourceUrl: String(node.data.imageUrl), title: node.data.title, nodeId: node.id });
+      return;
+    }
+    if (action === "note") {
+      const id = "note-" + crypto.randomUUID();
+      const position = absoluteNodePosition(nodes, node);
+      const relationId = "note-link-" + id;
+      remember();
+      setNodes((current) => [...current, {
+        id, type: "inspo", position: { x: position.x + nodeWidth(node) + 88, y: position.y },
+        data: { kind: "text", title: "关联备注", body: "单击这里写下想法", note: true },
+        style: defaultSize.text, zIndex: 10,
+      }]);
+      setEdges((current) => addEdge({ id: relationId, source: node.id, target: id, type: "relation", label: "灵感备注",
+        data: { id: relationId, sourceId: node.id, targetId: id, type: "complements", layer: "association", status: "confirmed", origin: "human", explanation: "灵感备注" } satisfies Relation,
+        style: { stroke: "#8f7da4", strokeWidth: 2 },
+      }, current));
+      setSelectedIds([id]);
+      focusConnectedNodes(node.id, id);
+      notify("已创建关联备注，单击正文即可编辑");
       return;
     }
     if (action === "contract") {
@@ -942,6 +1030,7 @@ function WorkspaceCanvas() {
     setEdges((current) => [...current, {
       id: `element-of-${derivative.id}`, source: source.id, target: id, type: "relation", label: "来自素材", data: { id: `element-of-${derivative.id}`, sourceId: source.id, targetId: id, type: "element-of", layer: "provenance", status: "confirmed", origin: "human", explanation: "来自素材" }, style: { stroke: "#879b80", strokeWidth: 2 }, zIndex: 0,
     }]);
+    focusConnectedNodes(source.id, id);
     setSelectedIds([id]); setEditingImage(null); setRedesignImage(null); notify(derivative.operation === "ai-edit" ? "改造图片已加入画布" : "图层已保存到画布");
   }
 
@@ -1147,6 +1236,7 @@ function WorkspaceCanvas() {
         zIndex: 10,
       }];
     });
+    focusConnectedNodes(source.id, analysisCardId);
     setEdges((current) => current.some((edge) => edge.source === source.id && edge.target === analysisCardId) ? current : addEdge({
       id: "analysis-link-" + assetId,
       source: source.id,
@@ -1880,7 +1970,7 @@ function WorkspaceCanvas() {
       </aside>
       <div className="rail-resizer rail-resizer-left" role="separator" aria-label="调整左侧栏宽度" aria-orientation="vertical" title="拖动调整左栏宽度" onDoubleClick={() => setLeftRailWidth(242)} onPointerDown={(event) => startRailResize("left", event)} />
 
-      <section className={"canvas-area" + (rightPanning ? " is-right-panning" : "")} aria-label="灵感无限画布" onPointerDownCapture={(event) => { if (event.button === 2) setRightPanning(true); }}>
+      <section ref={canvasAreaRef} className={"canvas-area" + (rightPanning ? " is-right-panning" : "")} aria-label="灵感无限画布" onPointerDownCapture={(event) => { if (event.button === 2) setRightPanning(true); }}>
         {hasCanvasContent && <div className={"canvas-search node-search" + (searchExpanded ? " is-open" : " is-collapsed")}>
           {!searchExpanded && <button className="search-toggle" onClick={() => setSearchExpanded(true)} aria-label="搜索画布节点"><WorkspaceIcon name="search" /></button>}
           {searchExpanded && <div className="node-search-panel nodrag nowheel">
@@ -1957,7 +2047,7 @@ function WorkspaceCanvas() {
           onNodesChange={organizePreview ? undefined : onNodesChange}
           onEdgesChange={organizePreview ? undefined : onEdgesChange}
           onConnect={organizePreview ? undefined : onConnect}
-          onConnectStart={(_, params) => { setConnecting(true); connectionSourceRef.current = params.handleType === "source" ? params.nodeId : null; connectionCompletedRef.current = false; }}
+          onConnectStart={(event, params) => startConnection(event, params.nodeId, params.handleType)}
           onConnectEnd={(event) => finishConnection(event)}
           onSelectionChange={onSelectionChange}
           onNodeClick={onNodeClick}
@@ -2002,14 +2092,13 @@ function WorkspaceCanvas() {
 
         {nextStepMenu && (() => {
           const node = nodes.find((item) => item.id === nextStepMenu.sourceId);
-          if (!node || !portalReady) return null;
-          const selectedAnalysisCount = nodes.filter((item) => selectedIds.includes(item.id) && item.data.workflowStage === "analysis" && item.data.status === "ready").length;
-          return createPortal(<aside className="next-step-menu is-floating" style={{ left: nextStepMenu.x, top: nextStepMenu.y }}>
-            <header><span>下一步</span><button onClick={() => setNextStepMenu(null)}>×</button></header>
-            {isAnalyzableNode(node) && <button onClick={() => runNextStep("analyze")}><i>✦</i><span><strong>{node.data.analysisId ? "重新拆解" : "拆解参考"}</strong><small>提取版式、视觉规则和组件</small></span><b>→</b></button>}
-            {node.data.kind === "image" && node.data.assetId && <button onClick={() => runNextStep("redesign")}><i>◈</i><span><strong>AI 改造图片</strong><small>输入提示词，生成新的设计版本</small></span><b>→</b></button>}
-            {node.data.workflowStage === "analysis" && <button onClick={() => runNextStep("contract")}><i>◇</i><span><strong>{selectedAnalysisCount > 1 ? `整合所选 ${selectedAnalysisCount} 张拆解` : "整合为方案"}</strong><small>合并共同点，标出冲突与取舍</small></span><b>→</b></button>}
-          </aside>, document.body);
+          if (!node) return null;
+          return <aside ref={nextStepMenuRef} className={"next-step-menu is-canvas-menu" + (connecting ? " is-dragging" : "")} style={{ left: nextStepMenu.x, top: nextStepMenu.y }} aria-label="从当前卡片继续创作">
+            <header><span>{connecting ? "拖到选项上松手" : "选择下一步"}</span><button type="button" onClick={() => setNextStepMenu(null)} aria-label="关闭下一步选项"><WorkspaceIcon name="close" size={15} /></button></header>
+            {nextStepOptions(node).map((option) => <button key={option.action} type="button" data-next-step-action={option.action} className={hoveredNextStep === option.action ? "is-drop-target" : ""} onClick={() => runNextStep(option.action)}>
+              <i><WorkspaceIcon name={option.icon} size={17} /></i><span><strong>{option.title}</strong><small>{option.description}</small></span><WorkspaceIcon name="chevron" size={14} />
+            </button>)}
+          </aside>;
         })()}
 
         {workflowOverlay === "purpose" && (
