@@ -339,6 +339,10 @@ code, kbd, .board-title small, .quota-card strong, .relation-view, .card-meta, .
 .signin-screen h1 { max-width: 580px; margin: 15px 0; font-size: clamp(36px,5vw,72px); line-height: 1.08; letter-spacing: -.06em; }
 .signin-screen p { max-width: 440px; color: var(--desk-muted); font-size: 15px; line-height: 1.8; }
 .signin-screen .button { display: inline-flex; align-items: center; gap: 22px; margin: 24px 0 13px; padding: 13px 17px; text-decoration: none; }
+.signin-screen form { margin: 0; }
+.signin-screen .button { cursor: pointer; font: inherit; }
+.signin-secondary { display: inline-block; color: var(--desk-muted); font-size: 13px; text-underline-offset: 4px; }
+.signin-secondary:hover { color: var(--desk-text); }
 .signin-screen section > small { display: block; color: var(--desk-faint); }
 .signin-art { position: relative; width: min(38vw,500px); aspect-ratio: 1; border: 1px solid rgba(185,168,247,.25); border-radius: 26%; background: radial-gradient(circle at 50% 50%, rgba(159,141,231,.2), transparent 65%); transform: rotate(-9deg); }
 .signin-art span { position: absolute; width: 31%; height: 31%; border: 1px solid rgba(185,168,247,.55); border-radius: 23%; background: rgba(52,49,79,.75); box-shadow: 0 20px 55px rgba(0,0,0,.2); }

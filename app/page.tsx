@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import InspoWorkspace from "./InspoWorkspace";
 import { chatGPTSignInPath, getChatGPTUser } from "./chatgpt-auth";
+import { GUEST_COOKIE_NAME, isGuestToken } from "./api/_lib";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +13,7 @@ export const metadata: Metadata = {
 
 export default async function Home() {
   const user = await getChatGPTUser();
-  if (!user && process.env.NODE_ENV === "production") return <main className="signin-screen"><div className="signin-art" aria-hidden="true"><img src="/inspo-sprite.png" alt="" /></div><section><span className="modal-kicker">InspoAtlas · 个人灵感空间</span><h1>每个灵感，都有自己的位置。</h1><p>登录后创建独立作品。每件作品是一张画布，你的参考、连线和设计方案都会随作品保存。</p><a className="button primary" href={chatGPTSignInPath("/")} target="_top">登录并开始创作 <span aria-hidden="true">↗</span></a><small>使用 ChatGPT 账号登录</small></section></main>;
+  const guestToken = (await cookies()).get(GUEST_COOKIE_NAME)?.value;
+  if (!user && !isGuestToken(guestToken) && process.env.NODE_ENV === "production") return <main className="signin-screen"><div className="signin-art" aria-hidden="true"><img src="/inspo-sprite.png" alt="" /></div><section><span className="modal-kicker">InspoAtlas · 个人灵感空间</span><h1>每个灵感，都有自己的位置。</h1><p>无需登录，先打开一张画布开始整理灵感。访客作品保存在当前浏览器的独立空间中。</p><form action="/api/guest/start" method="post"><button className="button primary" type="submit">免登录开始创作 <span aria-hidden="true">↗</span></button></form><a className="signin-secondary" href={chatGPTSignInPath("/")} target="_top">已有账号？登录后进入个人空间</a></section></main>;
   return <InspoWorkspace />;
 }

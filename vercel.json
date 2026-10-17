@@ -1,5 +1,12 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": null,
-  "buildCommand": "pnpm exec vite build"
+  "buildCommand": "pnpm exec vite build",
+  "redirects": [
+    {
+      "source": "/:path*",
+      "destination": "https://inspoatlas-beta.glad-morel-5947.chatgpt.site/:path*",
+      "permanent": false
+    }
+  ]
 }

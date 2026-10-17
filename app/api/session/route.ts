@@ -11,7 +11,7 @@ export async function GET(request: Request) {
     const fullName = encodedName && encoding === "percent-encoded-utf-8"
       ? safeDecode(encodedName)
       : null;
-    const displayName = fullName || user.email.split("@")[0];
+    const displayName = user.kind === "guest" ? "访客" : fullName || user.email.split("@")[0];
     const db = getDb();
     const [[boardTotal], [assetTotal], recentBoards] = await Promise.all([
       db.select({ value: count() }).from(boards).where(eq(boards.ownerId, user.id)),
@@ -21,11 +21,12 @@ export async function GET(request: Request) {
     return Response.json({
       user: {
         id: user.id,
-        email: user.email,
+        email: user.kind === "guest" ? "" : user.email,
         displayName,
         initials: getInitials(displayName),
+        kind: user.kind,
       },
-      access: "invite-only",
+      access: user.kind === "guest" ? "guest" : "account",
       space: { boardCount: boardTotal?.value ?? 0, assetCount: assetTotal?.value ?? 0, recentBoards },
     }, { headers: { "cache-control": "no-store" } });
   } catch (error) {

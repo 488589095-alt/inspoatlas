@@ -8,6 +8,7 @@ type SessionUser = {
   email: string;
   displayName: string;
   initials: string;
+  kind: "guest" | "account";
 };
 
 type PersonalSpace = {
@@ -58,12 +59,14 @@ export function UserMenu() {
           {user ? <>
             <header>
               <span>{user.initials}</span>
-              <div><strong>{user.displayName}</strong><small>{user.email}</small></div>
+              <div><strong>{user.displayName}</strong><small>{user.kind === "guest" ? "当前浏览器的独立空间" : user.email}</small></div>
             </header>
-            <div className="account-status"><i />个人空间</div>
+            <div className="account-status"><i />{user.kind === "guest" ? "访客空间" : "个人空间"}</div>
             <dl className="space-metrics"><div><dt>作品</dt><dd>{space?.boardCount ?? 0}</dd></div><div><dt>素材</dt><dd>{space?.assetCount ?? 0}</dd></div></dl>
             <section className="recent-boards"><span>最近作品</span>{space?.recentBoards?.length ? space.recentBoards.map((board) => <Link key={board.id} href={`/?board=${encodeURIComponent(board.id)}`} onClick={() => setOpen(false)}>{board.title}</Link>) : <small>还没有作品</small>}</section>
-            <footer><span>AI 服务由工作区统一提供</span><a href="/signout-with-chatgpt?return_to=/" target="_top">退出登录</a></footer>
+            {user.kind === "guest"
+              ? <footer><span>请保留浏览器数据；登录后不会自动转移访客作品。</span><a href="/signin-with-chatgpt?return_to=/" target="_top">登录</a></footer>
+              : <footer><span>AI 服务由工作区统一提供</span><a href="/signout-with-chatgpt?return_to=/" target="_top">退出登录</a></footer>}
           </> : <>
             <header><span>IA</span><div><strong>登录 InspoAtlas</strong><small>登录后即可创建个人空间</small></div></header>
             <p className="account-empty">你的作品、素材和 AI 使用记录会归入个人空间。</p>
