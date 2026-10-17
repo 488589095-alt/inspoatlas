@@ -562,6 +562,10 @@ html.theme-light-root {
 .canvas-card > .card-surface { flex: 1 1 auto; }
 .card-image { min-width: 0; overflow: hidden; }
 .card-image img { display: block; width: 100%; height: 100%; object-fit: cover; user-select: none; }
+.card-image-node > .card-surface { display: flex; min-height: 0; flex-direction: column; }
+.card-image-node .card-image { height: 0; flex: 1 1 0; min-height: 0; background: var(--desk-field); }
+.card-image-node .card-image img { object-fit: contain; }
+.card-image-node .card-content { flex: 0 0 auto; overflow: visible; }
 
 .redesign-dialog { width: min(620px, calc(100vw - 32px)); padding: 24px; }
 .redesign-dialog > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }

@@ -47,7 +47,7 @@ const nodeTypes = { inspo: CardNode };
 const edgeTypes = { relation: RelationEdge };
 const sourceKinds = new Set(["image", "web", "text"]);
 const defaultSize: Record<CardData["kind"], { width: number; height: number }> = {
-  image: { width: 300, height: 340 },
+  image: { width: 300, height: 400 },
   video: { width: 320, height: 260 },
   audio: { width: 300, height: 190 },
   web: { width: 320, height: 280 },
@@ -57,6 +57,7 @@ const defaultSize: Record<CardData["kind"], { width: number; height: number }> =
   group: { width: 760, height: 520 },
 };
 const canvasSnapGrid: [number, number] = [8, 8];
+const imageFriendlyFitPadding = { top: "36px", right: "56px", bottom: "110px", left: "56px" } as const;
 
 type WorkspaceModal = "import" | "new-work" | null;
 type RelationView = "hidden" | "selection" | "all";
@@ -481,7 +482,10 @@ function WorkspaceCanvas() {
       setSavedState(hasRecoverableDraft ? "已恢复本地草稿" : "已同步");
       loading.current = false;
       window.history.replaceState(null, "", "?board=" + encodeURIComponent(boardId));
-      window.setTimeout(() => recovered.nodes.length && fitView({ padding: 0.18, duration: 300 }), 30);
+      window.setTimeout(() => recovered.nodes.length && fitView({
+        padding: recovered.nodes.some((node) => node.data.kind === "image") ? imageFriendlyFitPadding : 0.18,
+        duration: 300,
+      }), 30);
 
       void fetch("/api/analyses?boardId=" + encodeURIComponent(boardId), { cache: "no-store" })
         .then(async (analysisResponse) => analysisResponse.ok ? analysisResponse.json() : { analyses: [] })
@@ -1126,7 +1130,7 @@ function WorkspaceCanvas() {
     const files = allFiles.filter((file) => supportedLocalMedia(file));
     if (!files.length) return notify("没有找到可导入的图片、视频或音频文件");
 
-    const uploaded: Array<{ asset: { id: string; title: string; kind: "image" | "video" | "audio"; contentUrl?: string } }> = [];
+    const uploaded: Array<{ asset: { id: string; title: string; kind: "image" | "video" | "audio"; contentUrl?: string }; size: { width: number; height: number } }> = [];
     let failed = allFiles.length - files.length;
     for (const file of files) {
       const form = new FormData();
@@ -1138,7 +1142,8 @@ function WorkspaceCanvas() {
         failed += 1;
         continue;
       }
-      uploaded.push(await response.json());
+      const result = await response.json() as { asset: { id: string; title: string; kind: "image" | "video" | "audio"; contentUrl?: string } };
+      uploaded.push({ asset: result.asset, size: result.asset.kind === "image" ? await importedImageSize(file) : defaultSize[result.asset.kind] });
     }
     if (!uploaded.length) return notify("素材上传失败，请稍后重试");
 
@@ -1149,7 +1154,7 @@ function WorkspaceCanvas() {
     const groupId = rootFolder ? crypto.randomUUID() : "";
     setNodes((current) => {
       if (!groupId) {
-        const cards = uploaded.map(({ asset }, index): CanvasNode => ({
+        const cards = uploaded.map(({ asset, size }, index): CanvasNode => ({
           id: asset.id,
           type: "inspo",
           position: { x: 100 + (current.length + index) * 18, y: 120 + (current.length + index) * 14 },
@@ -1160,16 +1165,20 @@ function WorkspaceCanvas() {
             imageUrl: asset.contentUrl || "/api/assets/" + asset.id + "/content",
             tags: [asset.kind === "image" ? "待拆解" : asset.kind === "video" ? "视频素材" : "音频素材"],
           },
-          style: defaultSize[asset.kind],
+          style: size,
           zIndex: 10,
         }));
         return [...current, ...cards];
       }
 
-      const columns = Math.min(3, Math.max(1, uploaded.length));
+      const cellWidth = Math.max(320, ...uploaded.map(({ size }) => size.width));
+      const cellHeight = Math.max(340, ...uploaded.map(({ size }) => size.height));
+      const maxRows = Math.max(1, Math.floor((2400 - 118 + 24) / (cellHeight + 24)));
+      const maxColumns = Math.max(1, Math.floor((2400 - 48 + 24) / (cellWidth + 24)));
+      const columns = Math.min(maxColumns, Math.max(Math.min(3, uploaded.length), Math.ceil(uploaded.length / maxRows)));
       const rows = Math.ceil(uploaded.length / columns);
-      const groupWidth = 48 + columns * 320 + (columns - 1) * 24;
-      const groupHeight = 90 + rows * 340 + Math.max(0, rows - 1) * 24 + 28;
+      const groupWidth = 48 + columns * cellWidth + (columns - 1) * 24;
+      const groupHeight = 90 + rows * cellHeight + Math.max(0, rows - 1) * 24 + 28;
       const group: CanvasNode = {
         id: groupId,
         type: "inspo",
@@ -1178,12 +1187,12 @@ function WorkspaceCanvas() {
         style: { width: groupWidth, height: groupHeight },
         zIndex: 0,
       };
-      const cards = uploaded.map(({ asset }, index): CanvasNode => ({
+      const cards = uploaded.map(({ asset, size }, index): CanvasNode => ({
         id: asset.id,
         type: "inspo",
         parentId: groupId,
         extent: "parent",
-        position: { x: 24 + (index % columns) * 344, y: 70 + Math.floor(index / columns) * 364 },
+        position: { x: 24 + (index % columns) * (cellWidth + 24), y: 70 + Math.floor(index / columns) * (cellHeight + 24) },
         data: {
           kind: asset.kind,
           title: asset.title,
@@ -1191,12 +1200,22 @@ function WorkspaceCanvas() {
           imageUrl: asset.contentUrl || "/api/assets/" + asset.id + "/content",
           tags: [asset.kind === "image" ? "待拆解" : asset.kind === "video" ? "视频素材" : "音频素材"],
         },
-        style: defaultSize[asset.kind],
+        style: size,
         zIndex: 10,
       }));
       return [...current, group, ...cards];
     });
     setSelectedIds(uploaded.map(({ asset }) => asset.id));
+    if (uploaded.some(({ asset }) => asset.kind === "image")) {
+      window.setTimeout(() => {
+        void fitView({
+          nodes: (groupId ? [groupId] : uploaded.map(({ asset }) => asset.id)).map((id) => ({ id })),
+          padding: imageFriendlyFitPadding,
+          maxZoom: 1,
+          duration: 360,
+        });
+      }, 120);
+    }
     setModal(null);
     notify(`已加入 ${uploaded.length} 个素材${rootFolder ? `，并建立“${rootFolder}”分组` : ""}${failed ? `，跳过 ${failed} 个不支持的文件` : ""}`);
   }
@@ -2355,6 +2374,20 @@ function supportedLocalMedia(file: File) {
   if (/^image\/(jpeg|png|webp)$/.test(file.type)) return file.size <= 20 * 1024 * 1024;
   if (/^(video\/(mp4|webm|quicktime)|audio\/(mpeg|wav|ogg|mp4))$/.test(file.type)) return file.size <= 100 * 1024 * 1024;
   return false;
+}
+
+async function importedImageSize(file: File) {
+  let bitmap: ImageBitmap | undefined;
+  try {
+    bitmap = await createImageBitmap(file);
+    const aspect = bitmap.width / bitmap.height;
+    const width = aspect >= 1.25 ? 360 : 300;
+    return { width, height: clamp(Math.round(width / aspect), 180, 480) + 104 };
+  } catch {
+    return defaultSize.image;
+  } finally {
+    bitmap?.close();
+  }
 }
 
 function clamp(value: number, minimum: number, maximum: number) {

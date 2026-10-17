@@ -87,7 +87,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
 
   return (
     <article className={"canvas-card card-" + (data.note ? "note" : data.kind === "image" ? "image-node" : data.kind) + (selected ? " is-selected" : "") + (data.preview ? " is-preview" : "")}>
-      <NodeResizer minWidth={200} minHeight={130} isVisible={selected} />
+      <NodeResizer minWidth={200} minHeight={data.kind === "image" ? 220 : 130} keepAspectRatio={data.kind === "image"} isVisible={selected} />
       <Handle id="input" type="target" position={Position.Left} className="node-handle node-port-input nodrag" title="连接到这张卡片" aria-label="连接到这张卡片" />
       <Handle id="output" type="source" position={Position.Right} className="node-handle node-port-output nodrag" title="从这里拖到另一张卡片" aria-label="从这里拖到另一张卡片" />
       <div className="card-surface">
@@ -131,7 +131,7 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
           {!!data.colors?.length && <div className="color-row">{data.colors.slice(0, 7).map((color) => <span key={color} title={color} style={{ background: color }} />)}</div>}
           {!!data.tags?.length && <div className="tag-row">{data.tags.slice(0, 8).map((tag) => <span key={tag}>{tag}</span>)}</div>}
         </div>
-        {isSource && (
+        {isSource && data.kind !== "image" && (
           <button
             className={"analysis-toggle nodrag " + (data.status === "processing" ? "is-busy" : "")}
             onClick={(event) => { event.stopPropagation(); action(hasAnalysis ? "toggle-analysis" : "analyze"); }}
@@ -141,14 +141,9 @@ export function CardNode({ id, data, selected }: NodeProps<CanvasNode>) {
             <small>{data.analysisExpanded ? "收起" : hasAnalysis ? "展开" : "开始"}</small>
           </button>
         )}
-        {data.kind === "image" && data.assetId && (
-          <button className="image-edit-trigger nodrag" onClick={(event) => { event.stopPropagation(); action("edit-image", event); }}>
-            编辑素材
-          </button>
-        )}
       </div>
 
-      {isSource && data.analysisExpanded && (
+      {isSource && data.kind !== "image" && data.analysisExpanded && (
         <section className="analysis-drawer nodrag nowheel" onClick={(event) => event.stopPropagation()}>
           <header>
             <div><small>拆解 · 来源</small><strong>{data.title}</strong></div>
