@@ -174,7 +174,6 @@ code, kbd, .board-title small, .quota-card strong, .relation-view, .card-meta, .
 .canvas-toolbar > button.is-primary, .canvas-toolbar > button.ai-tool { color: #241d3d; border-color: var(--desk-accent); background: var(--desk-accent); }
 .canvas-toolbar > button.is-primary:not(:disabled):hover, .canvas-toolbar > button.ai-tool:not(:disabled):hover { background: var(--desk-accent-strong); }
 .canvas-toolbar > button.is-context { color: var(--desk-accent-strong); background: var(--desk-accent-wash); }
-.canvas-toolbar > span { width: 1px; height: 28px; margin: 0 4px; background: var(--desk-line); }
 .toolbar-more-popover { position: fixed; z-index: 1000; display: grid; width: 172px; gap: 3px; padding: 5px; border: 1px solid var(--desk-line-strong); border-radius: 10px; color: var(--desk-text); background: var(--desk-panel-raised); box-shadow: var(--desk-shadow-raised); }
 .toolbar-more-popover button { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 36px; padding: 7px 8px; border: 0; border-radius: 6px; color: var(--desk-text); background: transparent; text-align: left; }
 .toolbar-more-popover button:hover, .toolbar-more-popover button.is-active { color: var(--desk-accent-strong); background: var(--desk-accent-wash); }

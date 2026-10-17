@@ -216,7 +216,7 @@ function WorkspaceCanvas() {
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [voiceListening, setVoiceListening] = useState(false);
   const [assistantOpen, setAssistantOpen] = useState(false);
-  const [agentRevealed, setAgentRevealed] = useState(false);
+  const [agentRevealed, setAgentRevealed] = useState(true);
   const [agentHintVisible, setAgentHintVisible] = useState(false);
   const [portalReady, setPortalReady] = useState(false);
   const [editingImage, setEditingImage] = useState<{ assetId: string; sourceUrl: string; title: string; nodeId: string } | null>(null);
@@ -1868,7 +1868,6 @@ function WorkspaceCanvas() {
           <button onClick={previewOrganize} disabled={!hasCanvasContent} title="按设计重点整理画布"><WorkspaceIcon name="arrange" /><small>整理</small></button>
           <button onClick={() => void fitView({ padding: 0.18, duration: 320 })} disabled={!hasCanvasContent} title="定位全部节点"><WorkspaceIcon name="fit" /><small>定位</small></button>
           <button className={showMiniMap ? "is-active" : ""} onClick={() => setShowMiniMap((value) => !value)} disabled={!hasCanvasContent} title={showMiniMap ? "收起小地图" : "打开小地图"}><WorkspaceIcon name="map" /><small>小地图</small></button>
-          <span aria-hidden="true" />
           {hasSelection ? <>
             {selected?.data.kind === "image" && <button className="is-context" onClick={() => setEditingImage({ assetId: String(selected.data.assetId), sourceUrl: String(selected.data.imageUrl), title: selected.data.title, nodeId: selected.id })} title="裁剪、旋转、蒙版并保存副本"><WorkspaceIcon name="archive" /><small>编辑素材</small></button>}
             {selectionCanAnalyze && <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()} title="拆解所选参考"><WorkspaceIcon name="analyze" /><small>拆解</small></button>}
