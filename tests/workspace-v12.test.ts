@@ -12,12 +12,12 @@ test("拆解结果与方案作为可持久化画布节点串联", async () => {
   assert.match(workspace, /analysis-card-/);
   assert.match(workspace, /workflowStage: "contract"/);
   assert.match(workspace, /保存为方案卡/);
-  assert.match(workspace, /整合所选/);
+  assert.match(workspace, /<small>整理方案<\/small>/);
   assert.match(workspace, /已选取舍（可选）/);
   assert.match(workspace, /contract-evidence/);
-  assert.match(workspace, /检查证据与取舍/);
+  assert.match(workspace, /contract-review-item/);
   assert.match(workspace, /workflowOverlay === "purpose"/);
-  assert.match(workspace, /定义这次设计任务/);
+  assert.match(workspace, /明确设计任务/);
   assert.match(workspace, /focusEvidence/);
   assert.match(workspace, /已定位 \$\{targets\.length\} 张来源参考/);
   assert.match(card, /workflowStage === "analysis"/);
@@ -69,7 +69,7 @@ test("深色创作工作台使用单一 token 基线并按状态收敛操作", a
   assert.match(workspace, /hasCanvasContent/);
   assert.match(workspace, /inspectorOpen/);
   assert.match(workspace, /<div className="canvas-toolbar"/);
-  assert.match(workspace, /等待参考/);
+  assert.match(workspace, /选中卡片，查看细节/);
   assert.match(workspace, /role="button"/);
   assert.match(styles, /\.visually-hidden/);
   assert.match(styles, /var\(--left-rail-width, 242px\)/);
@@ -83,7 +83,7 @@ test("深色创作工作台使用单一 token 基线并按状态收敛操作", a
   assert.match(workspace, /<small>搜索<\/small>/);
   assert.match(workspace, /<small>小地图<\/small>/);
   assert.match(workspace, /正在拆解/);
-  assert.match(workspace, /disabled=\{contractBusy\}/);
+  assert.match(workspace, /disabled=\{contractBusy \|\| !designBrief\.objective\.trim\(\)\}/);
   assert.match(icon, /stroke="currentColor"/);
   assert.match(icon, /trash:/);
 });

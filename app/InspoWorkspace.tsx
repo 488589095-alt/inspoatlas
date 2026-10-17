@@ -604,9 +604,7 @@ function WorkspaceCanvas() {
       if (detail.action === "analyze") void analyze(detail.id);
       if (detail.action === "edit-image") {
         const node = nodes.find((item) => item.id === detail.id);
-        if (node?.data.kind === "image" && node.data.assetId && node.data.imageUrl) {
-          setEditingImage({ assetId: String(node.data.assetId), sourceUrl: String(node.data.imageUrl), title: node.data.title, nodeId: node.id });
-        }
+        if (node) openImageEditor(node);
       }
       if (detail.action === "feedback-analysis-helpful") void submitAnalysisFeedback(detail.id, "helpful");
       if (detail.action === "feedback-analysis-needs-work") void submitAnalysisFeedback(detail.id, "needs-work", "inaccurate");
@@ -620,6 +618,7 @@ function WorkspaceCanvas() {
         if (node?.data.contract) setContract(node.data.contract);
         setSelectedIds([detail.id]);
         setRightTab("baseline");
+        setInspectorOpen(true);
       }
     };
     window.addEventListener("inspo:node-action", handler);
@@ -821,8 +820,7 @@ function WorkspaceCanvas() {
       return;
     }
     if (action === "edit" && node.data.kind === "image" && node.data.assetId && node.data.imageUrl) {
-      setEditingImage({ assetId: String(node.data.assetId), sourceUrl: String(node.data.imageUrl), title: node.data.title, nodeId: node.id });
-      return;
+      return openImageEditor(node);
     }
     if (action === "note") {
       const id = "note-" + crypto.randomUUID();
@@ -858,9 +856,13 @@ function WorkspaceCanvas() {
         ? current
         : next
     ));
-    if (next.length) setRightTab("asset");
+    if (next.length) {
+      setRightTab("asset");
+      setEditingImage((current) => current && !next.includes(current.nodeId) ? null : current);
+      setWorkflowOverlay((current) => current === "purpose" || current === "contract" ? null : current);
+    }
   }, []);
-  const onNodeClick = useCallback(() => setRightTab("asset"), []);
+  const onNodeClick = useCallback(() => { setRightTab("asset"); setEditingImage(null); setInspectorOpen(true); }, []);
   const onNodeContextMenu = useCallback((event: ReactMouseEvent, node: CanvasNode) => {
     event.preventDefault();
     setRightTab("asset");
@@ -1534,6 +1536,9 @@ function WorkspaceCanvas() {
     }));
     setEdges((current) => current.filter((edge) => !remove.has(edge.source) && !remove.has(edge.target)));
     setSelectedIds([]);
+    setEditingImage(null);
+    setWorkflowOverlay(null);
+    setRightTab("asset");
     setDeleteRequest(null);
     notify(groupTargets.length ? "分组已删除，内部卡片已保留" : "已删除，可使用撤销恢复");
   }
@@ -1634,7 +1639,18 @@ function WorkspaceCanvas() {
     setContractSetupNodeIds(sourceNodeIds ?? selectedNodes.filter((node) => node.data.workflowStage === "analysis" || isAnalyzableNode(node)).map((node) => node.id));
     setDesignBrief(createDesignBrief());
     setWorkflowOverlay("purpose");
+    setEditingImage(null);
     setRightTab("baseline");
+    setInspectorOpen(true);
+  }
+
+  function openImageEditor(node: CanvasNode) {
+    if (node.data.kind !== "image" || !node.data.assetId || !node.data.imageUrl) return;
+    setWorkflowOverlay(null);
+    setRightTab("asset");
+    setSelectedIds([node.id]);
+    setEditingImage({ assetId: String(node.data.assetId), sourceUrl: String(node.data.imageUrl), title: node.data.title, nodeId: node.id });
+    setInspectorOpen(true);
   }
 
   function updateDesignBrief(field: keyof Omit<DesignBrief, "purpose">, value: string) {
@@ -1990,10 +2006,10 @@ function WorkspaceCanvas() {
           <button onClick={() => void fitView({ padding: 0.18, duration: 320 })} disabled={!hasCanvasContent} title="定位全部节点"><WorkspaceIcon name="fit" /><small>定位</small></button>
           <button className={showMiniMap ? "is-active" : ""} onClick={() => setShowMiniMap((value) => !value)} disabled={!hasCanvasContent} title={showMiniMap ? "收起小地图" : "打开小地图"}><WorkspaceIcon name="map" /><small>小地图</small></button>
           {hasSelection ? <>
-            {selected?.data.kind === "image" && <button className="is-context" onClick={() => setEditingImage({ assetId: String(selected.data.assetId), sourceUrl: String(selected.data.imageUrl), title: selected.data.title, nodeId: selected.id })} title="裁剪、旋转、蒙版并保存副本"><WorkspaceIcon name="archive" /><small>编辑素材</small></button>}
+            {selected?.data.kind === "image" && selectedIds.length === 1 && <button className="is-context" onClick={() => openImageEditor(selected)} title="在右侧栏裁剪、旋转、蒙版并保存副本"><WorkspaceIcon name="archive" /><small>编辑素材</small></button>}
             {selectionCanAnalyze && <button className="ai-tool" onClick={() => selectedIds.length > 1 ? void analyzeSelected() : void analyze()} title="拆解所选参考"><WorkspaceIcon name="analyze" /><small>拆解</small></button>}
+            {selectedIds.length > 1 && <button className="is-context scheme-tool" onClick={() => openContractSetup(selectedIds)} title="在右侧栏整理所选参考"><WorkspaceIcon name="archive" /><small>整理方案</small></button>}
             {selectedIds.length > 1 && <button className="is-context" onClick={() => createGroup()} title="将所选卡片组成分组"><WorkspaceIcon name="folder" /><small>分组</small></button>}
-            {selected?.data.workflowStage === "analysis" && <button className="is-context" onClick={() => openContractSetup([selected.id])} title="整合当前拆解"><WorkspaceIcon name="archive" /><small>整合</small></button>}
             <button onClick={() => requestDeleteNodes(selectedIds)} title="删除所选"><WorkspaceIcon name="trash" /><small>删除</small></button>
           </> : null}
         </div>
@@ -2010,7 +2026,6 @@ function WorkspaceCanvas() {
             <strong>{selectedIds.length} 项</strong>
             <button onClick={() => createGroup()}>组成分组</button>
             {selectedNodes.some(isAnalyzableNode) && <button onClick={() => void analyzeSelected()}>批量拆解</button>}
-            {selectedNodes.filter((node) => node.data.workflowStage === "analysis" && node.data.status === "ready").length > 1 && <button className="is-primary" onClick={() => openContractSetup(selectedNodes.filter((node) => node.data.workflowStage === "analysis").map((node) => node.id))}>整合为方案</button>}
             <button onClick={() => alignSelected("left")}>左对齐</button>
             <button onClick={() => alignSelected("top")}>顶对齐</button>
             <button onClick={() => alignSelected("horizontal")}>水平等距</button>
@@ -2101,39 +2116,6 @@ function WorkspaceCanvas() {
           </aside>;
         })()}
 
-        {workflowOverlay === "purpose" && (
-          <div className="workflow-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setWorkflowOverlay(null); }}>
-            <section className="workflow-dialog purpose-dialog">
-              <header><div><small>整合前</small><h2>定义这次设计任务</h2><p>任务会成为方案取舍与输出的依据。</p></div><button onClick={() => setWorkflowOverlay(null)} aria-label="关闭"><WorkspaceIcon name="close" size={16} /></button></header>
-              <div className="purpose-choice-grid" role="list" aria-label="选择设计任务">
-                {purposeOptions.map((option) => <button key={option.id} role="listitem" className={designBrief.purpose === option.id ? "is-active" : ""} onClick={() => selectDesignPurpose(option.id)}><i><WorkspaceIcon name={purposeIconById[option.id]} size={17} /></i><span><strong>{option.title}</strong><small>{option.description}</small></span><b>{designBrief.purpose === option.id ? "✓" : ""}</b></button>)}
-              </div>
-              <section className="purpose-brief-fields" aria-label="最小任务 Brief">
-                <header><div><small>最小 Brief</small><h3>{activePurposeOption.title}</h3></div><span>只填写现在能确定的内容</span></header>
-                {(["objective", "context", "keep", "avoid"] as const).map((field, index) => <label key={field}><span>{activePurposeOption.fields[index]}{field === "objective" ? " · 必填" : " · 可选"}</span><textarea value={designBrief[field]} onChange={(event) => updateDesignBrief(field, event.target.value)} placeholder={field === "objective" ? `例如：${activePurposeOption.title}的当前目标` : "暂时不确定可以留空"} /></label>)}
-              </section>
-              <footer><button className="button soft" onClick={() => setWorkflowOverlay(null)}>返回画布</button><button className="button primary" onClick={() => void previewBaseline()} disabled={contractBusy || !designBrief.objective.trim()}>{contractBusy ? "正在汇总…" : "生成方案预览"}</button></footer>
-            </section>
-          </div>
-        )}
-
-        {workflowOverlay === "contract" && contract && (
-          <div className="workflow-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setWorkflowOverlay(null); }}>
-            <section className="workflow-dialog contract-dialog">
-              <header><div><small>整合拆解</small><h2>{contract.title}</h2><p>{contract.sourceAssetIds.length} 张参考将合并为一套可编辑方案。</p></div><button onClick={() => setWorkflowOverlay(null)}>×</button></header>
-              <div className="contract-content">
-                <div className="contract-title"><div><h3>采用内容</h3><small>点 × 移除不采用的内容</small></div></div>
-                <h4>设计原则</h4><div className="contract-items">{contract.principles.map((item, index) => <div key={item}><span>{item}<ContractEvidenceLink assetIds={evidenceAssetIds("principles", item)} /></span><button onClick={() => removeContractItem("principles", index)}>×</button></div>)}</div>
-                {!!contract.tokens.colors.length && <><h4>颜色</h4><div className="contract-items compact">{contract.tokens.colors.map((item, index) => <div key={item.name}><i style={{ background: item.value }} /><span>{item.value}<ContractEvidenceLink assetIds={item.sourceAssetIds} /></span><button onClick={() => removeContractItem("colors", index)}>×</button></div>)}</div></>}
-                {!!contract.components.length && <><h4>组件</h4><div className="contract-items">{contract.components.map((item, index) => <div key={item.name}><span><b>{item.name}</b>{item.rules[0] && <small>{item.rules[0]}</small>}<ContractEvidenceLink assetIds={item.sourceAssetIds} /></span><button onClick={() => removeContractItem("components", index)}>×</button></div>)}</div></>}
-                {!!contract.conflicts.length && <div className="contract-warning"><strong>需要取舍</strong>{contract.conflicts.map((item) => <div className="contract-review-item" key={item}><p>{item}</p><ContractEvidenceLink assetIds={evidenceAssetIds("conflicts", item)} /><label>已选取舍（可选）<input value={reviewDecision("conflicts", item)} onChange={(event) => updateReviewDecision("conflicts", item, event.target.value)} placeholder="例如：以紫色为主品牌色，绿色只用于状态" /></label></div>)}</div>}
-                {!!contract.unresolved.length && <div className="contract-unresolved"><strong>仍待确认</strong>{contract.unresolved.map((item) => <div className="contract-review-item" key={item}><p>{item}</p><ContractEvidenceLink assetIds={evidenceAssetIds("unresolved", item)} /><label>确认方式或备注（可选）<input value={reviewDecision("unresolved", item)} onChange={(event) => updateReviewDecision("unresolved", item, event.target.value)} placeholder="例如：上线前在 Figma 样式库核对字体" /></label></div>)}</div>}
-              </div>
-              <footer><button className="button soft" onClick={() => setWorkflowOverlay(null)}>返回画布</button><button className="button primary" onClick={() => void confirmBaseline()}>保存为方案卡</button></footer>
-            </section>
-          </div>
-        )}
-
         {workflowOverlay === "export" && (
           <div className="workflow-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setWorkflowOverlay(null); }}>
             <section className="workflow-dialog export-dialog export-wizard" role="dialog" aria-modal="true" aria-label="输出任务">
@@ -2210,49 +2192,63 @@ function WorkspaceCanvas() {
 
       <aside className={"inspector" + (inspectorOpen ? " is-open" : "")} style={{ width: rightRailWidth }}>
         <button className="mobile-inspector-close" onClick={() => setInspectorOpen(false)} aria-label="关闭阶段面板"><WorkspaceIcon name="close" size={16} /></button>
-        <div className="inspector-tabs">
-          <button className={rightTab === "asset" ? "active" : ""} onClick={() => { setRightTab("asset"); setInspectorOpen(true); }}>参考</button>
-          <button className={rightTab === "baseline" ? "active" : ""} onClick={() => { setRightTab("baseline"); setInspectorOpen(true); }}>方案</button>
+        <div className="inspector-context-header">
+          <div><small>{editingImage ? "素材操作" : rightTab === "baseline" ? "整理方案" : selectedIds.length > 1 ? "当前选择" : "素材详情"}</small><strong>{editingImage ? "编辑素材" : rightTab === "baseline" ? workflowOverlay === "purpose" ? "明确设计任务" : "筛选与取舍" : selectedIds.length > 1 ? `${selectedIds.length} 张卡片` : selected?.data.title || "选择画布卡片"}</strong></div>
+          {(editingImage || rightTab === "baseline") && <button type="button" onClick={() => { setEditingImage(null); setWorkflowOverlay(null); setRightTab("asset"); }} aria-label="返回素材详情">返回</button>}
         </div>
-        {rightTab === "asset" ? (
-          selectedIds.length > 1 ? (
-            <section className="multi-inspector">
-              <small>已选择</small><h2>{selectedIds.length} 张卡片</h2>
-              <p>拆解后即可整合；对齐、分组与删除在画布上方。</p>
-              {selectedNodes.some(isAnalyzableNode) && <button className="analyze-button" onClick={() => void analyzeSelected()}><WorkspaceIcon name="analyze" size={16} />拆解所选</button>}
-              {selectedNodes.filter((node) => node.data.workflowStage === "analysis" && node.data.status === "ready").length > 1 && <button className="analyze-button" onClick={() => openContractSetup(selectedNodes.filter((node) => node.data.workflowStage === "analysis").map((node) => node.id))}><WorkspaceIcon name="archive" size={16} />整合为方案</button>}
-              <button className="button soft wide" onClick={previewOrganize}>整理所选卡片</button>
+        {editingImage ? (
+          <ImageEditor key={editingImage.assetId} assetId={editingImage.assetId} sourceUrl={editingImage.sourceUrl} title={editingImage.title} onClose={() => setEditingImage(null)} onSaved={addDerivativeLayer} />
+        ) : rightTab === "baseline" && workflowOverlay === "purpose" ? (
+          <section className="scheme-sidebar" aria-label="整理方案任务">
+            <p>选择这次设计要解决的问题，再从所选素材的拆解结果中提取可用元素。</p>
+            <div className="scheme-source-count">已选 {contractSetupNodeIds.length} 张卡片 · {contractSetupNodeIds.filter((id) => nodes.some((node) => node.id === id && (node.data.workflowStage === "analysis" || !!node.data.analysisSummary))).length} 张已有拆解</div>
+            <div className="purpose-choice-grid" role="list" aria-label="选择设计任务">
+              {purposeOptions.map((option) => <button key={option.id} type="button" role="listitem" className={designBrief.purpose === option.id ? "is-active" : ""} onClick={() => selectDesignPurpose(option.id)}><i><WorkspaceIcon name={purposeIconById[option.id]} size={17} /></i><span><strong>{option.title}</strong><small>{option.description}</small></span><b>{designBrief.purpose === option.id ? "✓" : ""}</b></button>)}
+            </div>
+            <section className="purpose-brief-fields" aria-label="设计任务说明">
+              <h3>{activePurposeOption.title}</h3>
+              {(["objective", "context", "keep", "avoid"] as const).map((field, index) => <label key={field}><span>{activePurposeOption.fields[index]}{field === "objective" ? " · 必填" : " · 可选"}</span><textarea value={designBrief[field]} onChange={(event) => updateDesignBrief(field, event.target.value)} placeholder={field === "objective" ? `例如：${activePurposeOption.title}的当前目标` : "暂时不确定可以留空"} /></label>)}
             </section>
-          ) : selected ? (
-            <>
-              <section className="inspect-title">
-                <span className={"inspect-icon " + selected.data.kind}><WorkspaceIcon name={selected.data.note ? "note" : selected.data.kind === "group" ? "folder" : "archive"} /></span>
-                <div><small>{selected.data.kind === "group" ? "分组" : selected.data.workflowStage === "analysis" ? "拆解结果" : selected.data.workflowStage === "contract" ? "设计方案" : selected.data.note ? "备注" : "参考卡片"}</small><h2>{selected.data.title}</h2></div>
-              </section>
-              {isAnalyzableNode(selected) && <button className="analyze-button" onClick={() => void analyze(selected.id)} disabled={selected.data.status === "processing"}><WorkspaceIcon name="analyze" size={16} />{selected.data.status === "processing" ? "正在拆解" : selected.data.analysisSummary ? "重新拆解" : "拆解参考"}</button>}
-              {!!selected.data.colors?.length && <section className="inspect-block"><div className="block-heading"><h3>颜色参考</h3><button onClick={() => navigator.clipboard.writeText(selected.data.colors?.join(", ") || "")}>复制全部</button></div><div className="palette-list">{selected.data.colors.map((color) => <button key={color} onClick={() => navigator.clipboard.writeText(color)}><i style={{ background: color }} /><span>颜色</span><code>{color}</code></button>)}</div></section>}
-              {!!selected.data.principles?.length && <section className="inspect-block"><h3>可复用的设计要点</h3><ol className="principle-list">{selected.data.principles.map((item) => <li key={item}>{item}</li>)}</ol></section>}
-              {!!selected.data.regions?.length && <section className="inspect-block"><div className="block-heading"><h3>识别到的组件</h3><small>生成方案时自动汇总</small></div><div className="region-list simple">{selected.data.regions.map((region) => <div key={region.id}><span className="region-preview">{region.type}</span><div><strong>{region.label}</strong><small>{Math.round((region.confidence ?? 0) * 100)}% 可信</small></div></div>)}</div></section>}
-            </>
-          ) : <div className="empty-inspector"><WorkspaceIcon name="archive" size={22} /><strong>等待参考</strong><p>选中素材后，拆解结果与来源会显示在这里。</p><span>采集 → 拆解 → 方案 → 输出</span></div>
-        ) : (
-          <section className="contract-panel">
-            <span className="step-kicker">方案</span><h2>整合参考</h2>
-            <p>选中卡片时只使用所选内容；否则使用全部拆解结果。</p>
-            <button className="analyze-button" onClick={() => openContractSetup()} disabled={contractBusy}><WorkspaceIcon name="archive" size={16} />{contractBusy ? "正在汇总" : selectedNodes.some(isAnalyzableNode) ? `整合所选 ${selectedNodes.filter(isAnalyzableNode).length} 张` : "整合参考"}</button>
-            {contract && <div className="contract-content">
-              <div className="contract-title"><div><h3>{contract.title}</h3><small>{contract.sourceAssetIds.length} 张参考</small></div><span>点 × 移除不采用的内容</span></div>
-              <h4>设计原则</h4><div className="contract-items">{contract.principles.map((item, index) => <div key={item}><span>{item}<ContractEvidenceLink assetIds={evidenceAssetIds("principles", item)} /></span><button onClick={() => removeContractItem("principles", index)} aria-label="移除设计原则">×</button></div>)}</div>
-              {!!contract.tokens.colors.length && <><h4>颜色</h4><div className="contract-items compact">{contract.tokens.colors.map((item, index) => <div key={item.name}><i style={{ background: item.value }} /><span>{item.value}</span><button onClick={() => removeContractItem("colors", index)} aria-label="移除颜色">×</button></div>)}</div></>}
-              {!!contract.tokens.spacing.length && <><h4>间距</h4><div className="contract-items compact">{contract.tokens.spacing.map((item, index) => <div key={`${item}-${index}`}><span>{item}px</span><button onClick={() => removeContractItem("spacing", index)} aria-label="移除间距">×</button></div>)}</div></>}
-              {!!contract.tokens.radii.length && <><h4>圆角</h4><div className="contract-items compact">{contract.tokens.radii.map((item, index) => <div key={`${item}-${index}`}><span>{item}px</span><button onClick={() => removeContractItem("radii", index)} aria-label="移除圆角">×</button></div>)}</div></>}
-              {!!contract.components.length && <><h4>组件</h4><div className="contract-items">{contract.components.map((item, index) => <div key={item.name}><span><b>{item.name}</b>{item.rules[0] && <small>{item.rules[0]}</small>}</span><button onClick={() => removeContractItem("components", index)} aria-label="移除组件">×</button></div>)}</div></>}
-              {!!(contract.conflicts.length || contract.unresolved.length) && <div className="contract-warning"><strong>{contract.conflicts.length + contract.unresolved.length} 项待核对</strong><p>打开检查后可以查看来源，并记录取舍或确认方式。</p></div>}
-              <button className="button soft wide" onClick={() => setWorkflowOverlay("contract")}>检查证据与取舍</button>
-              <button className="button primary wide" onClick={() => void confirmBaseline()}>保存设计方案</button>
-            </div>}
+            <button className="button primary wide" onClick={() => void previewBaseline()} disabled={contractBusy || !designBrief.objective.trim()}>{contractBusy ? "正在汇总…" : "生成方案预览"}</button>
           </section>
-        )}
+        ) : rightTab === "baseline" ? (
+          <section className="contract-panel" aria-label="整理方案内容">
+            <span className="step-kicker">整理方案</span><h2>{contract?.title || "从参考中提取设计元素"}</h2>
+            {contract ? <>
+              <p>{contract.sourceAssetIds.length} 张参考已汇总。检查来源，移除不采用的内容，再保存到画布。</p>
+              <div className="contract-content">
+                <div className="contract-title"><div><h3>采用内容</h3><small>点击 × 移除</small></div></div>
+                <h4>设计原则</h4><div className="contract-items">{contract.principles.map((item, index) => <div key={item}><span>{item}<ContractEvidenceLink assetIds={evidenceAssetIds("principles", item)} /></span><button onClick={() => removeContractItem("principles", index)} aria-label="移除设计原则">×</button></div>)}</div>
+                {!!contract.tokens.colors.length && <><h4>颜色</h4><div className="contract-items compact">{contract.tokens.colors.map((item, index) => <div key={item.name}><i style={{ background: item.value }} /><span>{item.value}<ContractEvidenceLink assetIds={item.sourceAssetIds} /></span><button onClick={() => removeContractItem("colors", index)} aria-label="移除颜色">×</button></div>)}</div></>}
+                {!!contract.tokens.spacing.length && <><h4>间距</h4><div className="contract-items compact">{contract.tokens.spacing.map((item, index) => <div key={`${item}-${index}`}><span>{item}px</span><button onClick={() => removeContractItem("spacing", index)} aria-label="移除间距">×</button></div>)}</div></>}
+                {!!contract.tokens.radii.length && <><h4>圆角</h4><div className="contract-items compact">{contract.tokens.radii.map((item, index) => <div key={`${item}-${index}`}><span>{item}px</span><button onClick={() => removeContractItem("radii", index)} aria-label="移除圆角">×</button></div>)}</div></>}
+                {!!contract.components.length && <><h4>组件</h4><div className="contract-items">{contract.components.map((item, index) => <div key={item.name}><span><b>{item.name}</b>{item.rules[0] && <small>{item.rules[0]}</small>}<ContractEvidenceLink assetIds={item.sourceAssetIds} /></span><button onClick={() => removeContractItem("components", index)} aria-label="移除组件">×</button></div>)}</div></>}
+                {!!contract.conflicts.length && <div className="contract-warning"><strong>需要取舍</strong>{contract.conflicts.map((item) => <div className="contract-review-item" key={item}><p>{item}</p><ContractEvidenceLink assetIds={evidenceAssetIds("conflicts", item)} /><label>已选取舍（可选）<input value={reviewDecision("conflicts", item)} onChange={(event) => updateReviewDecision("conflicts", item, event.target.value)} placeholder="写下采用哪一种方向" /></label></div>)}</div>}
+                {!!contract.unresolved.length && <div className="contract-unresolved"><strong>仍待确认</strong>{contract.unresolved.map((item) => <div className="contract-review-item" key={item}><p>{item}</p><ContractEvidenceLink assetIds={evidenceAssetIds("unresolved", item)} /><label>确认方式或备注（可选）<input value={reviewDecision("unresolved", item)} onChange={(event) => updateReviewDecision("unresolved", item, event.target.value)} placeholder="写下后续如何确认" /></label></div>)}</div>}
+              </div>
+              <button className="button primary wide" onClick={() => void confirmBaseline()}>保存为方案卡</button>
+            </> : <><p>先从底部工具栏选择“整理方案”，再填写任务并生成预览。</p><button className="button primary wide" onClick={() => openContractSetup()}>开始整理方案</button></>}
+          </section>
+        ) : selectedIds.length > 1 ? (
+          <section className="multi-inspector">
+            <small>已选择</small><h2>{selectedIds.length} 张卡片</h2>
+            <p>可以批量拆解参考，或从底部工具栏进入“整理方案”。</p>
+            <div className="selection-summary">{selectedNodes.map((node) => <div key={node.id}><span>{node.data.workflowStage === "analysis" ? "拆解" : node.data.kind === "image" ? "图片" : "素材"}</span><strong>{node.data.title}</strong></div>)}</div>
+            {selectedNodes.some(isAnalyzableNode) && <button className="analyze-button" onClick={() => void analyzeSelected()}><WorkspaceIcon name="analyze" size={16} />拆解所选</button>}
+          </section>
+        ) : selected ? (
+          <>
+            <section className="inspect-title"><span className={"inspect-icon " + selected.data.kind}><WorkspaceIcon name={selected.data.note ? "note" : selected.data.kind === "group" ? "folder" : "archive"} /></span><div><small>{selected.data.kind === "group" ? "分组" : selected.data.workflowStage === "analysis" ? "拆解结果" : selected.data.workflowStage === "contract" ? "设计方案" : selected.data.note ? "备注" : "参考素材"}</small><h2>{selected.data.title}</h2></div></section>
+            {selected.data.kind === "image" && selected.data.imageUrl && <div className="inspector-image-preview"><img src={String(selected.data.imageUrl)} alt={selected.data.title} /></div>}
+            <section className="inspect-block"><h3>基本信息</h3><dl className="asset-facts"><div><dt>类型</dt><dd>{selected.data.workflowStage === "analysis" ? "AI 拆解" : selected.data.kind === "image" ? "图片" : selected.data.kind === "group" ? "分组" : selected.data.note ? "备注" : "参考素材"}</dd></div><div><dt>来源</dt><dd>{selected.data.sourceUrl ? <a href={String(selected.data.sourceUrl)} target="_blank" rel="noreferrer">打开原网页 ↗</a> : selected.data.workflowStage === "analysis" ? "来自画布参考" : "本地导入"}</dd></div><div><dt>状态</dt><dd>{selected.data.status === "processing" ? "正在拆解" : selected.data.status === "ready" ? "已拆解" : "已保存"}</dd></div></dl></section>
+            {selected.data.kind === "image" && <button className="analyze-button" onClick={() => openImageEditor(selected)}><WorkspaceIcon name="archive" size={16} />编辑素材</button>}
+            {isAnalyzableNode(selected) && <button className="analyze-button secondary" onClick={() => void analyze(selected.id)} disabled={selected.data.status === "processing"}><WorkspaceIcon name="analyze" size={16} />{selected.data.status === "processing" ? "正在拆解" : selected.data.analysisSummary ? "重新拆解" : "拆解参考"}</button>}
+            {selected.data.analysisSummary && <section className="inspect-block"><h3>拆解概览</h3><p className="analysis-inspector-summary">{selected.data.analysisSummary}</p></section>}
+            {!!selected.data.colors?.length && <section className="inspect-block"><div className="block-heading"><h3>颜色参考</h3><button onClick={() => navigator.clipboard.writeText(selected.data.colors?.join(", ") || "")}>复制全部</button></div><div className="palette-list">{selected.data.colors.map((color) => <button key={color} onClick={() => navigator.clipboard.writeText(color)}><i style={{ background: color }} /><span>颜色</span><code>{color}</code></button>)}</div></section>}
+            {!!selected.data.principles?.length && <section className="inspect-block"><h3>可复用的设计要点</h3><ol className="principle-list">{selected.data.principles.map((item) => <li key={item}>{item}</li>)}</ol></section>}
+            {!!selected.data.regions?.length && <section className="inspect-block"><div className="block-heading"><h3>识别到的组件</h3><small>整理方案时可筛选</small></div><div className="region-list simple">{selected.data.regions.map((region) => <div key={region.id}><span className="region-preview">{region.type}</span><div><strong>{region.label}</strong><small>{Math.round((region.confidence ?? 0) * 100)}% 可信</small></div></div>)}</div></section>}
+          </>
+        ) : <div className="empty-inspector"><WorkspaceIcon name="archive" size={22} /><strong>选中卡片，查看细节</strong><p>素材信息、拆解元素和编辑操作会在这里出现。</p></div>}
       </aside>
 
       {contextMenu?.kind === "node" && (() => {
@@ -2322,7 +2318,6 @@ function WorkspaceCanvas() {
 
 
 
-      {editingImage && <ImageEditor assetId={editingImage.assetId} sourceUrl={editingImage.sourceUrl} title={editingImage.title} onClose={() => setEditingImage(null)} onSaved={addDerivativeLayer} />}
       {redesignImage && <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !redesignBusy) setRedesignImage(null); }}>
         <section className="modal redesign-dialog" role="dialog" aria-modal="true" aria-label="AI 改造图片">
           <header><div><span className="modal-kicker">从图片继续创作</span><h2>AI 改造图片</h2><p>描述想改变的内容。原图会保留，生成结果作为新卡片加入画布。</p></div><button onClick={() => setRedesignImage(null)} disabled={redesignBusy} aria-label="关闭">×</button></header>

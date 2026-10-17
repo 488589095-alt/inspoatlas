@@ -153,9 +153,8 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
 
   const finishStroke = () => { drawing.current = false; lastStrokePoint.current = null; };
 
-  return <div className="image-editor-backdrop" role="presentation" onMouseDown={(event) => event.target === event.currentTarget && onClose()}>
-    <section className="image-editor" role="dialog" aria-modal="true" aria-label="编辑素材">
-      <header><div><h2>编辑素材</h2><p>原图保持不变，保存后生成可追溯副本。</p></div><button onClick={onClose} aria-label="关闭">×</button></header>
+  return <section className="image-editor image-editor-inline" aria-label="编辑素材">
+      <header><div><small>素材操作</small><h2>编辑素材</h2><p>原图保持不变，保存后生成可追溯副本。</p></div><button onClick={onClose} aria-label="返回素材详情">返回</button></header>
       <div className="image-editor-layout">
         <div className="image-editor-preview">
           <canvas ref={displayRef} onPointerDown={(event) => { if (maskEnabled) { drawing.current = true; lastStrokePoint.current = null; event.currentTarget.setPointerCapture(event.pointerId); paint(event); } }} onPointerMove={paint} onPointerUp={finishStroke} onPointerCancel={finishStroke} onPointerLeave={finishStroke} />
@@ -169,8 +168,7 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
         </aside>
       </div>
       <footer><button onClick={onClose}>取消</button><div><button disabled={!image || saving} onClick={() => void downloadPng()}>导出 PNG</button><button className="primary" disabled={!image || saving} onClick={() => void save()}>{saving ? "正在保存…" : "保存为副本"}</button></div></footer>
-    </section>
-  </div>;
+    </section>;
 }
 
 function clampRect(value: Rect): Rect {

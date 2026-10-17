@@ -14,7 +14,7 @@ test("多选、自动分组、画布查找、文件夹导入与真实账号入�
   assert.match(workspace, /ratio >= 0\.42/);
   assert.match(workspace, /双击重命名当前作品/);
   assert.doesNotMatch(workspace, /className="workspace-modes"/);
-  assert.match(workspace, /<h2>整合参考<\/h2>/);
+  assert.match(workspace, /<small>整理方案<\/small>/);
   assert.match(workspace, /<h2>输出任务<\/h2>/);
   assert.match(workspace, /is-search-match/);
   assert.match(workspace, /webkitdirectory/);
@@ -23,7 +23,7 @@ test("多选、自动分组、画布查找、文件夹导入与真实账号入�
   assert.match(workspace, /audio\/mpeg/);
   assert.match(workspace, /panOnDrag=\{\[2\]\}/);
   assert.match(styles, /\.canvas-toolbar[\s\S]*flex-direction: row/);
-  assert.match(styles, /\.inspector-tabs[\s\S]*flex-wrap: nowrap/);
+  assert.doesNotMatch(workspace, /className="inspector-tabs"/);
   assert.doesNotMatch(workspace, /groups\.map\(\(group\).*移入：/);
   assert.match(userMenu, /\/api\/session/);
   assert.match(userMenu, /signout-with-chatgpt/);
