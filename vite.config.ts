@@ -40,6 +40,24 @@ export default defineConfig(async () => {
   process.env.WRANGLER_LOG_PATH ??= ".wrangler/logs";
   process.env.MINIFLARE_REGISTRY_PATH ??= ".wrangler/registry";
 
+  // Vercel needs Nitro to translate vinext's server output into a deployable
+  // Node runtime. Keep the existing Cloudflare/Sites path unchanged elsewhere.
+  if (process.env.VERCEL) {
+    const { nitro } = await import("nitro/vite");
+
+    return {
+      resolve: {
+        alias: {
+          "cloudflare:workers": new URL(
+            "./build/vercel-cloudflare-workers.ts",
+            import.meta.url,
+          ).pathname,
+        },
+      },
+      plugins: [vinext(), nitro()],
+    };
+  }
+
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import("@cloudflare/vite-plugin");
 

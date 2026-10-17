@@ -1,4 +1,4 @@
-@import "tailwindcss";
+@import "tailwindcss/index.css";
 
 :root {
   --desk-canvas: #0a0f0d;
