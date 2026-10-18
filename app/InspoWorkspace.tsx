@@ -2298,7 +2298,7 @@ function WorkspaceCanvas() {
           <button className="button ghost icon-button" onClick={undo} title="撤销" aria-label="撤销"><WorkspaceIcon name="undo" /></button>
           <button className="button ghost icon-button" onClick={redo} title="重做" aria-label="重做"><WorkspaceIcon name="redo" /></button>
           <button className="button ghost theme-toggle" onClick={() => setTheme((value) => value === "light" ? "dark" : "light")} title={theme === "light" ? "切换深色模式" : "切换浅色模式"} aria-label={theme === "light" ? "切换深色模式" : "切换浅色模式"}><span aria-hidden="true">{theme === "light" ? "☾" : "☀"}</span></button>
-          <button className={"button soft focus-top-button" + (focusMode ? " active" : "")} onClick={() => setFocusMode((value) => !value)}>{focusMode ? "退出专注" : "专注模式"}</button>
+          <button className={"button soft focus-top-button" + (focusMode ? " active" : "")} onClick={() => { setFocusMode((value) => !value); setAssistantOpen(false); }}>{focusMode ? "退出专注" : "专注模式"}</button>
           <button className="button primary export-top-button" onClick={startExportWizard}><WorkspaceIcon name="upload" size={15} />输出</button>
           <UserMenu />
         </div>
@@ -2548,7 +2548,7 @@ function WorkspaceCanvas() {
                 setInspectorOpen(true);
                 setAssistantMemoryOpen(false);
                 setAssistantHistoryOpen(false);
-                if (window.innerWidth > 1100 && rightRailWidth < 380) setRightRailWidth(380);
+                if (window.innerWidth > 1100 && rightRailWidth < 440) setRightRailWidth(440);
               }
               setAgentHintVisible(false);
             }}
@@ -2563,9 +2563,8 @@ function WorkspaceCanvas() {
       <div className="rail-resizer rail-resizer-right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" title="拖动调整右栏宽度，拖到尽头可收起" onDoubleClick={() => resetRailWidth("right")} onPointerDown={(event) => startRailResize("right", event)} />
       {!focusMode && <button type="button" className={"rail-collapse-button rail-collapse-right" + (rightRailCollapsed ? " is-collapsed" : "")} onClick={() => toggleRailCollapsed("right")} aria-label={rightRailCollapsed ? "展开右侧栏" : "收起右侧栏"} title={rightRailCollapsed ? "展开详情栏" : "收起详情栏"}><WorkspaceIcon name="chevron" size={14} /></button>}
 
-      <aside className={"inspector" + (inspectorOpen ? " is-open" : "") + (assistantOpen ? " is-agent-open" : "") + ((rightRailCollapsed || (resizingRail === "right" && rightRailWidth < railExpandedMinimum.right)) ? " is-collapsed" : "")}>
-        {assistantOpen && (
-          <section className="agent-drawer agent-sidebar" aria-label="小in 设计助手">
+      {assistantOpen ? (
+          <aside className="agent-drawer assistant-rail" aria-label="小in 设计助手">
             <header className="agent-header">
               <div className="agent-header-identity"><img src="/inspo-sprite.png" alt="" /><div><h2>小in</h2><span>你的设计小助手</span></div></div>
               <div className="agent-header-actions">
@@ -2623,8 +2622,9 @@ function WorkspaceCanvas() {
               <textarea id="direction-question" value={assistantQuestion} maxLength={2000} disabled={assistantBusy || assistantHistoryLoading} onChange={(event) => { setAssistantQuestion(event.target.value); if (event.target.value.trim()) setAssistantHasInteracted(true); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void askDesignAssistant(); } }} placeholder="和小in聊聊你的想法…" rows={3} />
               <div className="agent-composer-footer"><span>{voiceListening ? "正在听你说…" : "Enter 发送 · Shift + Enter 换行"}</span><div><button type="button" className={voiceListening ? "agent-voice is-listening" : "agent-voice"} onClick={toggleVoiceInput} disabled={assistantBusy || assistantHistoryLoading || !voiceSupported} aria-label={voiceListening ? "停止语音输入" : "语音输入"} title={voiceSupported ? "语音输入" : "当前浏览器不支持语音输入"}><WorkspaceIcon name="mic" size={18} /></button><button type="submit" className="agent-send" disabled={assistantBusy || assistantHistoryLoading || !assistantQuestion.trim()}>发送 <WorkspaceIcon name="chevron" size={15} /></button></div></div>
             </form>
-          </section>
-        )}
+          </aside>
+      ) : (
+      <aside className={"inspector" + (inspectorOpen ? " is-open" : "") + ((rightRailCollapsed || (resizingRail === "right" && rightRailWidth < railExpandedMinimum.right)) ? " is-collapsed" : "")}>
         <div className="inspector-compact" aria-label="右侧栏快捷入口">
           <button type="button" onClick={() => { setRightTab("asset"); toggleRailCollapsed("right"); }} aria-label="展开素材详情" title="展开素材详情"><WorkspaceIcon name="archive" size={18} /></button>
           <button type="button" onClick={() => { if (selectedIds.length > 1) { setRightTab("baseline"); toggleRailCollapsed("right"); } }} disabled={selectedIds.length < 2} aria-label="展开整理方案" title="选择多张卡片后整理方案"><WorkspaceIcon name="arrange" size={18} /></button>
@@ -2689,6 +2689,7 @@ function WorkspaceCanvas() {
           </>
         ) : <div className="empty-inspector"><WorkspaceIcon name="archive" size={22} /><strong>选中卡片，查看细节</strong><p>素材信息、拆解元素和编辑操作会在这里出现。</p></div>}
       </aside>
+      )}
 
       {contextMenu?.kind === "node" && (() => {
         const node = nodes.find((item) => item.id === contextMenu.id);
