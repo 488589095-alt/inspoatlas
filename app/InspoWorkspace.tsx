@@ -58,6 +58,10 @@ const defaultSize: Record<CardData["kind"], { width: number; height: number }> =
   group: { width: 760, height: 520 },
 };
 const canvasSnapGrid: [number, number] = [8, 8];
+const railCompactWidth = 68;
+const railExpandedMinimum = { left: 204, right: 280 } as const;
+const railDefaultWidth = { left: 242, right: 322 } as const;
+const railMaximumWidth = { left: 360, right: 460 } as const;
 const imageFriendlyFitPadding = { top: "36px", right: "56px", bottom: "110px", left: "56px" } as const;
 
 type WorkspaceModal = "import" | "new-work" | null;
@@ -1210,38 +1214,69 @@ function WorkspaceCanvas() {
   }
 
   function startRailResize(side: "left" | "right", event: ReactPointerEvent<HTMLDivElement>) {
-    if (window.innerWidth <= 700 || (side === "left" ? leftRailCollapsed : rightRailCollapsed)) return;
+    if (window.innerWidth <= 700 || event.button !== 0) return;
     event.preventDefault();
     event.stopPropagation();
+    const pointerId = event.pointerId;
     const startX = event.clientX;
-    const startWidth = side === "left" ? leftRailWidth : rightRailWidth;
+    const startCollapsed = side === "left" ? leftRailCollapsed : rightRailCollapsed;
+    const expandedWidth = side === "left" ? leftRailWidth : rightRailWidth;
+    const startWidth = startCollapsed ? railCompactWidth : expandedWidth;
     let latestWidth = startWidth;
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
     setResizingRail(side);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
 
     const onMove = (moveEvent: PointerEvent) => {
+      if (moveEvent.pointerId !== pointerId) return;
       const delta = moveEvent.clientX - startX;
-      const minimum = side === "left" ? 204 : 280;
-      const hardMaximum = side === "left" ? 360 : 460;
       const otherWidth = side === "left" ? rightRailWidth : leftRailWidth;
-      const availableMaximum = Math.max(minimum, window.innerWidth - (side === "left" ? (rightRailCollapsed ? 68 : otherWidth) : (leftRailCollapsed ? 68 : otherWidth)) - 280);
-      latestWidth = clamp(startWidth + (side === "left" ? delta : -delta), minimum, Math.min(hardMaximum, availableMaximum));
-      if (side === "left") setLeftRailWidth(latestWidth);
-      else setRightRailWidth(latestWidth);
+      const availableMaximum = Math.max(railCompactWidth, window.innerWidth - (side === "left" ? (rightRailCollapsed ? railCompactWidth : otherWidth) : (leftRailCollapsed ? railCompactWidth : otherWidth)) - 280);
+      latestWidth = clamp(startWidth + (side === "left" ? delta : -delta), railCompactWidth, Math.min(railMaximumWidth[side], availableMaximum));
+      if (side === "left") {
+        setLeftRailCollapsed(false);
+        setLeftRailWidth(latestWidth);
+      } else {
+        setRightRailCollapsed(false);
+        setRightRailWidth(latestWidth);
+      }
     };
-    const onUp = () => {
+    const finish = (cancelled: boolean) => {
+      const collapse = cancelled ? startCollapsed : latestWidth < railExpandedMinimum[side];
+      const width = cancelled || collapse ? expandedWidth : latestWidth;
+      if (side === "left") {
+        setLeftRailCollapsed(collapse);
+        setLeftRailWidth(width);
+      } else {
+        setRightRailCollapsed(collapse);
+        setRightRailWidth(width);
+      }
+      if (!cancelled) {
+        window.localStorage.setItem(`inspoatlas:${side}-rail-collapsed`, collapse ? "1" : "0");
+        window.localStorage.setItem(`inspoatlas:${side}-rail-width`, String(Math.round(width)));
+      }
       setResizingRail(null);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      window.localStorage.setItem(`inspoatlas:${side}-rail-width`, String(Math.round(latestWidth)));
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      window.removeEventListener("pointercancel", onUp);
+      window.removeEventListener("pointercancel", onCancel);
     };
+    const onUp = (upEvent: PointerEvent) => { if (upEvent.pointerId === pointerId) finish(false); };
+    const onCancel = (cancelEvent: PointerEvent) => { if (cancelEvent.pointerId === pointerId) finish(true); };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
-    window.addEventListener("pointercancel", onUp);
+    window.addEventListener("pointercancel", onCancel);
+  }
+
+  function resetRailWidth(side: "left" | "right") {
+    const width = railDefaultWidth[side];
+    if (side === "left") { setLeftRailWidth(width); setLeftRailCollapsed(false); }
+    else { setRightRailWidth(width); setRightRailCollapsed(false); }
+    window.localStorage.setItem(`inspoatlas:${side}-rail-width`, String(width));
+    window.localStorage.setItem(`inspoatlas:${side}-rail-collapsed`, "0");
   }
 
   async function addMedia(input: File[] | FileList, asFolder = false) {
@@ -2243,7 +2278,7 @@ function WorkspaceCanvas() {
           ))}
         </nav>
       </aside>
-      <div className="rail-resizer rail-resizer-left" role="separator" aria-label="调整左侧栏宽度" aria-orientation="vertical" title="拖动调整左栏宽度" onDoubleClick={() => setLeftRailWidth(242)} onPointerDown={(event) => startRailResize("left", event)} />
+      <div className="rail-resizer rail-resizer-left" role="separator" aria-label="调整左侧栏宽度" aria-orientation="vertical" title="拖动调整左栏宽度，拖到尽头可收起" onDoubleClick={() => resetRailWidth("left")} onPointerDown={(event) => startRailResize("left", event)} />
       {!focusMode && <button type="button" className={"rail-collapse-button rail-collapse-left" + (leftRailCollapsed ? " is-collapsed" : "")} onClick={() => toggleRailCollapsed("left")} aria-label={leftRailCollapsed ? "展开左侧栏" : "收起左侧栏"} title={leftRailCollapsed ? "展开作品栏" : "收起作品栏"}><WorkspaceIcon name="chevron" size={14} /></button>}
       {editingBoardId && editingBoardSurface === "popover" && <form
         className="board-rename-popover"
@@ -2479,7 +2514,7 @@ function WorkspaceCanvas() {
           {agentRevealed && <button className="agent-dock-button" onClick={dockAgent} aria-label="收起小in到侧边" title="收起小in到侧边"><span>收起</span><WorkspaceIcon name="chevron" size={16} /></button>}
         </div>, document.body
       )}
-      <div className="rail-resizer rail-resizer-right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" title="拖动调整右栏宽度" onDoubleClick={() => setRightRailWidth(322)} onPointerDown={(event) => startRailResize("right", event)} />
+      <div className="rail-resizer rail-resizer-right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" title="拖动调整右栏宽度，拖到尽头可收起" onDoubleClick={() => resetRailWidth("right")} onPointerDown={(event) => startRailResize("right", event)} />
       {!focusMode && <button type="button" className={"rail-collapse-button rail-collapse-right" + (rightRailCollapsed ? " is-collapsed" : "")} onClick={() => toggleRailCollapsed("right")} aria-label={rightRailCollapsed ? "展开右侧栏" : "收起右侧栏"} title={rightRailCollapsed ? "展开详情栏" : "收起详情栏"}><WorkspaceIcon name="chevron" size={14} /></button>}
 
       <aside className={"inspector" + (inspectorOpen ? " is-open" : "") + (rightRailCollapsed ? " is-collapsed" : "")}>
