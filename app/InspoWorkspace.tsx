@@ -2268,7 +2268,7 @@ function WorkspaceCanvas() {
       }}
     >
       <header className="topbar">
-        <div className="brand"><span className="brand-mark" title="小in"><img src="/inspo-sprite.png" alt="小in" /></span><div><strong>InspoAtlas</strong><small>灵感图谱</small></div></div>
+        <div className="brand"><span className="brand-mark" title="小in"><img src="/inspo-sprite.png" alt="小in" /></span><div><strong>InspoAtlas</strong><small>你的灵感小助手</small></div></div>
         <div
           className="board-title editable"
           title="双击重命名当前作品"
