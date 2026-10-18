@@ -208,8 +208,9 @@ function WorkspaceCanvas() {
   const [urlValue, setUrlValue] = useState("");
   const [organizePreview, setOrganizePreview] = useState<OrganizePreview | null>(null);
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
-  const [editingBoardSurface, setEditingBoardSurface] = useState<"header" | "sidebar" | null>(null);
+  const [editingBoardSurface, setEditingBoardSurface] = useState<"header" | "sidebar" | "popover" | null>(null);
   const [boardDraft, setBoardDraft] = useState("");
+  const [boardRenameTop, setBoardRenameTop] = useState(120);
   const [newWorkTitle, setNewWorkTitle] = useState("");
   const [contract, setContract] = useState<DesignContract | null>(null);
   const [contractBusy, setContractBusy] = useState(false);
@@ -244,6 +245,8 @@ function WorkspaceCanvas() {
   const [connecting, setConnecting] = useState(false);
   const [leftRailWidth, setLeftRailWidth] = useState(242);
   const [rightRailWidth, setRightRailWidth] = useState(322);
+  const [leftRailCollapsed, setLeftRailCollapsed] = useState(false);
+  const [rightRailCollapsed, setRightRailCollapsed] = useState(false);
   const [resizingRail, setResizingRail] = useState<"left" | "right" | null>(null);
   const [rightPanning, setRightPanning] = useState(false);
   const [viewportState, setViewportState] = useState<Viewport>({ x: 0, y: 0, zoom: 1 });
@@ -376,11 +379,32 @@ function WorkspaceCanvas() {
     const frame = window.requestAnimationFrame(() => {
       const storedLeft = Number(window.localStorage.getItem("inspoatlas:left-rail-width"));
       const storedRight = Number(window.localStorage.getItem("inspoatlas:right-rail-width"));
-      if (Number.isFinite(storedLeft) && storedLeft > 0) setLeftRailWidth(clamp(storedLeft, 190, 360));
-      if (Number.isFinite(storedRight) && storedRight > 0) setRightRailWidth(clamp(storedRight, 280, 460));
+      const storedLeftCollapsed = window.localStorage.getItem("inspoatlas:left-rail-collapsed");
+      const storedRightCollapsed = window.localStorage.getItem("inspoatlas:right-rail-collapsed");
+      const nextLeftWidth = Number.isFinite(storedLeft) && storedLeft > 0 ? clamp(storedLeft, 190, 360) : 242;
+      const nextRightWidth = Number.isFinite(storedRight) && storedRight > 0 ? clamp(storedRight, 280, 460) : 322;
+      let nextLeftCollapsed = storedLeftCollapsed === null ? window.innerWidth <= 1100 : storedLeftCollapsed === "1";
+      let nextRightCollapsed = storedRightCollapsed === "1";
+      if (window.innerWidth > 700 && window.innerWidth - (nextLeftCollapsed ? 68 : nextLeftWidth) - (nextRightCollapsed ? 68 : nextRightWidth) < 280) nextLeftCollapsed = true;
+      if (window.innerWidth > 700 && window.innerWidth - (nextLeftCollapsed ? 68 : nextLeftWidth) - (nextRightCollapsed ? 68 : nextRightWidth) < 280) nextRightCollapsed = true;
+      setLeftRailWidth(nextLeftWidth);
+      setRightRailWidth(nextRightWidth);
+      setLeftRailCollapsed(nextLeftCollapsed);
+      setRightRailCollapsed(nextRightCollapsed);
     });
     return () => window.cancelAnimationFrame(frame);
   }, []);
+
+  useEffect(() => {
+    const keepCanvasUsable = () => {
+      if (window.innerWidth <= 700) return;
+      if (window.innerWidth - (leftRailCollapsed ? 68 : leftRailWidth) - (rightRailCollapsed ? 68 : rightRailWidth) >= 280) return;
+      if (!leftRailCollapsed) setLeftRailCollapsed(true);
+      else if (!rightRailCollapsed) setRightRailCollapsed(true);
+    };
+    window.addEventListener("resize", keepCanvasUsable);
+    return () => window.removeEventListener("resize", keepCanvasUsable);
+  }, [leftRailCollapsed, rightRailCollapsed, leftRailWidth, rightRailWidth]);
 
   useEffect(() => {
     if (window.localStorage.getItem("inspoatlas:theme") === "dark") setTheme("dark");
@@ -937,8 +961,13 @@ function WorkspaceCanvas() {
   }
 
   function startBoardRename(id: string, title: string, surface: "header" | "sidebar" = "sidebar") {
+    const nextSurface = surface === "sidebar" && (leftRailCollapsed || window.innerWidth <= 700) ? "popover" : surface;
+    if (nextSurface === "popover") {
+      const item = Array.from(document.querySelectorAll<HTMLElement>(".left-rail .nav-item")).find((element) => element.dataset.boardId === id);
+      setBoardRenameTop(clamp(item?.getBoundingClientRect().top ?? 120, 68, window.innerHeight - 152));
+    }
     setEditingBoardId(id);
-    setEditingBoardSurface(surface);
+    setEditingBoardSurface(nextSurface);
     setBoardDraft(title);
     setContextMenu(null);
   }
@@ -1090,8 +1119,28 @@ function WorkspaceCanvas() {
     createNote({ title: "方向建议", body: message.content });
   }
 
+  function toggleRailCollapsed(side: "left" | "right") {
+    if (side === "left") {
+      const next = !leftRailCollapsed;
+      if (!next && window.innerWidth - leftRailWidth - (rightRailCollapsed ? 68 : rightRailWidth) < 280) {
+        setRightRailCollapsed(true);
+        window.localStorage.setItem("inspoatlas:right-rail-collapsed", "1");
+      }
+      setLeftRailCollapsed(next);
+      window.localStorage.setItem("inspoatlas:left-rail-collapsed", next ? "1" : "0");
+    } else {
+      const next = !rightRailCollapsed;
+      if (!next && window.innerWidth - rightRailWidth - (leftRailCollapsed ? 68 : leftRailWidth) < 280) {
+        setLeftRailCollapsed(true);
+        window.localStorage.setItem("inspoatlas:left-rail-collapsed", "1");
+      }
+      setRightRailCollapsed(next);
+      window.localStorage.setItem("inspoatlas:right-rail-collapsed", next ? "1" : "0");
+    }
+  }
+
   function startRailResize(side: "left" | "right", event: ReactPointerEvent<HTMLDivElement>) {
-    if (window.innerWidth <= 1050) return;
+    if (window.innerWidth <= 700 || (side === "left" ? leftRailCollapsed : rightRailCollapsed)) return;
     event.preventDefault();
     event.stopPropagation();
     const startX = event.clientX;
@@ -1106,7 +1155,7 @@ function WorkspaceCanvas() {
       const minimum = side === "left" ? 190 : 280;
       const hardMaximum = side === "left" ? 360 : 460;
       const otherWidth = side === "left" ? rightRailWidth : leftRailWidth;
-      const availableMaximum = Math.max(minimum, window.innerWidth - otherWidth - 480);
+      const availableMaximum = Math.max(minimum, window.innerWidth - (side === "left" ? (rightRailCollapsed ? 68 : otherWidth) : (leftRailCollapsed ? 68 : otherWidth)) - 280);
       latestWidth = clamp(startWidth + (side === "left" ? delta : -delta), minimum, Math.min(hardMaximum, availableMaximum));
       if (side === "left") setLeftRailWidth(latestWidth);
       else setRightRailWidth(latestWidth);
@@ -1903,8 +1952,8 @@ function WorkspaceCanvas() {
 
   return (
     <main
-      className={"workspace-shell" + (focusMode ? " focus-mode" : "") + (resizingRail ? " is-resizing" : "")}
-      style={{ "--left-rail-width": `${leftRailWidth}px`, "--right-rail-width": `${rightRailWidth}px` } as CSSProperties}
+      className={"workspace-shell" + (focusMode ? " focus-mode" : "") + (resizingRail ? " is-resizing" : "") + (leftRailCollapsed ? " left-collapsed" : "") + (rightRailCollapsed ? " right-collapsed" : "")}
+      style={{ "--left-rail-width": `${leftRailCollapsed ? 68 : leftRailWidth}px`, "--right-rail-width": `${rightRailCollapsed ? 68 : rightRailWidth}px` } as CSSProperties}
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
@@ -1949,13 +1998,14 @@ function WorkspaceCanvas() {
         </div>
       </header>
 
-      <aside className="left-rail" style={{ width: leftRailWidth }}>
+      <aside className="left-rail">
         <button className="rail-action" onClick={() => setModal("new-work")} title="新建作品"><WorkspaceIcon name="add" size={16} />新建作品</button>
         <nav>
           <p>我的作品 <span>{boards.length}</span></p>
           {boards.map((board) => (
             <div
               key={board.id}
+              data-board-id={board.id}
               className={"nav-item " + (board.id === boardId ? "active" : "")}
               role="button"
               tabIndex={0}
@@ -2012,6 +2062,19 @@ function WorkspaceCanvas() {
         </nav>
       </aside>
       <div className="rail-resizer rail-resizer-left" role="separator" aria-label="调整左侧栏宽度" aria-orientation="vertical" title="拖动调整左栏宽度" onDoubleClick={() => setLeftRailWidth(242)} onPointerDown={(event) => startRailResize("left", event)} />
+      {!focusMode && <button type="button" className={"rail-collapse-button rail-collapse-left" + (leftRailCollapsed ? " is-collapsed" : "")} onClick={() => toggleRailCollapsed("left")} aria-label={leftRailCollapsed ? "展开左侧栏" : "收起左侧栏"} title={leftRailCollapsed ? "展开作品栏" : "收起作品栏"}><WorkspaceIcon name="chevron" size={14} /></button>}
+      {editingBoardId && editingBoardSurface === "popover" && <form
+        className="board-rename-popover"
+        style={{ top: boardRenameTop }}
+        aria-label="重命名作品"
+        onSubmit={(event) => { event.preventDefault(); void commitBoardRename(editingBoardId); }}
+        onKeyDown={(event) => { if (event.key === "Escape") { setEditingBoardId(null); setEditingBoardSurface(null); } }}
+        onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget)) { setEditingBoardId(null); setEditingBoardSurface(null); } }}
+      >
+        <strong>重命名作品</strong>
+        <input autoFocus aria-label="新作品名称" value={boardDraft} onChange={(event) => setBoardDraft(event.target.value)} maxLength={120} />
+        <div><button type="button" onClick={() => { setEditingBoardId(null); setEditingBoardSurface(null); }}>取消</button><button type="submit" className="button primary" disabled={!boardDraft.trim()}>保存名称</button></div>
+      </form>}
 
       <section ref={canvasAreaRef} className={"canvas-area" + (rightPanning ? " is-right-panning" : "")} aria-label="灵感无限画布" onPointerDownCapture={(event) => { if (event.button === 2) setRightPanning(true); }}>
         {hasCanvasContent && <div className={"canvas-search node-search" + (searchExpanded ? " is-open" : " is-collapsed")}>
@@ -2218,8 +2281,13 @@ function WorkspaceCanvas() {
         </div>, document.body
       )}
       <div className="rail-resizer rail-resizer-right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" title="拖动调整右栏宽度" onDoubleClick={() => setRightRailWidth(322)} onPointerDown={(event) => startRailResize("right", event)} />
+      {!focusMode && <button type="button" className={"rail-collapse-button rail-collapse-right" + (rightRailCollapsed ? " is-collapsed" : "")} onClick={() => toggleRailCollapsed("right")} aria-label={rightRailCollapsed ? "展开右侧栏" : "收起右侧栏"} title={rightRailCollapsed ? "展开详情栏" : "收起详情栏"}><WorkspaceIcon name="chevron" size={14} /></button>}
 
-      <aside className={"inspector" + (inspectorOpen ? " is-open" : "")} style={{ width: rightRailWidth }}>
+      <aside className={"inspector" + (inspectorOpen ? " is-open" : "") + (rightRailCollapsed ? " is-collapsed" : "")}>
+        <div className="inspector-compact" aria-label="右侧栏快捷入口">
+          <button type="button" onClick={() => { setRightTab("asset"); toggleRailCollapsed("right"); }} aria-label="展开素材详情" title="展开素材详情"><WorkspaceIcon name="archive" size={18} /></button>
+          <button type="button" onClick={() => { if (selectedIds.length > 1) { setRightTab("baseline"); toggleRailCollapsed("right"); } }} disabled={selectedIds.length < 2} aria-label="展开整理方案" title="选择多张卡片后整理方案"><WorkspaceIcon name="arrange" size={18} /></button>
+        </div>
         <button className="mobile-inspector-close" onClick={() => setInspectorOpen(false)} aria-label="关闭阶段面板"><WorkspaceIcon name="close" size={16} /></button>
         <div className="inspector-context-header">
           <div><small>{editingImage ? "素材操作" : rightTab === "baseline" ? "整理方案" : selectedIds.length > 1 ? "当前选择" : "素材详情"}</small><strong>{editingImage ? "编辑素材" : rightTab === "baseline" ? workflowOverlay === "purpose" ? "明确设计任务" : "筛选与取舍" : selectedIds.length > 1 ? `${selectedIds.length} 张卡片` : selected?.data.title || "选择画布卡片"}</strong></div>
