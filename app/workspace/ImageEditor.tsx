@@ -15,6 +15,7 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
   const [flipY, setFlipY] = useState(false);
   const [outputScale, setOutputScale] = useState(1);
   const [maskEnabled, setMaskEnabled] = useState(false);
+  const [maskRevision, setMaskRevision] = useState(0);
   const [brushMode, setBrushMode] = useState<"keep" | "erase">("keep");
   const [brushSize, setBrushSize] = useState(32);
   const [proposals, setProposals] = useState<Proposal[]>([]);
@@ -22,6 +23,7 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const displayRef = useRef<HTMLCanvasElement>(null);
+  const resultRef = useRef<HTMLCanvasElement>(null);
   const maskRef = useRef<HTMLCanvasElement | null>(null);
   const drawing = useRef(false);
   const lastStrokePoint = useRef<{ x: number; y: number } | null>(null);
@@ -67,7 +69,19 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
       context.drawImage(maskRef.current, 0, 0, width, height);
     }
     context.restore();
-  }, [crop, image, maskEnabled]);
+  }, [crop, image, maskEnabled, maskRevision]);
+
+  useEffect(() => {
+    const preview = resultRef.current;
+    if (!preview || !image) return;
+    const width = Math.max(1, Math.round(crop.width * image.naturalWidth));
+    const height = Math.max(1, Math.round(crop.height * image.naturalHeight));
+    const previewScale = Math.min(1, 540 / Math.max(width, height));
+    const rendered = renderEditedCanvas(image, crop, maskEnabled ? maskRef.current : null, rotation, flipX, flipY, previewScale);
+    preview.width = rendered.width;
+    preview.height = rendered.height;
+    preview.getContext("2d")?.drawImage(rendered, 0, 0);
+  }, [image, crop, maskEnabled, maskRevision, rotation, flipX, flipY]);
 
   const paint = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     if (!drawing.current || !image || !maskRef.current) return;
@@ -79,9 +93,11 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
     context.save(); context.lineCap = "round"; context.lineJoin = "round"; context.lineWidth = brushSize * image.naturalWidth / bounds.width;
     context.globalCompositeOperation = brushMode === "erase" ? "destination-out" : "source-over";
     const previous = lastStrokePoint.current ?? { x, y };
-    context.strokeStyle = "#fff"; context.beginPath(); context.moveTo(previous.x, previous.y); context.lineTo(x, y); context.stroke(); context.restore();
+    context.strokeStyle = "#fff"; context.beginPath(); context.moveTo(previous.x, previous.y); context.lineTo(x, y); context.stroke();
+    if (!lastStrokePoint.current) { context.beginPath(); context.arc(x, y, context.lineWidth / 2, 0, Math.PI * 2); context.fillStyle = brushMode === "erase" ? "rgba(0,0,0,1)" : "#fff"; if (brushMode === "erase") context.globalCompositeOperation = "destination-out"; context.fill(); }
+    context.restore();
     lastStrokePoint.current = { x, y };
-    setCrop((value) => ({ ...value }));
+    setMaskRevision((value) => value + 1);
   };
 
   const enableMask = (rect = crop) => {
@@ -90,7 +106,7 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
     context.clearRect(0, 0, image.naturalWidth, image.naturalHeight);
     context.fillStyle = "#fff";
     context.fillRect(rect.x * image.naturalWidth, rect.y * image.naturalHeight, rect.width * image.naturalWidth, rect.height * image.naturalHeight);
-    setMaskEnabled(true); setCrop((value) => ({ ...value }));
+    setMaskEnabled(true); setBrushMode("erase"); setMaskRevision((value) => value + 1);
   };
 
   const requestProposals = async () => {
@@ -106,23 +122,7 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
 
   const renderPng = async () => {
     if (!image || !cropPixels) throw new Error("图片尚未就绪");
-    const raw = document.createElement("canvas"); raw.width = cropPixels.width; raw.height = cropPixels.height;
-    const rawContext = raw.getContext("2d"); if (!rawContext) throw new Error("无法初始化画布");
-    rawContext.drawImage(image, cropPixels.x, cropPixels.y, cropPixels.width, cropPixels.height, 0, 0, raw.width, raw.height);
-    if (maskEnabled && maskRef.current) {
-      rawContext.globalCompositeOperation = "destination-in";
-      rawContext.drawImage(maskRef.current, cropPixels.x, cropPixels.y, cropPixels.width, cropPixels.height, 0, 0, raw.width, raw.height);
-    }
-    const quarter = ((rotation % 360) + 360) % 360;
-    const turns = quarter === 90 || quarter === 270;
-    const output = document.createElement("canvas");
-    output.width = Math.min(4096, Math.max(1, Math.round((turns ? raw.height : raw.width) * outputScale)));
-    output.height = Math.min(4096, Math.max(1, Math.round((turns ? raw.width : raw.height) * outputScale)));
-    const context = output.getContext("2d"); if (!context) throw new Error("无法生成 PNG");
-    context.translate(output.width / 2, output.height / 2);
-    context.rotate(quarter * Math.PI / 180); context.scale(flipX ? -1 : 1, flipY ? -1 : 1);
-    const drawWidth = raw.width * outputScale; const drawHeight = raw.height * outputScale;
-    context.drawImage(raw, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+    const output = renderEditedCanvas(image, crop, maskEnabled ? maskRef.current : null, rotation, flipX, flipY, outputScale);
     return await new Promise<Blob>((resolve, reject) => output.toBlob((blob) => blob ? resolve(blob) : reject(new Error("PNG 导出失败")), "image/png"));
   };
 
@@ -170,13 +170,13 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
       <header><div><small>素材操作</small><h2>编辑素材</h2><p>原图保持不变，保存后生成可追溯副本。</p></div><button onClick={onClose} aria-label="返回素材详情">返回</button></header>
       <div className="image-editor-layout">
         <div className="image-editor-preview">
-          <canvas ref={displayRef} onPointerDown={(event) => { if (maskEnabled) { drawing.current = true; lastStrokePoint.current = null; event.currentTarget.setPointerCapture(event.pointerId); paint(event); } }} onPointerMove={paint} onPointerUp={finishStroke} onPointerCancel={finishStroke} onPointerLeave={finishStroke} />
-          {maskEnabled && <p>蒙版：{brushMode === "keep" ? "保留" : "擦除"}笔刷</p>}
+          <div className="editor-source"><span>原图与选区{maskEnabled ? " · 在这里涂抹蒙版" : ""}</span><canvas ref={displayRef} onPointerDown={(event) => { if (maskEnabled) { drawing.current = true; lastStrokePoint.current = null; event.currentTarget.setPointerCapture(event.pointerId); paint(event); } }} onPointerMove={paint} onPointerUp={finishStroke} onPointerCancel={finishStroke} onPointerLeave={finishStroke} /></div>
+          <div className="editor-result"><span>实时效果 · 保存后作为新卡片加入画布</span><div className="editor-result-checker"><canvas ref={resultRef} aria-label="当前裁剪、旋转和蒙版效果预览" /></div></div>
         </div>
         <aside className="image-editor-controls">
-          <section><h3>构图</h3><div className="crop-fields">{(["x", "y", "width", "height"] as const).map((key) => <label key={key}><span>{key === "x" ? "左" : key === "y" ? "上" : key === "width" ? "宽" : "高"}</span><input type="number" min="0" max="1" step=".01" value={crop[key]} onChange={(event) => setCrop((value) => clampRect({ ...value, [key]: Number(event.target.value) }))} /></label>)}</div></section>
+          <section><h3>构图</h3><div className="editor-crop-presets"><button onClick={() => setCrop({ x: 0, y: 0, width: 1, height: 1 })}>原图</button><button onClick={() => image && setCrop(centerCrop(image, 1))}>正方形</button><button onClick={() => image && setCrop(centerCrop(image, 16 / 9))}>横幅</button><button onClick={() => image && setCrop(centerCrop(image, 4 / 5))}>竖幅</button></div><div className="crop-fields">{(["x", "y", "width", "height"] as const).map((key) => <label key={key}><span>{key === "x" ? "左" : key === "y" ? "上" : key === "width" ? "宽" : "高"}</span><input type="number" min="0" max="1" step=".01" value={crop[key]} onChange={(event) => setCrop((value) => clampRect({ ...value, [key]: Number(event.target.value) }))} /></label>)}</div></section>
           <section><h3>变换</h3><div className="editor-button-row"><button onClick={() => setRotation((value) => (value + 270) % 360)}>向左旋转</button><button onClick={() => setRotation((value) => (value + 90) % 360)}>向右旋转</button></div><div className="editor-button-row"><button className={flipX ? "active" : ""} onClick={() => setFlipX((value) => !value)}>水平翻转</button><button className={flipY ? "active" : ""} onClick={() => setFlipY((value) => !value)}>垂直翻转</button></div><label className="range-control"><span>导出倍率 <b>{outputScale}×</b></span><input type="range" min=".25" max="2" step=".25" value={outputScale} onChange={(event) => setOutputScale(Number(event.target.value))} /></label></section>
-          <section><div className="editor-section-title"><h3>图层蒙版</h3><button onClick={() => enableMask()}>{maskEnabled ? "重置蒙版" : "启用蒙版"}</button></div><p>对象定位只作选区起点；用笔刷修正后再保存。</p><div className="editor-button-row"><button className={brushMode === "keep" ? "active" : ""} disabled={!maskEnabled} onClick={() => setBrushMode("keep")}>保留</button><button className={brushMode === "erase" ? "active" : ""} disabled={!maskEnabled} onClick={() => setBrushMode("erase")}>擦除</button></div><label className="range-control"><span>笔刷</span><input disabled={!maskEnabled} type="range" min="8" max="100" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} /></label><button className="layer-proposal-button" disabled={proposalBusy} onClick={() => void requestProposals()}>{proposalBusy ? "正在定位…" : "AI 拆图层"}</button>{proposals.length > 0 && <div className="layer-proposal-list">{proposals.map((item) => <button key={item.id} onClick={() => { setCrop(item.rect); enableMask(item.rect); }}><span>{item.label}</span><small>{item.category} · {Math.round(item.confidence * 100)}%</small></button>)}</div>}</section>
+          <section><div className="editor-section-title"><h3>图层蒙版</h3><button onClick={() => enableMask()}>{maskEnabled ? "重置蒙版" : "启用蒙版"}</button></div><p>{maskEnabled ? "在左侧原图涂抹，右侧实时查看透明区域；保存后生成新图层。" : "启用后可擦除背景，原图不会改变。"}</p><div className="editor-button-row"><button className={brushMode === "keep" ? "active" : ""} disabled={!maskEnabled} onClick={() => setBrushMode("keep")}>保留</button><button className={brushMode === "erase" ? "active" : ""} disabled={!maskEnabled} onClick={() => setBrushMode("erase")}>擦除</button></div><label className="range-control"><span>笔刷</span><input disabled={!maskEnabled} type="range" min="8" max="100" value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} /></label><button className="layer-proposal-button" disabled={proposalBusy} onClick={() => void requestProposals()}>{proposalBusy ? "正在定位…" : "AI 拆图层"}</button>{proposals.length > 0 && <div className="layer-proposal-list">{proposals.map((item) => <button key={item.id} onClick={() => { setCrop(item.rect); enableMask(item.rect); }}><span>{item.label}</span><small>{item.category} · {Math.round(item.confidence * 100)}%</small></button>)}</div>}</section>
           {error && <p className="image-editor-error" role="alert">{error}</p>}
         </aside>
       </div>
@@ -187,4 +187,36 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
 function clampRect(value: Rect): Rect {
   const x = Math.min(.99, Math.max(0, value.x)); const y = Math.min(.99, Math.max(0, value.y));
   return { x, y, width: Math.min(1 - x, Math.max(.01, value.width)), height: Math.min(1 - y, Math.max(.01, value.height)) };
+}
+
+function centerCrop(image: HTMLImageElement, ratio: number): Rect {
+  const imageRatio = image.naturalWidth / image.naturalHeight;
+  const width = Math.min(1, ratio / imageRatio);
+  const height = Math.min(1, imageRatio / ratio);
+  return { x: (1 - width) / 2, y: (1 - height) / 2, width, height };
+}
+
+function renderEditedCanvas(image: HTMLImageElement, crop: Rect, mask: HTMLCanvasElement | null, rotation: number, flipX: boolean, flipY: boolean, scale: number): HTMLCanvasElement {
+  const x = Math.round(crop.x * image.naturalWidth);
+  const y = Math.round(crop.y * image.naturalHeight);
+  const width = Math.max(1, Math.round(crop.width * image.naturalWidth));
+  const height = Math.max(1, Math.round(crop.height * image.naturalHeight));
+  const raw = document.createElement("canvas"); raw.width = width; raw.height = height;
+  const rawContext = raw.getContext("2d"); if (!rawContext) throw new Error("无法初始化画布");
+  rawContext.drawImage(image, x, y, width, height, 0, 0, width, height);
+  if (mask) {
+    rawContext.globalCompositeOperation = "destination-in";
+    rawContext.drawImage(mask, x, y, width, height, 0, 0, width, height);
+  }
+  const quarter = ((rotation % 360) + 360) % 360;
+  const turns = quarter === 90 || quarter === 270;
+  const output = document.createElement("canvas");
+  output.width = Math.min(4096, Math.max(1, Math.round((turns ? height : width) * scale)));
+  output.height = Math.min(4096, Math.max(1, Math.round((turns ? width : height) * scale)));
+  const context = output.getContext("2d"); if (!context) throw new Error("无法生成 PNG");
+  context.translate(output.width / 2, output.height / 2);
+  context.rotate(quarter * Math.PI / 180);
+  context.scale(flipX ? -1 : 1, flipY ? -1 : 1);
+  context.drawImage(raw, -width * scale / 2, -height * scale / 2, width * scale, height * scale);
+  return output;
 }

@@ -605,6 +605,14 @@ html.theme-light-root {
 @keyframes import-mascot-float { 0%, 100% { transform: translateY(0) rotate(-3deg); } 50% { transform: translateY(-5px) rotate(2deg); } }
 @media (max-width: 520px) { .import-modal { padding: 22px 20px; } .import-modal-header { gap: 12px; margin-bottom: 17px; } .import-modal-mascot { width: 50px; height: 50px; } .import-choice { grid-template-columns: 1fr; gap: 10px; } .import-choice .import-drop { min-height: 104px; padding: 12px 15px; } .import-drop-icon { width: 30px; height: 30px; margin-bottom: 5px; } }
 @media (prefers-reduced-motion: reduce) { .import-modal-mascot { animation: none; } }
+.import-loading { display: flex; min-height: 294px; flex-direction: column; align-items: center; justify-content: center; padding: 15px 10px 4px; text-align: center; }
+.import-loading-mascot { width: 78px; height: 78px; object-fit: contain; filter: drop-shadow(0 10px 18px rgba(143, 115, 209, .2)); animation: import-mascot-float 2.8s ease-in-out infinite; }
+.import-loading-spinner { width: 28px; height: 28px; margin: 18px 0 12px; border: 2px solid var(--desk-line-strong); border-top-color: var(--desk-accent-strong); border-radius: 50%; animation: import-loading-spin .8s linear infinite; }
+.import-loading h2 { margin: 0 0 5px; }
+.import-loading p { margin: 0; color: var(--desk-muted); font-size: 12px; }
+.import-loading small { display: block; max-width: 100%; margin-top: 16px; overflow: hidden; color: var(--desk-faint); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+@keyframes import-loading-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .import-loading-mascot, .import-loading-spinner { animation: none; } }
 
 /* Keep imported images inside the React Flow node that owns the resize frame. */
 .canvas-card:not(.card-group), .canvas-card > .card-surface { min-width: 0; max-width: 100%; }
@@ -711,5 +719,14 @@ button, button :is(span, small, strong, b, em, p, div) { white-space: nowrap !im
 .image-editor-inline > footer { display: grid; gap: 9px; padding: 14px 16px; }
 .image-editor-inline > footer > div { display: flex; flex-wrap: wrap; }
 .image-editor-inline > footer button { flex: 1 1 auto; min-height: 36px; }
+.image-editor-inline .image-editor-preview { display: grid; gap: 15px; align-items: stretch; padding: 14px; }
+.editor-source, .editor-result { display: grid; gap: 6px; min-width: 0; }
+.editor-source > span, .editor-result > span { color: var(--desk-muted); font-size: 11px; font-weight: 650; }
+.image-editor-inline .editor-source canvas { width: 100%; max-height: 215px; object-fit: contain; }
+.editor-result-checker { display: grid; min-height: 150px; place-items: center; padding: 10px; border: 1px solid var(--desk-line); border-radius: 9px; background-color: #e8e6ee; background-image: linear-gradient(45deg, #f8f7fb 25%, transparent 25%), linear-gradient(-45deg, #f8f7fb 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #f8f7fb 75%), linear-gradient(-45deg, transparent 75%, #f8f7fb 75%); background-position: 0 0, 0 10px, 10px -10px, -10px 0; background-size: 20px 20px; }
+.image-editor-inline .editor-result-checker canvas { display: block; width: auto; max-width: 100%; max-height: 205px; height: auto; object-fit: contain; border-radius: 3px; box-shadow: 0 5px 16px rgba(24, 18, 45, .16); }
+.editor-crop-presets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; margin-bottom: 10px; }
+.editor-crop-presets button { min-width: 0; min-height: 30px; padding: 4px 2px; border: 1px solid var(--desk-line); border-radius: 7px; color: var(--desk-text); background: var(--desk-field); font-size: 10px; white-space: nowrap; }
+.editor-crop-presets button:hover, .editor-crop-presets button:focus-visible { border-color: var(--desk-accent); background: var(--desk-accent-wash); }
 .canvas-toolbar > button.scheme-tool { border-color: var(--desk-accent); color: var(--desk-accent-strong); background: var(--desk-accent-wash); }
 .theme-light-root .inspector-context-header { background: #fbfaff; }

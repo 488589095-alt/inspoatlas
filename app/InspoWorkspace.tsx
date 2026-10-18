@@ -207,6 +207,7 @@ function WorkspaceCanvas() {
   const [deleteRequest, setDeleteRequest] = useState<DeleteRequest | null>(null);
   const [toast, setToast] = useState("");
   const [urlValue, setUrlValue] = useState("");
+  const [uploadState, setUploadState] = useState<{ total: number; completed: number; name: string } | null>(null);
   const [organizePreview, setOrganizePreview] = useState<OrganizePreview | null>(null);
   const [editingBoardId, setEditingBoardId] = useState<string | null>(null);
   const [editingBoardSurface, setEditingBoardSurface] = useState<"header" | "sidebar" | "popover" | null>(null);
@@ -262,6 +263,7 @@ function WorkspaceCanvas() {
   const syncedClips = useRef(new Set<string>());
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement>(null);
+  const uploadPending = useRef(false);
   const edgesRef = useRef<Edge[]>([]);
   const connectionSourceRef = useRef<string | null>(null);
   const connectionCompletedRef = useRef(false);
@@ -1176,37 +1178,48 @@ function WorkspaceCanvas() {
   }
 
   async function addMedia(input: File[] | FileList, asFolder = false) {
+    if (uploadPending.current) return;
     const allFiles = Array.from(input);
     const files = allFiles.filter((file) => supportedLocalMedia(file));
     if (!files.length) return notify("没有找到可导入的图片、视频或音频文件");
 
+    uploadPending.current = true;
+    setModal("import");
+    setUploadState({ total: files.length, completed: 0, name: files[0].name });
+
     const uploaded: Array<{ asset: { id: string; title: string; kind: "image" | "video" | "audio"; contentUrl?: string }; size: { width: number; height: number } }> = [];
     let failed = allFiles.length - files.length;
-    for (const file of files) {
-      try {
-        const staged = await uploadPrivateFile(file, { scope: "asset", boardId, contentType: file.type, size: file.size });
-        let response: Response;
-        if (staged) {
-          response = await fetch("/api/assets", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ uploadedAsset: true, ...staged, boardId, title: file.name, contentType: file.type, size: file.size }),
-          });
-        } else {
-          const form = new FormData();
-          form.set("boardId", boardId);
-          form.set("file", file);
-          if (file.webkitRelativePath) form.set("relativePath", file.webkitRelativePath);
-          response = await fetch("/api/assets", { method: "POST", body: form });
+    try {
+      for (const [index, file] of files.entries()) {
+        setUploadState({ total: files.length, completed: index, name: file.name });
+        try {
+          const staged = await uploadPrivateFile(file, { scope: "asset", boardId, contentType: file.type, size: file.size });
+          let response: Response;
+          if (staged) {
+            response = await fetch("/api/assets", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ uploadedAsset: true, ...staged, boardId, title: file.name, contentType: file.type, size: file.size }),
+            });
+          } else {
+            const form = new FormData();
+            form.set("boardId", boardId);
+            form.set("file", file);
+            if (file.webkitRelativePath) form.set("relativePath", file.webkitRelativePath);
+            response = await fetch("/api/assets", { method: "POST", body: form });
+          }
+          if (!response.ok) throw new Error("素材上传失败");
+          const result = await response.json() as { asset: { id: string; title: string; kind: "image" | "video" | "audio"; contentUrl?: string } };
+          const size = result.asset.kind === "image"
+            ? await importedImageSize(file).catch(() => defaultSize.image)
+            : defaultSize[result.asset.kind];
+          uploaded.push({ asset: result.asset, size });
+        } catch {
+          failed += 1;
         }
-        if (!response.ok) throw new Error("素材登记失败");
-        const result = await response.json() as { asset: { id: string; title: string; kind: "image" | "video" | "audio"; contentUrl?: string } };
-        uploaded.push({ asset: result.asset, size: result.asset.kind === "image" ? await importedImageSize(file) : defaultSize[result.asset.kind] });
-      } catch {
-        failed += 1;
+        setUploadState({ total: files.length, completed: index + 1, name: file.name });
       }
-    }
-    if (!uploaded.length) return notify("素材上传失败，请稍后重试");
+      if (!uploaded.length) { notify("素材上传失败，请检查文件或网络后重试"); return; }
 
     remember();
     const rootFolder = asFolder
@@ -1278,7 +1291,11 @@ function WorkspaceCanvas() {
       }, 120);
     }
     setModal(null);
-    notify(`已加入 ${uploaded.length} 个素材${rootFolder ? `，并建立“${rootFolder}”分组` : ""}${failed ? `，跳过 ${failed} 个不支持的文件` : ""}`);
+    notify(`已加入 ${uploaded.length} 个素材${rootFolder ? `，并建立“${rootFolder}”分组` : ""}${failed ? `，${failed} 个文件未导入` : ""}`);
+    } finally {
+      uploadPending.current = false;
+      setUploadState(null);
+    }
   }
 
 
@@ -2135,7 +2152,7 @@ function WorkspaceCanvas() {
             <button className="danger" onClick={() => requestDeleteNodes(selectedIds)}>删除</button>
           </div>
         )}
-        <input ref={fileInput} className="visually-hidden" type="file" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/ogg,audio/mp4" onChange={(event) => event.target.files?.length && void addMedia(event.target.files)} />
+        <input ref={fileInput} className="visually-hidden" type="file" multiple accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/ogg,audio/mp4" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; if (files.length) void addMedia(files); }} />
         <input
           ref={(node) => {
             folderInput.current = node;
@@ -2146,7 +2163,7 @@ function WorkspaceCanvas() {
           type="file"
           multiple
           accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/ogg,audio/mp4"
-          onChange={(event) => event.target.files?.length && void addMedia(event.target.files, true)}
+          onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; if (files.length) void addMedia(files, true); }}
         />
         {(hasCanvasContent || focusMode) && <div className="canvas-view-controls">
           {hasCanvasContent && <label className="relation-view" title="关联线只用于辅助整理，默认仅显示当前卡片相关关系">
@@ -2396,9 +2413,16 @@ function WorkspaceCanvas() {
       {modal === "new-work" && <div className="modal-backdrop" onMouseDown={() => setModal(null)}><form className="modal new-work-modal" onMouseDown={(event) => event.stopPropagation()} onSubmit={(event) => { event.preventDefault(); void createBoard(undefined, newWorkTitle); }}><button type="button" className="modal-close" onClick={() => setModal(null)} aria-label="关闭"><WorkspaceIcon name="close" size={16} /></button><span className="modal-kicker">你的下一次灵感记录</span><h2>新建作品</h2><p>每件作品对应一张独立画布，参考、连线和方案会保存在这件作品里。</p><label htmlFor="new-work-title">作品名称</label><input id="new-work-title" autoFocus maxLength={120} value={newWorkTitle} onChange={(event) => setNewWorkTitle(event.target.value)} placeholder="例如：旅行品牌视觉探索" /><footer><button type="button" className="button soft" onClick={() => setModal(null)}>取消</button><button type="submit" className="button primary" disabled={!newWorkTitle.trim()}>创建作品</button></footer></form></div>}
 
       {modal === "import" && (
-        <div className="modal-backdrop" onMouseDown={() => setModal(null)}>
+        <div className="modal-backdrop" onMouseDown={() => { if (!uploadState) setModal(null); }}>
           <section className="modal import-modal" role="dialog" aria-modal="true" aria-labelledby="import-modal-title" onMouseDown={(event) => event.stopPropagation()}>
-            <button type="button" className="modal-close" onClick={() => setModal(null)} aria-label="关闭"><WorkspaceIcon name="close" size={17} /></button>
+            <button type="button" className="modal-close" onClick={() => setModal(null)} aria-label="关闭" disabled={Boolean(uploadState)}><WorkspaceIcon name="close" size={17} /></button>
+            {uploadState ? <div className="import-loading" role="status" aria-live="polite">
+              <img src="/inspo-sprite.png" alt="" className="import-loading-mascot" />
+              <span className="import-loading-spinner" aria-hidden="true" />
+              <h2 id="import-modal-title">正在加载中</h2>
+              <p>小in正在把素材放进画布，请稍等片刻。</p>
+              <small>{uploadState.name}{uploadState.total > 1 ? ` · ${uploadState.completed}/${uploadState.total} 个已处理` : ""}</small>
+            </div> : <>
             <header className="import-modal-header">
               <img className="import-modal-mascot" src="/inspo-sprite.png" alt="小in" />
               <div>
@@ -2422,6 +2446,7 @@ function WorkspaceCanvas() {
               <input aria-label="公开网页链接" autoFocus value={urlValue} onChange={(event) => setUrlValue(event.target.value)} placeholder="粘贴公开网页链接" />
               <button type="button" onClick={() => urlValue.trim() && void addAsset(urlValue.trim())}>添加</button>
             </div>
+            </>}
           </section>
         </div>
       )}
