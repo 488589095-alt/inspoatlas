@@ -96,6 +96,27 @@ type AssistantMessage = {
   runMode?: "managed" | "byok";
   feedback?: "helpful" | "needs-work";
 };
+type AssistantConversation = {
+  id: string;
+  title: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+function conversationUrl(boardId: string, conversationId?: string) {
+  const base = `/api/boards/${encodeURIComponent(boardId)}/conversations`;
+  return conversationId ? `${base}/${encodeURIComponent(conversationId)}` : base;
+}
+
+function conversationDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return "今天";
+  return date.getFullYear() === today.getFullYear()
+    ? `${date.getMonth() + 1}月${date.getDate()}日`
+    : `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+}
 type BrowserSpeechRecognition = {
   lang: string;
   interimResults: boolean;
@@ -230,6 +251,12 @@ function WorkspaceCanvas() {
 
   const [assistantQuestion, setAssistantQuestion] = useState("");
   const [assistantMessages, setAssistantMessages] = useState<AssistantMessage[]>([]);
+  const [assistantConversations, setAssistantConversations] = useState<AssistantConversation[]>([]);
+  const [assistantConversationId, setAssistantConversationId] = useState<string | null>(null);
+  const [assistantConversationVersion, setAssistantConversationVersion] = useState(0);
+  const [assistantHistoryOpen, setAssistantHistoryOpen] = useState(false);
+  const [assistantHistoryLoading, setAssistantHistoryLoading] = useState(false);
+  const [assistantHistoryError, setAssistantHistoryError] = useState("");
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantHasInteracted, setAssistantHasInteracted] = useState(false);
   const [completedAnswerId, setCompletedAnswerId] = useState<string | null>(null);
@@ -297,7 +324,47 @@ function WorkspaceCanvas() {
     setAssistantQuestion("");
     setAssistantHasInteracted(false);
     setCompletedAnswerId(null);
+    setAssistantConversationId(null);
+    setAssistantConversationVersion(0);
+    setAssistantConversations([]);
+    setAssistantHistoryOpen(false);
+    setAssistantHistoryError("");
     speechRecognitionRef.current?.stop();
+    if (!boardId) {
+      setAssistantHistoryLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    const loadConversations = async () => {
+      setAssistantHistoryLoading(true);
+      try {
+        const response = await fetch(conversationUrl(boardId), { cache: "no-store", signal: controller.signal });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(String(payload.error || "历史对话暂时无法读取"));
+        const conversations: AssistantConversation[] = Array.isArray(payload.conversations) ? payload.conversations : [];
+        const remembered = window.localStorage.getItem(`inspoatlas:assistant-conversation:${boardId}`);
+        const preferred = remembered === "" ? null : conversations.find((item) => item.id === remembered) ?? conversations[0] ?? null;
+        if (preferred) {
+          const detailResponse = await fetch(conversationUrl(boardId, preferred.id), { cache: "no-store", signal: controller.signal });
+          const detail = await detailResponse.json().catch(() => ({}));
+          if (!detailResponse.ok) throw new Error(String(detail.error || "对话暂时无法读取"));
+          if (controller.signal.aborted) return;
+          const messages: AssistantMessage[] = Array.isArray(detail.conversation?.messages) ? detail.conversation.messages : [];
+          setAssistantConversationId(preferred.id);
+          setAssistantConversationVersion(Number(detail.conversation.version) || 1);
+          setAssistantMessages(messages);
+          setAssistantHasInteracted(messages.length > 0);
+          setCompletedAnswerId([...messages].reverse().find((item) => item.role === "assistant")?.id ?? null);
+        }
+        if (!controller.signal.aborted) setAssistantConversations(conversations);
+      } catch (error) {
+        if (!controller.signal.aborted) setAssistantHistoryError(error instanceof Error ? error.message : "历史对话暂时无法读取");
+      } finally {
+        if (!controller.signal.aborted) setAssistantHistoryLoading(false);
+      }
+    };
+    void loadConversations();
+    return () => controller.abort();
   }, [boardId]);
 
   useEffect(() => {
@@ -1428,50 +1495,136 @@ function WorkspaceCanvas() {
     }
   }
 
+  function startNewAssistantConversation() {
+    if (!boardId || assistantBusy || assistantHistoryLoading) return;
+    setAssistantConversationId(null);
+    setAssistantConversationVersion(0);
+    setAssistantMessages([]);
+    setAssistantQuestion("");
+    setAssistantHasInteracted(false);
+    setCompletedAnswerId(null);
+    setAssistantHistoryOpen(false);
+    setAssistantHistoryError("");
+    window.localStorage.setItem(`inspoatlas:assistant-conversation:${boardId}`, "");
+  }
+
+  async function openAssistantConversation(conversationId: string) {
+    if (!boardId || assistantBusy || assistantHistoryLoading) return;
+    if (conversationId === assistantConversationId) { setAssistantHistoryOpen(false); return; }
+    const targetBoardId = boardId;
+    setAssistantHistoryLoading(true);
+    setAssistantHistoryError("");
+    try {
+      const response = await fetch(conversationUrl(targetBoardId, conversationId), { cache: "no-store" });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(payload.error || "对话暂时无法读取"));
+      if (assistantBoardRef.current !== targetBoardId) return;
+      const messages: AssistantMessage[] = Array.isArray(payload.conversation?.messages) ? payload.conversation.messages : [];
+      setAssistantConversationId(conversationId);
+      setAssistantConversationVersion(Number(payload.conversation.version) || 1);
+      setAssistantMessages(messages);
+      setAssistantQuestion("");
+      setAssistantHasInteracted(messages.length > 0);
+      setCompletedAnswerId([...messages].reverse().find((item) => item.role === "assistant")?.id ?? null);
+      setAssistantHistoryOpen(false);
+      window.localStorage.setItem(`inspoatlas:assistant-conversation:${targetBoardId}`, conversationId);
+    } catch (error) {
+      if (assistantBoardRef.current === targetBoardId) setAssistantHistoryError(error instanceof Error ? error.message : "对话暂时无法读取");
+    } finally {
+      if (assistantBoardRef.current === targetBoardId) setAssistantHistoryLoading(false);
+    }
+  }
+
   async function askDesignAssistant(requestedQuestion?: string) {
     const question = (requestedQuestion ?? assistantQuestion).trim();
     if (!question) return notify("请输入你想讨论的问题");
-    if (!boardId || assistantRequestPendingRef.current) return;
+    if (!boardId || assistantRequestPendingRef.current || assistantHistoryLoading) return;
     assistantRequestPendingRef.current = true;
     speechRecognitionRef.current?.stop();
     const scope: AssistantScope = selectedIds.length ? "selection" : "board";
-
-    const nextMessages: AssistantMessage[] = [...assistantMessages, { role: "user", content: question }];
+    const previousMessages = assistantMessages;
+    const userMessage: AssistantMessage = { id: crypto.randomUUID(), role: "user", content: question };
+    const nextMessages: AssistantMessage[] = [...previousMessages, userMessage];
     setAssistantMessages(nextMessages);
     setAssistantQuestion("");
     setAssistantHasInteracted(true);
     setCompletedAnswerId(null);
     setAssistantBusy(true);
     try {
-      const response = await fetch(`/api/boards/${encodeURIComponent(boardId)}/design-assistant`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          question,
-          scope,
-          selectedNodeIds: scope === "selection" ? selectedIds : [],
-          history: assistantMessages.slice(-8),
-        }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(friendlyAnalysisError(payload.error));
+      let conversationId = assistantConversationId;
+      let version = assistantConversationVersion;
+      try {
+        const response = await fetch(conversationUrl(boardId, conversationId ?? undefined), {
+          method: conversationId ? "PUT" : "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(conversationId ? { version, messages: nextMessages } : { message: userMessage }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(String(payload.error || "对话保存失败"));
+        conversationId = String(payload.conversation.id);
+        version = Number(payload.conversation.version);
+        if (assistantBoardRef.current === boardId) {
+          setAssistantConversationId(conversationId);
+          setAssistantConversationVersion(version);
+          setAssistantConversations((current) => [payload.conversation, ...current.filter((item) => item.id !== conversationId)]);
+          window.localStorage.setItem(`inspoatlas:assistant-conversation:${boardId}`, conversationId);
+        }
+      } catch (error) {
+        if (assistantBoardRef.current === boardId) {
+          setAssistantMessages(previousMessages);
+          setAssistantQuestion(question);
+          setAssistantHasInteracted(previousMessages.length > 0);
+          notify(error instanceof Error ? error.message : "对话保存失败，请重试");
+        }
+        return;
       }
-      if (assistantBoardRef.current !== boardId) return;
-      setAssistantMessages([...nextMessages, {
-        id: String(payload.id || crypto.randomUUID()),
-        role: "assistant",
-        content: String(payload.answer || "暂时没有生成建议。"),
-        followUps: Array.isArray(payload.followUps) ? payload.followUps.filter((item: unknown): item is string => typeof item === "string").slice(0, 3) : [],
-        sources: Array.isArray(payload.sources) ? payload.sources.filter((item: unknown): item is { title: string; url: string; reason: string } => Boolean(item && typeof item === "object" && "title" in item && "url" in item && typeof item.title === "string" && typeof item.url === "string" && item.url.startsWith("https://"))).slice(0, 3) : [],
-        provider: payload.provider,
-        model: payload.model,
-        promptVersion: payload.promptVersion,
-        runMode: payload.runMode,
-      }]);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "设计助手暂时不可用";
-      if (assistantBoardRef.current === boardId) setAssistantMessages([...nextMessages, { id: crypto.randomUUID(), role: "assistant", content: `未能完成：${message}` }]);
+
+      let reply: AssistantMessage;
+      try {
+        const response = await fetch(`/api/boards/${encodeURIComponent(boardId)}/design-assistant`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            question,
+            scope,
+            selectedNodeIds: scope === "selection" ? selectedIds : [],
+            history: previousMessages.slice(-8),
+          }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(friendlyAnalysisError(payload.error));
+        reply = {
+          id: String(payload.id || crypto.randomUUID()),
+          role: "assistant",
+          content: String(payload.answer || "暂时没有生成建议。"),
+          followUps: Array.isArray(payload.followUps) ? payload.followUps.filter((item: unknown): item is string => typeof item === "string").slice(0, 3) : [],
+          sources: Array.isArray(payload.sources) ? payload.sources.filter((item: unknown): item is { title: string; url: string; reason: string } => Boolean(item && typeof item === "object" && "title" in item && "url" in item && typeof item.title === "string" && typeof item.url === "string" && item.url.startsWith("https://"))).slice(0, 3) : [],
+          provider: payload.provider,
+          model: payload.model,
+          promptVersion: payload.promptVersion,
+          runMode: payload.runMode,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "设计助手暂时不可用";
+        reply = { id: crypto.randomUUID(), role: "assistant", content: `未能完成：${message}` };
+      }
+      const completedMessages = [...nextMessages, reply];
+      if (assistantBoardRef.current === boardId) setAssistantMessages(completedMessages);
+      try {
+        const response = await fetch(conversationUrl(boardId, conversationId), {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ version, messages: completedMessages }),
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(String(payload.error || "回复保存失败"));
+        if (assistantBoardRef.current === boardId) {
+          setAssistantConversationVersion(Number(payload.conversation.version));
+          setAssistantConversations((current) => [payload.conversation, ...current.filter((item) => item.id !== conversationId)]);
+        }
+      } catch (error) {
+        if (assistantBoardRef.current === boardId) notify(error instanceof Error ? error.message : "回复保存失败，请稍后重试");
+      }
     } finally {
       assistantRequestPendingRef.current = false;
       setAssistantBusy(false);
@@ -2259,10 +2412,27 @@ function WorkspaceCanvas() {
           <aside className="canvas-director agent-drawer" aria-label="灵感 Agent">
             <header className="agent-header">
               <div className="agent-header-identity"><img src="/inspo-sprite.png" alt="" /><div><h2>小in</h2><span>你的设计小助手</span></div></div>
-              <button onClick={() => setAssistantOpen(false)} aria-label="关闭灵感 Agent"><WorkspaceIcon name="close" size={16} /></button>
+              <div className="agent-header-actions">
+                <button type="button" className={assistantHistoryOpen ? "is-active" : ""} onClick={() => setAssistantHistoryOpen((open) => !open)} aria-label="历史对话" aria-expanded={assistantHistoryOpen} title="历史对话"><WorkspaceIcon name="history" size={18} /></button>
+                <button type="button" className="agent-new-chat" onClick={startNewAssistantConversation} disabled={assistantBusy || assistantHistoryLoading} title="开始新对话"><WorkspaceIcon name="add" size={17} /><span>新对话</span></button>
+                <button type="button" onClick={() => setAssistantOpen(false)} aria-label="关闭小in" title="关闭小in"><WorkspaceIcon name="close" size={16} /></button>
+              </div>
             </header>
+            {assistantHistoryOpen && <>
+              <button type="button" className="agent-history-scrim" aria-label="关闭历史对话" onClick={() => setAssistantHistoryOpen(false)} />
+              <nav className="agent-history-panel" aria-label="小in 历史对话">
+                <div className="agent-history-heading"><div><strong>历史对话</strong><small>当前作品 · {assistantConversations.length} 段</small></div><button type="button" onClick={() => setAssistantHistoryOpen(false)} aria-label="收起历史对话"><WorkspaceIcon name="close" size={15} /></button></div>
+                <div className="agent-history-list">
+                  {assistantHistoryLoading && <p role="status">正在读取对话…</p>}
+                  {assistantHistoryError && <p className="agent-history-error" role="alert">{assistantHistoryError}</p>}
+                  {!assistantHistoryLoading && !assistantHistoryError && assistantConversations.length === 0 && <p>还没有对话。发出第一条消息后会保存在这里。</p>}
+                  {assistantConversations.map((conversation) => <button type="button" key={conversation.id} className={conversation.id === assistantConversationId ? "is-active" : ""} aria-current={conversation.id === assistantConversationId ? "true" : undefined} disabled={assistantBusy || assistantHistoryLoading} onClick={() => void openAssistantConversation(conversation.id)}><span>{conversation.title}</span><small>{conversationDate(conversation.updatedAt)}</small></button>)}
+                </div>
+              </nav>
+            </>}
             <div className="agent-conversation" ref={assistantScrollRef} aria-live="polite">
-              {!assistantMessages.length && <div className="agent-chat-empty">
+              {assistantHistoryLoading && !assistantMessages.length && <div className="agent-chat-loading" role="status">正在整理你的对话…</div>}
+              {!assistantHistoryLoading && !assistantMessages.length && <div className="agent-chat-empty">
                 <img src="/inspo-sprite.png" alt="" />
                 <p><TypewriterText text={agentWelcome} /></p>
                 {!assistantHasInteracted && <div className="agent-starters" aria-label="试试这样提问">
@@ -2277,7 +2447,7 @@ function WorkspaceCanvas() {
                   {message.role === "assistant" && index === assistantMessages.length - 1 && completedAnswerId === message.id && !assistantBusy && Boolean(message.followUps?.length) && <div className="agent-followups" aria-label="继续追问">
                     {message.followUps?.map((question) => <button key={question} title={question} onClick={() => void askDesignAssistant(question)}><span>{question}</span><WorkspaceIcon name="chevron" size={14} /></button>)}
                   </div>}
-                  {message.role === "assistant" && (index < assistantMessages.length - 1 || completedAnswerId === message.id) && !message.content.startsWith("未能完成：") && <div className="agent-reply-actions"><button onClick={() => placeDirectionOnCanvas(message)}>放到画布</button>{message.id && (message.feedback ? <small>{message.feedback === "helpful" ? "✓ 有帮助" : "✓ 需改进"}</small> : <><button onClick={() => void submitAssistantFeedback(message, "helpful")}>有用</button><button onClick={() => void submitAssistantFeedback(message, "needs-work", "not-actionable")}>不够具体</button></>)}</div>}
+                  {message.role === "assistant" && !assistantBusy && (index < assistantMessages.length - 1 || completedAnswerId === message.id) && !message.content.startsWith("未能完成：") && <div className="agent-reply-actions"><button onClick={() => placeDirectionOnCanvas(message)}>放到画布</button>{message.id && (message.feedback ? <small>{message.feedback === "helpful" ? "✓ 有帮助" : "✓ 需改进"}</small> : <><button onClick={() => void submitAssistantFeedback(message, "helpful")}>有用</button><button onClick={() => void submitAssistantFeedback(message, "needs-work", "not-actionable")}>不够具体</button></>)}</div>}
                 </article>
               ))}
               {assistantBusy && <div className="agent-typing" role="status"><i /><i /><i /><span>小in 正在思考…</span></div>}
@@ -2285,8 +2455,8 @@ function WorkspaceCanvas() {
             <form className="agent-composer" onSubmit={(event) => { event.preventDefault(); void askDesignAssistant(); }}>
               {selectedIds.length > 0 && <span className="agent-composer-context">已引用画布中的 {selectedIds.length} 张卡片</span>}
               <label htmlFor="direction-question" className="sr-only">给小in发送消息</label>
-              <textarea id="direction-question" value={assistantQuestion} onChange={(event) => { setAssistantQuestion(event.target.value); if (event.target.value.trim()) setAssistantHasInteracted(true); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void askDesignAssistant(); } }} placeholder="和小in聊聊你的想法…" rows={3} />
-              <div className="agent-composer-footer"><span>{voiceListening ? "正在听你说…" : "Enter 发送 · Shift + Enter 换行"}</span><div><button type="button" className={voiceListening ? "agent-voice is-listening" : "agent-voice"} onClick={toggleVoiceInput} disabled={assistantBusy || !voiceSupported} aria-label={voiceListening ? "停止语音输入" : "语音输入"} title={voiceSupported ? "语音输入" : "当前浏览器不支持语音输入"}><WorkspaceIcon name="mic" size={18} /></button><button type="submit" className="agent-send" disabled={assistantBusy || !assistantQuestion.trim()}>发送 <WorkspaceIcon name="chevron" size={15} /></button></div></div>
+              <textarea id="direction-question" value={assistantQuestion} maxLength={2000} disabled={assistantBusy || assistantHistoryLoading} onChange={(event) => { setAssistantQuestion(event.target.value); if (event.target.value.trim()) setAssistantHasInteracted(true); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void askDesignAssistant(); } }} placeholder="和小in聊聊你的想法…" rows={3} />
+              <div className="agent-composer-footer"><span>{voiceListening ? "正在听你说…" : "Enter 发送 · Shift + Enter 换行"}</span><div><button type="button" className={voiceListening ? "agent-voice is-listening" : "agent-voice"} onClick={toggleVoiceInput} disabled={assistantBusy || assistantHistoryLoading || !voiceSupported} aria-label={voiceListening ? "停止语音输入" : "语音输入"} title={voiceSupported ? "语音输入" : "当前浏览器不支持语音输入"}><WorkspaceIcon name="mic" size={18} /></button><button type="submit" className="agent-send" disabled={assistantBusy || assistantHistoryLoading || !assistantQuestion.trim()}>发送 <WorkspaceIcon name="chevron" size={15} /></button></div></div>
             </form>
           </aside>, document.body
         )}

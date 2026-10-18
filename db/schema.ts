@@ -23,6 +23,17 @@ export const boards = sqliteTable("boards", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`), createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [index("boards_owner_updated_idx").on(table.ownerId, table.updatedAt)]);
 
+export const assistantConversations = sqliteTable("assistant_conversations", {
+  id: text("id").primaryKey(),
+  ownerId: text("owner_id").notNull(),
+  boardId: text("board_id").notNull(),
+  title: text("title").notNull(),
+  messages: text("messages", { mode: "json" }).$type<Array<Record<string, unknown>>>().notNull().default([]),
+  version: integer("version").notNull().default(1),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [index("assistant_conversations_owner_board_updated_idx").on(table.ownerId, table.boardId, table.updatedAt)]);
+
 export const assets = sqliteTable("assets", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), boardId: text("board_id").notNull(),
   kind: text("kind", { enum: ["image", "video", "audio", "web", "text"] }).notNull(), title: text("title").notNull(), sourceUrl: text("source_url"),

@@ -11,6 +11,7 @@ export type WorkspaceIconName =
   | "connect"
   | "fit"
   | "folder"
+  | "history"
   | "map"
   | "mic"
   | "note"
@@ -33,6 +34,7 @@ const paths: Record<WorkspaceIconName, ReactNode> = {
   connect: <><path d="M8 8h-1.5A3.5 3.5 0 0 0 3 11.5v1A3.5 3.5 0 0 0 6.5 16H8" /><path d="M16 8h1.5a3.5 3.5 0 0 1 3.5 3.5v1a3.5 3.5 0 0 1-3.5 3.5H16" /><path d="M8 12h8" /></>,
   fit: <><path d="M8 4H4v4" /><path d="M16 4h4v4" /><path d="M20 16v4h-4" /><path d="M4 16v4h4" /><rect x="8" y="8" width="8" height="8" rx="1" /></>,
   folder: <><path d="M3.5 6.5h6l1.5 2H20.5v10H3.5z" /><path d="M3.5 6.5v-2h5l1 2" /></>,
+  history: <><path d="M3.5 11a8.5 8.5 0 1 1 2.8 7" /><path d="M3.5 5.5V11H9" /><path d="M12 7v5l3.5 2" /></>,
   map: <><path d="m4 6 5-2 6 2 5-2v14l-5 2-6-2-5 2V6Z" /><path d="M9 4v14" /><path d="M15 6v14" /></>,
   mic: <><rect x="9" y="3" width="6" height="12" rx="3" /><path d="M5.5 11a6.5 6.5 0 0 0 13 0" /><path d="M12 17.5V21" /><path d="M8.5 21h7" /></>,
   note: <><path d="M5 3.5h10l4 4v13H5z" /><path d="M15 3.5v4h4" /><path d="M8.5 12h7" /><path d="M8.5 15.5h5" /></>,

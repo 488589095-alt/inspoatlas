@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import { z } from "zod";
 import { migrateBoardScene } from "@/packages/domain/src";
 import { ensureCoreTables, getDb } from "@/db";
-import { assets, boards, designContracts, relations, shareLinks } from "@/db/schema";
+import { assets, assistantConversations, boards, designContracts, relations, shareLinks } from "@/db/schema";
 import { currentUser, errorResponse, HttpError } from "../../_lib";
 
 const renameSchema = z.object({ title: z.string().trim().min(1).max(120) });
@@ -34,6 +34,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ id: 
     const [board] = await db.select({ id: boards.id }).from(boards).where(and(eq(boards.id, id), eq(boards.ownerId, user.id))).limit(1);
     if (!board) throw new HttpError(404, "画布不存在");
     await db.delete(relations).where(eq(relations.boardId, id));
+    await db.delete(assistantConversations).where(and(eq(assistantConversations.boardId, id), eq(assistantConversations.ownerId, user.id)));
     await db.delete(designContracts).where(eq(designContracts.boardId, id));
     await db.delete(shareLinks).where(eq(shareLinks.boardId, id));
     await db.delete(assets).where(and(eq(assets.boardId, id), eq(assets.ownerId, user.id)));
