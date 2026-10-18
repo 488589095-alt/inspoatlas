@@ -6,6 +6,7 @@ import { providerIds } from "@/packages/domain/src";
 import { ensureCoreTables, getDb } from "@/db";
 import { analyses, assets, events } from "@/db/schema";
 import { loadCredential } from "../_credentials";
+import { reserveAiBudget } from "../_ai-budget";
 import { currentUser, errorResponse, HttpError, newId } from "../_lib";
 import { getAssetBucket } from "../_storage";
 
@@ -78,6 +79,7 @@ export async function POST(request: Request) {
     const needsVision = asset.kind === "image" || Boolean(objectKey);
     const credential = await loadCredential(user.id, input.provider, needsVision);
     if (!credential) throw new HttpError(503, "工作区 AI 服务暂不可用，请稍后重试");
+    await reserveAiBudget(user.id, "analysis", credential);
 
     const [existing] = await db.select().from(analyses)
       .where(and(eq(analyses.assetId, asset.id), eq(analyses.ownerId, user.id)))

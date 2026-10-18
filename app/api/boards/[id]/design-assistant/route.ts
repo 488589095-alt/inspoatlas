@@ -5,6 +5,7 @@ import { providerIds } from "@/packages/domain/src";
 import { ensureCoreTables, getDb } from "@/db";
 import { analyses, assets, boards, events, assistantMemories } from "@/db/schema";
 import { loadCredential } from "../../../_credentials";
+import { reserveAiBudget } from "../../../_ai-budget";
 import { currentUser, errorResponse, HttpError, newId } from "../../../_lib";
 import { parseAssistantTurn } from "@/app/workspace/assistantConversation";
 
@@ -35,7 +36,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     const credential = await loadCredential(user.id, input.provider, false);
     if (!credential) throw new HttpError(503, "工作区 AI 服务暂不可用，请稍后重试");
-    const searchCandidates = credential.provider === "qwen" && /(?:找|推荐|搜索|搜|参考).{0,12}(?:网站|网页|站点|案例)|(?:网站|网页|站点).{0,12}(?:参考|推荐|案例)/.test(input.question)
+    const wantsSearch = credential.provider === "qwen" && /(?:找|推荐|搜索|搜|参考).{0,12}(?:网站|网页|站点|案例)|(?:网站|网页|站点).{0,12}(?:参考|推荐|案例)/.test(input.question);
+    if (wantsSearch) await reserveAiBudget(user.id, "research", credential);
+    const searchCandidates = wantsSearch
       ? await researchWithQwen({ brief: input.question.slice(0, 500), limit: 3 }, credential).catch(() => [])
       : [];
     const sources = searchCandidates.slice(0, 3).map(({ title, url, reason }) => ({ title, url, reason }));
@@ -72,7 +75,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
         colors ? `颜色：${colors}` : "",
         principles ? `设计要点：${principles}` : "",
       ].filter(Boolean).join("\n");
-    }).join("\n\n");
+    }).join("\n\n").slice(0, 5_000);
 
     const prompt = [
       "你是小in，温和、敏锐的设计共创伙伴。擅长从模糊想法中提炼目标、比较视觉参考、给出可执行的下一步。直接回答问题，不套固定流程；不知道时坦诚说明。",
@@ -88,11 +91,24 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       scopedNodes.length ? `参考卡片：\n${references}` : "当前画布没有可引用的参考卡片。",
       `用户问题：${input.question}`,
     ].filter(Boolean).join("\n\n");
+    const encoder = new TextEncoder();
+    let historyBytesLeft = 60_000 - encoder.encode(prompt).length - 3_000;
+    if (historyBytesLeft < 0) throw new HttpError(413, "参考内容过长，请减少选中的卡片后重试");
+    const recentHistory: TextMessage[] = [];
+    for (let index = input.history.length - 1; index >= 0; index--) {
+      const item = input.history[index];
+      const content = item.content.slice(0, 1_000);
+      const bytes = encoder.encode(content).length;
+      if (bytes > historyBytesLeft) break;
+      recentHistory.unshift({ role: item.role, content });
+      historyBytesLeft -= bytes;
+    }
     const messages: TextMessage[] = [
-      ...input.history.map((item) => ({ role: item.role, content: item.content })),
+      ...recentHistory,
       { role: "user", content: prompt },
     ];
     const startedAt = Date.now();
+    await reserveAiBudget(user.id, "assistant", credential);
     const { answer, followUps, actions: proposedActions } = parseAssistantTurn(await generateTextWithProvider(messages, credential, { maxTokens: 950, timeoutMs: 70_000, disableThinking: true }));
     const actions = proposedActions.filter((action) => {
       if (action.type === "add_note") return /(?:添加|新增|创建|写|放|记录).{0,8}(?:备注|便签|卡片)|(?:备注|便签).{0,8}(?:添加|新增|创建|写|放|记录)/.test(input.question);

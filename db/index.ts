@@ -95,6 +95,11 @@ export function ensureCoreTables(): Promise<void> {
       d1.prepare("CREATE TABLE IF NOT EXISTS design_contracts (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, board_id TEXT NOT NULL UNIQUE, version INTEGER DEFAULT 1 NOT NULL, status TEXT DEFAULT 'draft' NOT NULL, content TEXT NOT NULL, provider TEXT, model TEXT, updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)"),
       d1.prepare("CREATE TABLE IF NOT EXISTS share_links (id TEXT PRIMARY KEY NOT NULL, board_id TEXT NOT NULL, owner_id TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, revoked_at TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)"),
       d1.prepare("CREATE TABLE IF NOT EXISTS usage_ledger (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, action TEXT NOT NULL, units INTEGER NOT NULL, job_id TEXT, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)"),
+      d1.prepare("CREATE TABLE IF NOT EXISTS ai_budget_ledger (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, action TEXT NOT NULL, reserved_fen INTEGER NOT NULL, day_key TEXT NOT NULL, month_key TEXT NOT NULL, created_at TEXT NOT NULL)"),
+      d1.prepare("CREATE INDEX IF NOT EXISTS ai_budget_day_idx ON ai_budget_ledger(day_key)"),
+      d1.prepare("CREATE INDEX IF NOT EXISTS ai_budget_month_idx ON ai_budget_ledger(month_key)"),
+      d1.prepare("CREATE INDEX IF NOT EXISTS ai_budget_owner_day_idx ON ai_budget_ledger(owner_id, day_key)"),
+      d1.prepare("CREATE INDEX IF NOT EXISTS ai_budget_owner_month_idx ON ai_budget_ledger(owner_id, month_key)"),
       d1.prepare("CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, name TEXT NOT NULL, payload TEXT DEFAULT '{}' NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)"),
     ]).then(async () => {
       await ensureColumns(d1, "relations", [
@@ -114,6 +119,18 @@ export function ensureCoreTables(): Promise<void> {
   }
 
   return coreTablesPromise;
+}
+
+/** A single conditional SQLite write serializes reservations across concurrent requests. */
+export async function insertAiBudgetReservation(query: string, args: Array<string | number>): Promise<boolean> {
+  if (process.env.VERCEL) {
+    const result = await getVercelClient().execute({ sql: query, args });
+    return result.rowsAffected === 1;
+  }
+  if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
+  const d1 = env.DB as unknown as { prepare(sql: string): { bind(...values: Array<string | number>): { run(): Promise<{ meta: { changes: number } }> } } };
+  const result = await d1.prepare(query).bind(...args).run();
+  return result.meta.changes === 1;
 }
 
 async function ensureColumns(d1: RuntimeD1Database, table: string, columns: Array<[string, string]>) {

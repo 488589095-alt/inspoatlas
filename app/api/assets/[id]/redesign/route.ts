@@ -5,6 +5,7 @@ import { MAX_IMAGE_BYTES } from "@/packages/domain/src";
 import { ensureCoreTables, getDb } from "@/db";
 import { assetDerivatives, assets, events } from "@/db/schema";
 import { loadCredential } from "../../../_credentials";
+import { reserveAiBudget } from "../../../_ai-budget";
 import { currentUser, errorResponse, HttpError, newId } from "../../../_lib";
 import { getAssetBucket } from "../../../_storage";
 
@@ -34,6 +35,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 
     const startedAt = Date.now();
     const origin = new URL(credential.baseUrl).origin;
+    await reserveAiBudget(user.id, "imageEdit", credential);
     const response = await fetch(`${origin}/api/v1/services/aigc/multimodal-generation/generation`, {
       method: "POST",
       headers: { "content-type": "application/json", authorization: `Bearer ${credential.apiKey}` },

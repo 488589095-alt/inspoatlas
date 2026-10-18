@@ -4,6 +4,7 @@ import { RESEARCH_PROMPT_VERSION, researchWithQwen } from "@/packages/ai/src";
 import { ensureCoreTables, getDb } from "@/db";
 import { boards, events } from "@/db/schema";
 import { loadCredential } from "../../../_credentials";
+import { reserveAiBudget } from "../../../_ai-budget";
 import { currentUser, errorResponse, HttpError, newId } from "../../../_lib";
 
 const inputSchema = z.object({ brief: z.string().trim().min(4).max(1_200), limit: z.number().int().min(8).max(12).default(10) });
@@ -20,6 +21,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const credential = await loadCredential(user.id, "qwen", false);
     if (!credential) throw new HttpError(503, "工作区 AI 服务暂不可用，请稍后重试");
     const startedAt = Date.now();
+    await reserveAiBudget(user.id, "research", credential);
     const candidates = await researchWithQwen(input, credential);
     await getDb().insert(events).values({
       id: newId("event"), ownerId: user.id, name: "ai.research.completed",

@@ -117,6 +117,16 @@ export const usageLedger = sqliteTable("usage_ledger", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const aiBudgetLedger = sqliteTable("ai_budget_ledger", {
+  id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), action: text("action").notNull(),
+  reservedFen: integer("reserved_fen").notNull(), dayKey: text("day_key").notNull(), monthKey: text("month_key").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  index("ai_budget_day_idx").on(table.dayKey), index("ai_budget_month_idx").on(table.monthKey),
+  index("ai_budget_owner_day_idx").on(table.ownerId, table.dayKey),
+  index("ai_budget_owner_month_idx").on(table.ownerId, table.monthKey),
+]);
+
 export const events = sqliteTable("events", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), name: text("name").notNull(), payload: text("payload", { mode: "json" }).$type<Record<string, unknown>>().notNull().default({}),
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),

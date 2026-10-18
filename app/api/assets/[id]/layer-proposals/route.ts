@@ -4,6 +4,7 @@ import { proposeImageLayers, LAYER_PROPOSAL_PROMPT_VERSION } from "@/packages/ai
 import { ensureCoreTables, getDb } from "@/db";
 import { assets, events } from "@/db/schema";
 import { loadCredential } from "../../../_credentials";
+import { reserveAiBudget } from "../../../_ai-budget";
 import { currentUser, errorResponse, HttpError, newId } from "../../../_lib";
 import { getAssetBucket } from "../../../_storage";
 
@@ -22,6 +23,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
     const contentType = String((asset.metadata as { contentType?: string }).contentType || object.httpMetadata?.contentType || "image/png");
     const bytes = await new Response(object.body).arrayBuffer();
     const startedAt = Date.now();
+    await reserveAiBudget(user.id, "layers", credential);
     const proposals = await proposeImageLayers({ title: asset.title, imageDataUrl: `data:${contentType};base64,${Buffer.from(bytes).toString("base64")}` }, credential);
     await getDb().insert(events).values({
       id: newId("event"), ownerId: user.id, name: "ai.layers.completed",
