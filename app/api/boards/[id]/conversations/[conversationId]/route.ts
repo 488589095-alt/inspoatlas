@@ -43,3 +43,18 @@ export async function PUT(request: Request, context: ConversationContext) {
     return Response.json({ conversation }, { headers: { "cache-control": "no-store" } });
   } catch (error) { return errorResponse(error); }
 }
+
+export async function DELETE(request: Request, context: ConversationContext) {
+  try {
+    const user = currentUser(request);
+    const { id: boardId, conversationId } = await context.params;
+    await ensureCoreTables();
+    const [deleted] = await getDb().delete(assistantConversations).where(and(
+      eq(assistantConversations.id, conversationId),
+      eq(assistantConversations.boardId, boardId),
+      eq(assistantConversations.ownerId, user.id),
+    )).returning({ id: assistantConversations.id });
+    if (!deleted) throw new HttpError(404, "对话不存在");
+    return new Response(null, { status: 204 });
+  } catch (error) { return errorResponse(error); }
+}

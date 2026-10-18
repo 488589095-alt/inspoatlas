@@ -29,6 +29,7 @@ import { RelationEdge } from "./workspace/RelationEdge";
 import { UserMenu } from "./workspace/UserMenu";
 import { WorkspaceIcon, type WorkspaceIconName } from "./workspace/WorkspaceIcon";
 import { ImageEditor } from "./workspace/ImageEditor";
+import type { AssistantAction } from "./workspace/assistantConversation";
 import { ToolbarMoreMenu } from "./workspace/ToolbarMoreMenu";
 import { uploadPrivateFile } from "./workspace/clientUpload";
 import { buildOrganizePreview, type OrganizePreview } from "./workspace/organize";
@@ -106,6 +107,8 @@ type AssistantConversation = {
   createdAt: string;
   updatedAt: string;
 };
+type AssistantMemory = { userRole: string; preferences: string; avoid: string };
+const emptyAssistantMemory: AssistantMemory = { userRole: "", preferences: "", avoid: "" };
 
 function conversationUrl(boardId: string, conversationId?: string) {
   const base = `/api/boards/${encodeURIComponent(boardId)}/conversations`;
@@ -261,6 +264,10 @@ function WorkspaceCanvas() {
   const [assistantHistoryOpen, setAssistantHistoryOpen] = useState(false);
   const [assistantHistoryLoading, setAssistantHistoryLoading] = useState(false);
   const [assistantHistoryError, setAssistantHistoryError] = useState("");
+  const [assistantDeleteId, setAssistantDeleteId] = useState<string | null>(null);
+  const [assistantMemoryOpen, setAssistantMemoryOpen] = useState(false);
+  const [assistantMemory, setAssistantMemory] = useState<AssistantMemory>(emptyAssistantMemory);
+  const [assistantMemoryBusy, setAssistantMemoryBusy] = useState(false);
   const [assistantBusy, setAssistantBusy] = useState(false);
   const [assistantHasInteracted, setAssistantHasInteracted] = useState(false);
   const [completedAnswerId, setCompletedAnswerId] = useState<string | null>(null);
@@ -380,6 +387,16 @@ function WorkspaceCanvas() {
 
   useEffect(() => {
     if (!assistantOpen) speechRecognitionRef.current?.stop();
+  }, [assistantOpen]);
+
+  useEffect(() => {
+    if (!assistantOpen) return;
+    const controller = new AbortController();
+    void fetch("/api/assistant-memory", { cache: "no-store", signal: controller.signal })
+      .then(async (response) => response.ok ? response.json() : Promise.reject(new Error("记忆暂时无法读取")))
+      .then((payload) => { if (!controller.signal.aborted) setAssistantMemory({ ...emptyAssistantMemory, ...payload.memory }); })
+      .catch(() => {});
+    return () => controller.abort();
   }, [assistantOpen]);
 
   useEffect(() => {
@@ -1209,6 +1226,7 @@ function WorkspaceCanvas() {
         window.localStorage.setItem("inspoatlas:left-rail-collapsed", "1");
       }
       setRightRailCollapsed(next);
+      if (next) setAssistantOpen(false);
       window.localStorage.setItem("inspoatlas:right-rail-collapsed", next ? "1" : "0");
     }
   }
@@ -1251,6 +1269,7 @@ function WorkspaceCanvas() {
         setLeftRailWidth(width);
       } else {
         setRightRailCollapsed(collapse);
+        if (collapse) setAssistantOpen(false);
         setRightRailWidth(width);
       }
       if (!cancelled) {
@@ -1570,6 +1589,62 @@ function WorkspaceCanvas() {
     }
   }
 
+  async function deleteAssistantConversation(conversationId: string) {
+    if (!boardId || assistantBusy || assistantHistoryLoading) return;
+    if (assistantDeleteId !== conversationId) { setAssistantDeleteId(conversationId); return; }
+    setAssistantHistoryLoading(true);
+    try {
+      const response = await fetch(conversationUrl(boardId, conversationId), { method: "DELETE" });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({}));
+        throw new Error(String(payload.error || "删除对话失败"));
+      }
+      setAssistantConversations((current) => current.filter((item) => item.id !== conversationId));
+      if (assistantConversationId === conversationId) {
+        setAssistantConversationId(null);
+        setAssistantConversationVersion(0);
+        setAssistantMessages([]);
+        setAssistantQuestion("");
+        setCompletedAnswerId(null);
+        setAssistantHasInteracted(false);
+        window.localStorage.setItem(`inspoatlas:assistant-conversation:${boardId}`, "");
+      }
+      notify("已删除这段对话");
+    } catch (error) {
+      setAssistantHistoryError(error instanceof Error ? error.message : "删除对话失败");
+    } finally {
+      setAssistantDeleteId(null);
+      setAssistantHistoryLoading(false);
+    }
+  }
+
+  async function saveAssistantMemory() {
+    if (assistantMemoryBusy) return;
+    setAssistantMemoryBusy(true);
+    try {
+      const response = await fetch("/api/assistant-memory", { method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(assistantMemory) });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(String(payload.error || "记忆保存失败"));
+      setAssistantMemory({ ...emptyAssistantMemory, ...payload.memory });
+      setAssistantMemoryOpen(false);
+      notify("小in 已记住这些偏好");
+    } catch (error) { notify(error instanceof Error ? error.message : "记忆保存失败"); }
+    finally { setAssistantMemoryBusy(false); }
+  }
+
+  function applyAssistantActions(actions: AssistantAction[], originalQuestion: string, selectedAtRequest: string[]) {
+    for (const action of actions) {
+      if (action.type === "add_note" && /(?:添加|新增|创建|写|放|记录).{0,8}(?:备注|便签|卡片)|(?:备注|便签).{0,8}(?:添加|新增|创建|写|放|记录)/.test(originalQuestion)) {
+        createNote({ title: action.title, body: action.body });
+      } else if (action.type === "rename_selected" && selectedAtRequest.length === 1 && action.nodeId === selectedAtRequest[0] && nodes.some((node) => node.id === action.nodeId) && /(?:改名|重命名|命名|名称|标题|叫做)/.test(originalQuestion)) {
+        renameNode(action.nodeId, action.title);
+        notify("已为卡片改名，可撤销");
+      } else if (action.type === "analyze_selected" && selectedAtRequest.length === 1 && action.nodeId === selectedAtRequest[0] && nodes.some((node) => node.id === action.nodeId && isAnalyzableNode(node)) && /(?:拆解|分析|识别|提取)/.test(originalQuestion)) {
+        void analyze(action.nodeId);
+      }
+    }
+  }
+
   async function askDesignAssistant(requestedQuestion?: string) {
     const question = (requestedQuestion ?? assistantQuestion).trim();
     if (!question) return notify("请输入你想讨论的问题");
@@ -1577,6 +1652,7 @@ function WorkspaceCanvas() {
     assistantRequestPendingRef.current = true;
     speechRecognitionRef.current?.stop();
     const scope: AssistantScope = selectedIds.length ? "selection" : "board";
+    const selectedAtRequest = [...selectedIds];
     const previousMessages = assistantMessages;
     const userMessage: AssistantMessage = { id: crypto.randomUUID(), role: "user", content: question };
     const nextMessages: AssistantMessage[] = [...previousMessages, userMessage];
@@ -1585,6 +1661,24 @@ function WorkspaceCanvas() {
     setAssistantHasInteracted(true);
     setCompletedAnswerId(null);
     setAssistantBusy(true);
+    const assistantController = new AbortController();
+    const assistantReplyPromise = fetch(`/api/boards/${encodeURIComponent(boardId)}/design-assistant`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      signal: assistantController.signal,
+      body: JSON.stringify({
+        question,
+        scope,
+        selectedNodeIds: scope === "selection" ? selectedAtRequest : [],
+        earlierContext: previousMessages.length > 20
+          ? previousMessages.slice(2, -18).filter((message) => message.role === "user").map((message) => message.content.replace(/\s+/g, " ").slice(0, 120)).join("；").slice(-2400)
+          : "",
+        history: previousMessages.length > 20
+          ? [...previousMessages.slice(0, 2), ...previousMessages.slice(-18)].map((message) => ({ role: message.role, content: message.content.slice(0, 1000) }))
+          : previousMessages.map((message) => ({ role: message.role, content: message.content.slice(0, 1000) })),
+      }),
+    }).then(async (response) => ({ response, payload: await response.json().catch(() => ({})) }))
+      .catch((error: unknown) => ({ error }));
     try {
       let conversationId = assistantConversationId;
       let version = assistantConversationVersion;
@@ -1605,6 +1699,7 @@ function WorkspaceCanvas() {
           window.localStorage.setItem(`inspoatlas:assistant-conversation:${boardId}`, conversationId);
         }
       } catch (error) {
+        assistantController.abort();
         if (assistantBoardRef.current === boardId) {
           setAssistantMessages(previousMessages);
           setAssistantQuestion(question);
@@ -1616,17 +1711,9 @@ function WorkspaceCanvas() {
 
       let reply: AssistantMessage;
       try {
-        const response = await fetch(`/api/boards/${encodeURIComponent(boardId)}/design-assistant`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            question,
-            scope,
-            selectedNodeIds: scope === "selection" ? selectedIds : [],
-            history: previousMessages.slice(-8),
-          }),
-        });
-        const payload = await response.json().catch(() => ({}));
+        const assistantResult = await assistantReplyPromise;
+        if ("error" in assistantResult) throw assistantResult.error;
+        const { response, payload } = assistantResult;
         if (!response.ok) throw new Error(friendlyAnalysisError(payload.error));
         reply = {
           id: String(payload.id || crypto.randomUUID()),
@@ -1639,6 +1726,7 @@ function WorkspaceCanvas() {
           promptVersion: payload.promptVersion,
           runMode: payload.runMode,
         };
+        if (Array.isArray(payload.actions)) applyAssistantActions(payload.actions, question, selectedAtRequest);
       } catch (error) {
         const message = error instanceof Error ? error.message : "设计助手暂时不可用";
         reply = { id: crypto.randomUUID(), role: "assistant", content: `未能完成：${message}` };
@@ -2443,14 +2531,47 @@ function WorkspaceCanvas() {
           </div>
         )}
 
-        {assistantOpen && !organizePreview && portalReady && createPortal(
-          <aside className="canvas-director agent-drawer" aria-label="灵感 Agent">
+      </section>
+      {portalReady && createPortal(
+        <div className={"agent-entry" + (agentRevealed ? "" : " is-peeking") + (assistantOpen ? " is-chatting" : "")}>
+          {agentRevealed && !assistantOpen && agentHintVisible && <div className="agent-hint"><TypewriterText text={agentWelcome} speed={110} /><button onClick={() => setAgentHintVisible(false)} aria-label="关闭提示">×</button></div>}
+          <button
+            className={"assistant-orb" + (assistantOpen ? " is-open" : "")}
+            onClick={() => {
+              if (!agentRevealed) { setAgentRevealed(true); return; }
+              const next = !assistantOpen;
+              setAssistantOpen(next);
+              if (next) {
+                setFocusMode(false);
+                setRightRailCollapsed(false);
+                setInspectorOpen(true);
+                setAssistantMemoryOpen(false);
+                setAssistantHistoryOpen(false);
+                if (window.innerWidth > 1100 && rightRailWidth < 380) setRightRailWidth(380);
+              }
+              setAgentHintVisible(false);
+            }}
+            onContextMenu={(event) => { if (agentRevealed) { event.preventDefault(); dockAgent(); } }}
+            title={agentRevealed ? "小in · 灵感 Agent" : "看看小in"}
+            aria-label={agentRevealed ? (assistantOpen ? "关闭小in设计助手" : "打开小in设计助手") : "让小in露出全身"}
+            aria-expanded={assistantOpen}
+          ><img src="/inspo-sprite.png" alt="" /></button>
+          {agentRevealed && <button className="agent-dock-button" onClick={dockAgent} aria-label="收起小in到侧边" title="收起小in到侧边"><span>收起</span><WorkspaceIcon name="chevron" size={16} /></button>}
+        </div>, document.body
+      )}
+      <div className="rail-resizer rail-resizer-right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" title="拖动调整右栏宽度，拖到尽头可收起" onDoubleClick={() => resetRailWidth("right")} onPointerDown={(event) => startRailResize("right", event)} />
+      {!focusMode && <button type="button" className={"rail-collapse-button rail-collapse-right" + (rightRailCollapsed ? " is-collapsed" : "")} onClick={() => toggleRailCollapsed("right")} aria-label={rightRailCollapsed ? "展开右侧栏" : "收起右侧栏"} title={rightRailCollapsed ? "展开详情栏" : "收起详情栏"}><WorkspaceIcon name="chevron" size={14} /></button>}
+
+      <aside className={"inspector" + (inspectorOpen ? " is-open" : "") + (assistantOpen ? " is-agent-open" : "") + ((rightRailCollapsed || (resizingRail === "right" && rightRailWidth < railExpandedMinimum.right)) ? " is-collapsed" : "")}>
+        {assistantOpen && (
+          <section className="agent-drawer agent-sidebar" aria-label="小in 设计助手">
             <header className="agent-header">
               <div className="agent-header-identity"><img src="/inspo-sprite.png" alt="" /><div><h2>小in</h2><span>你的设计小助手</span></div></div>
               <div className="agent-header-actions">
                 <button type="button" className={assistantHistoryOpen ? "is-active" : ""} onClick={() => setAssistantHistoryOpen((open) => !open)} aria-label="历史对话" aria-expanded={assistantHistoryOpen} title="历史对话"><WorkspaceIcon name="history" size={18} /></button>
+                <button type="button" className={assistantMemoryOpen ? "is-active" : ""} onClick={() => { setAssistantMemoryOpen((open) => !open); setAssistantHistoryOpen(false); }} aria-label="小in 的记忆" aria-expanded={assistantMemoryOpen} title="小in 的记忆"><WorkspaceIcon name="ask" size={17} /></button>
                 <button type="button" className="agent-new-chat" onClick={startNewAssistantConversation} disabled={assistantBusy || assistantHistoryLoading} title="开始新对话"><WorkspaceIcon name="add" size={17} /><span>新对话</span></button>
-                <button type="button" onClick={() => setAssistantOpen(false)} aria-label="关闭小in" title="关闭小in"><WorkspaceIcon name="close" size={16} /></button>
+                <button type="button" onClick={() => { setAssistantOpen(false); setAssistantMemoryOpen(false); setAssistantHistoryOpen(false); }} aria-label="关闭小in" title="关闭小in"><WorkspaceIcon name="close" size={16} /></button>
               </div>
             </header>
             {assistantHistoryOpen && <>
@@ -2461,10 +2582,18 @@ function WorkspaceCanvas() {
                   {assistantHistoryLoading && <p role="status">正在读取对话…</p>}
                   {assistantHistoryError && <p className="agent-history-error" role="alert">{assistantHistoryError}</p>}
                   {!assistantHistoryLoading && !assistantHistoryError && assistantConversations.length === 0 && <p>还没有对话。发出第一条消息后会保存在这里。</p>}
-                  {assistantConversations.map((conversation) => <button type="button" key={conversation.id} className={conversation.id === assistantConversationId ? "is-active" : ""} aria-current={conversation.id === assistantConversationId ? "true" : undefined} disabled={assistantBusy || assistantHistoryLoading} onClick={() => void openAssistantConversation(conversation.id)}><span>{conversation.title}</span><small>{conversationDate(conversation.updatedAt)}</small></button>)}
+                  {assistantConversations.map((conversation) => <div className="agent-history-row" key={conversation.id}><button type="button" className={conversation.id === assistantConversationId ? "is-active" : ""} aria-current={conversation.id === assistantConversationId ? "true" : undefined} disabled={assistantBusy || assistantHistoryLoading} onClick={() => { setAssistantDeleteId(null); void openAssistantConversation(conversation.id); }}><span>{conversation.title}</span><small>{conversationDate(conversation.updatedAt)}</small></button><button type="button" className="agent-history-delete" disabled={assistantBusy || assistantHistoryLoading} onClick={() => void deleteAssistantConversation(conversation.id)} aria-label={assistantDeleteId === conversation.id ? `确认删除${conversation.title}` : `删除${conversation.title}`} title={assistantDeleteId === conversation.id ? "再次点击确认删除" : "删除对话"}>{assistantDeleteId === conversation.id ? "确认" : "删除"}</button></div>)}
                 </div>
               </nav>
             </>}
+            {assistantMemoryOpen && <section className="agent-memory-panel" aria-label="小in 的记忆设置">
+              <header><div><strong>小in 的记忆</strong><small>完整对话保存在当前作品；这里仅保存跨作品偏好。</small></div><button type="button" onClick={() => setAssistantMemoryOpen(false)} aria-label="关闭记忆设置"><WorkspaceIcon name="close" size={15} /></button></header>
+              <p>小in 是温和、敏锐的设计共创伙伴。你明确提出要求时，它能添加备注、重命名卡片或拆解选中的参考；画布修改可以撤销。</p>
+              <label>我的角色或固定信息<textarea value={assistantMemory.userRole} maxLength={300} placeholder="例如：自由职业网页设计师" onChange={(event) => setAssistantMemory((current) => ({ ...current, userRole: event.target.value }))} /></label>
+              <label>设计偏好<textarea value={assistantMemory.preferences} maxLength={800} placeholder="例如：喜欢圆润、轻盈的界面" onChange={(event) => setAssistantMemory((current) => ({ ...current, preferences: event.target.value }))} /></label>
+              <label>想避免的风格<textarea value={assistantMemory.avoid} maxLength={500} placeholder="例如：不喜欢过深的背景色" onChange={(event) => setAssistantMemory((current) => ({ ...current, avoid: event.target.value }))} /></label>
+              <div className="agent-memory-actions"><button type="button" onClick={() => setAssistantMemory(emptyAssistantMemory)}>清空内容</button><button type="button" onClick={() => void saveAssistantMemory()} disabled={assistantMemoryBusy}>{assistantMemoryBusy ? "保存中…" : "保存记忆"}</button></div>
+            </section>}
             <div className="agent-conversation" ref={assistantScrollRef} aria-live="polite">
               {assistantHistoryLoading && !assistantMessages.length && <div className="agent-chat-loading" role="status">正在整理你的对话…</div>}
               {!assistantHistoryLoading && !assistantMessages.length && <div className="agent-chat-empty">
@@ -2477,7 +2606,7 @@ function WorkspaceCanvas() {
               {assistantMessages.map((message, index) => (
                 <article className={"agent-chat-message agent-chat-message-" + message.role} key={message.id ?? `${message.role}-${index}`}>
                   <header><strong>{message.role === "user" ? "你" : "小in"}</strong></header>
-                  <p>{message.role === "assistant" ? <TypewriterText text={message.content} animate={index === assistantMessages.length - 1 && completedAnswerId !== message.id} speed={Math.max(10, Math.min(40, Math.floor(5_000 / message.content.length)))} onComplete={() => setCompletedAnswerId(message.id ?? null)} /> : message.content}</p>
+                  <p>{message.role === "assistant" ? <TypewriterText text={message.content} animate={index === assistantMessages.length - 1 && completedAnswerId !== message.id} speed={Math.max(2, Math.min(16, Math.floor(1_400 / Math.max(1, message.content.length))))} onComplete={() => setCompletedAnswerId(message.id ?? null)} /> : message.content}</p>
                   {message.role === "assistant" && (index < assistantMessages.length - 1 || completedAnswerId === message.id) && Boolean(message.sources?.length) && <div className="agent-sources" aria-label="参考网站">{message.sources?.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer"><strong>{source.title}</strong><span>{new URL(source.url).hostname}</span></a>)}</div>}
                   {message.role === "assistant" && index === assistantMessages.length - 1 && completedAnswerId === message.id && !assistantBusy && Boolean(message.followUps?.length) && <div className="agent-followups" aria-label="继续追问">
                     {message.followUps?.map((question) => <button key={question} title={question} onClick={() => void askDesignAssistant(question)}><span>{question}</span><WorkspaceIcon name="chevron" size={14} /></button>)}
@@ -2493,31 +2622,8 @@ function WorkspaceCanvas() {
               <textarea id="direction-question" value={assistantQuestion} maxLength={2000} disabled={assistantBusy || assistantHistoryLoading} onChange={(event) => { setAssistantQuestion(event.target.value); if (event.target.value.trim()) setAssistantHasInteracted(true); }} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) { event.preventDefault(); void askDesignAssistant(); } }} placeholder="和小in聊聊你的想法…" rows={3} />
               <div className="agent-composer-footer"><span>{voiceListening ? "正在听你说…" : "Enter 发送 · Shift + Enter 换行"}</span><div><button type="button" className={voiceListening ? "agent-voice is-listening" : "agent-voice"} onClick={toggleVoiceInput} disabled={assistantBusy || assistantHistoryLoading || !voiceSupported} aria-label={voiceListening ? "停止语音输入" : "语音输入"} title={voiceSupported ? "语音输入" : "当前浏览器不支持语音输入"}><WorkspaceIcon name="mic" size={18} /></button><button type="submit" className="agent-send" disabled={assistantBusy || assistantHistoryLoading || !assistantQuestion.trim()}>发送 <WorkspaceIcon name="chevron" size={15} /></button></div></div>
             </form>
-          </aside>, document.body
+          </section>
         )}
-      </section>
-      {portalReady && createPortal(
-        <div className={"agent-entry" + (agentRevealed ? "" : " is-peeking") + (assistantOpen ? " is-chatting" : "")}>
-          {agentRevealed && !assistantOpen && agentHintVisible && <div className="agent-hint"><TypewriterText text={agentWelcome} speed={110} /><button onClick={() => setAgentHintVisible(false)} aria-label="关闭提示">×</button></div>}
-          <button
-            className={"assistant-orb" + (assistantOpen ? " is-open" : "")}
-            onClick={() => {
-              if (!agentRevealed) { setAgentRevealed(true); return; }
-              setAssistantOpen((value) => !value);
-              setAgentHintVisible(false);
-            }}
-            onContextMenu={(event) => { if (agentRevealed) { event.preventDefault(); dockAgent(); } }}
-            title={agentRevealed ? "小in · 灵感 Agent" : "看看小in"}
-            aria-label={agentRevealed ? (assistantOpen ? "关闭小in设计助手" : "打开小in设计助手") : "让小in露出全身"}
-            aria-expanded={assistantOpen}
-          ><img src="/inspo-sprite.png" alt="" /></button>
-          {agentRevealed && <button className="agent-dock-button" onClick={dockAgent} aria-label="收起小in到侧边" title="收起小in到侧边"><span>收起</span><WorkspaceIcon name="chevron" size={16} /></button>}
-        </div>, document.body
-      )}
-      <div className="rail-resizer rail-resizer-right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" title="拖动调整右栏宽度，拖到尽头可收起" onDoubleClick={() => resetRailWidth("right")} onPointerDown={(event) => startRailResize("right", event)} />
-      {!focusMode && <button type="button" className={"rail-collapse-button rail-collapse-right" + (rightRailCollapsed ? " is-collapsed" : "")} onClick={() => toggleRailCollapsed("right")} aria-label={rightRailCollapsed ? "展开右侧栏" : "收起右侧栏"} title={rightRailCollapsed ? "展开详情栏" : "收起详情栏"}><WorkspaceIcon name="chevron" size={14} /></button>}
-
-      <aside className={"inspector" + (inspectorOpen ? " is-open" : "") + ((rightRailCollapsed || (resizingRail === "right" && rightRailWidth < railExpandedMinimum.right)) ? " is-collapsed" : "")}>
         <div className="inspector-compact" aria-label="右侧栏快捷入口">
           <button type="button" onClick={() => { setRightTab("asset"); toggleRailCollapsed("right"); }} aria-label="展开素材详情" title="展开素材详情"><WorkspaceIcon name="archive" size={18} /></button>
           <button type="button" onClick={() => { if (selectedIds.length > 1) { setRightTab("baseline"); toggleRailCollapsed("right"); } }} disabled={selectedIds.length < 2} aria-label="展开整理方案" title="选择多张卡片后整理方案"><WorkspaceIcon name="arrange" size={18} /></button>

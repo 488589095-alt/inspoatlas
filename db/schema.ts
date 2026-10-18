@@ -34,6 +34,14 @@ export const assistantConversations = sqliteTable("assistant_conversations", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [index("assistant_conversations_owner_board_updated_idx").on(table.ownerId, table.boardId, table.updatedAt)]);
 
+export const assistantMemories = sqliteTable("assistant_memories", {
+  ownerId: text("owner_id").primaryKey(),
+  userRole: text("user_role").notNull().default(""),
+  preferences: text("preferences").notNull().default(""),
+  avoid: text("avoid").notNull().default(""),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+});
+
 export const assets = sqliteTable("assets", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), boardId: text("board_id").notNull(),
   kind: text("kind", { enum: ["image", "video", "audio", "web", "text"] }).notNull(), title: text("title").notNull(), sourceUrl: text("source_url"),

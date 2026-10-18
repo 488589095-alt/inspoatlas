@@ -18,7 +18,7 @@ test("多选、自动分组、画布查找、文件夹导入与真实账号入�
   assert.match(workspace, /<h2>输出任务<\/h2>/);
   assert.match(workspace, /is-search-match/);
   assert.match(workspace, /webkitdirectory/);
-  assert.match(workspace, /addMedia\(event\.target\.files, true\)/);
+  assert.match(workspace, /addMedia\(files, true\)/);
   assert.match(workspace, /video\/mp4/);
   assert.match(workspace, /audio\/mpeg/);
   assert.match(workspace, /panOnDrag=\{\[2\]\}/);

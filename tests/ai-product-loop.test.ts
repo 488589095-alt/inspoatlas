@@ -29,7 +29,7 @@ test("拆解与设计助手记录版本、运行方式和行为事件", async ()
   assert.match(ai, /ANALYSIS_PROMPT_VERSION = "analysis-v3"/);
   assert.match(analysis, /ai\.analysis\.completed/);
   assert.match(analysis, /isRerun/);
-  assert.match(assistant, /DESIGN_ASSISTANT_PROMPT_VERSION = "chat-v4"/);
+  assert.match(assistant, /DESIGN_ASSISTANT_PROMPT_VERSION = "chat-v5"/);
   assert.match(assistant, /ai\.assistant\.completed/);
   assert.match(assistant, /historyCount/);
 });

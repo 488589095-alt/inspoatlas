@@ -50,8 +50,8 @@ test("设计助手以对话和追问引导用户，并能把建议放回画布",
     readFile(new URL("../packages/ai/src/index.ts", import.meta.url), "utf8"),
     readFile(new URL("../app/globals.css", import.meta.url), "utf8"),
   ]);
-  assert.match(workspace, /className="canvas-director agent-drawer"/);
-  assert.match(workspace, /灵感 Agent/);
+  assert.match(workspace, /className="agent-drawer agent-sidebar"/);
+  assert.match(workspace, /小in 设计助手/);
   assert.match(workspace, /agentPromptPresets\.map/);
   assert.match(workspace, /!assistantHasInteracted/);
   assert.match(workspace, /className="agent-followups"/);
@@ -61,5 +61,5 @@ test("设计助手以对话和追问引导用户，并能把建议放回画布",
   assert.match(route, /eq\(boards\.ownerId, user\.id\)/);
   assert.match(route, /当前画布没有可引用的参考卡片/);
   assert.match(ai, /generateTextWithProvider/);
-  assert.match(styles, /\.canvas-director \{ position: fixed/);
+  assert.match(styles, /\.inspector \.agent-sidebar \{ position: relative/);
 });

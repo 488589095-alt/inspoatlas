@@ -115,7 +115,7 @@ export async function researchWithQwen(input: { brief: string; limit: number }, 
   const searchOptions = config.provider === "gateway"
     ? { tools: [{ type: "vercel:perplexity_search", config: { query: input.brief.slice(0, 240), max_results: Math.min(input.limit, 8) } }] }
     : { enable_search: true };
-  const raw = await requestJson([{ role: "user", content: prompt }], config, searchOptions);
+  const raw = await requestJson([{ role: "user", content: prompt }], config, { ...searchOptions, max_tokens: 1_200 }, 12_000);
   const seen = new Set<string>();
   return asArray(asRecord(raw).candidates).flatMap((value) => {
     const item = asRecord(value); const url = asText(item.url);
@@ -126,17 +126,18 @@ export async function researchWithQwen(input: { brief: string; limit: number }, 
     return [{ title: title.slice(0, 180), domain: asText(item.domain, new URL(url).hostname).slice(0, 180), url, quote: asText(item.quote).slice(0, 300), reason: asText(item.reason).slice(0, 280), searchTerms: asArray(item.searchTerms).map((term) => asText(term)).filter(Boolean).slice(0, 8) }];
   }).slice(0, input.limit);
 }
-export async function generateTextWithProvider(messages: TextMessage[], config: ProviderConfig) {
+export async function generateTextWithProvider(messages: TextMessage[], config: ProviderConfig, options: { maxTokens?: number; timeoutMs?: number } = {}) {
   assertProviderConfig(config);
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 180_000);
+  const maxTokens = options.maxTokens ?? 2_200;
+  const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? 180_000);
   try {
     if (config.provider === "anthropic") {
       const response = await fetch(config.baseUrl.replace(/\/$/, "") + "/messages", {
         method: "POST",
         signal: controller.signal,
         headers: { "content-type": "application/json", "x-api-key": config.apiKey, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: config.model, max_tokens: 2_200, messages }),
+        body: JSON.stringify({ model: config.model, max_tokens: maxTokens, messages }),
       });
       if (!response.ok) throw await providerRequestError(response, config);
       const payload = await response.json() as { content?: Array<{ type?: string; text?: string }> };
@@ -148,7 +149,7 @@ export async function generateTextWithProvider(messages: TextMessage[], config: 
       method: "POST",
       signal: controller.signal,
       headers: { "content-type": "application/json", authorization: "Bearer " + config.apiKey },
-      body: JSON.stringify({ model: config.model, messages, ...(config.provider === "openai" ? { max_completion_tokens: 4_000, reasoning_effort: "low" } : { max_tokens: 2_200 }) }),
+      body: JSON.stringify({ model: config.model, messages, ...(config.provider === "openai" ? { max_completion_tokens: maxTokens, reasoning_effort: "low" } : { max_tokens: maxTokens }) }),
     });
     if (!response.ok) throw await providerRequestError(response, config);
     const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
@@ -163,8 +164,8 @@ export async function generateTextWithProvider(messages: TextMessage[], config: 
   }
 }
 
-async function requestJson(messages: Array<Record<string, unknown>>, config: ProviderConfig, options: Record<string, unknown> = {}) {
-  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 240_000);
+async function requestJson(messages: Array<Record<string, unknown>>, config: ProviderConfig, options: Record<string, unknown> = {}, timeoutMs = 240_000) {
+  const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const requestRaw = async (requestMessages: Array<Record<string, unknown>>) => {
       if (config.provider === "anthropic") {
