@@ -384,7 +384,7 @@ function WorkspaceCanvas() {
       const storedRight = Number(window.localStorage.getItem("inspoatlas:right-rail-width"));
       const storedLeftCollapsed = window.localStorage.getItem("inspoatlas:left-rail-collapsed");
       const storedRightCollapsed = window.localStorage.getItem("inspoatlas:right-rail-collapsed");
-      const nextLeftWidth = Number.isFinite(storedLeft) && storedLeft > 0 ? clamp(storedLeft, 190, 360) : 242;
+      const nextLeftWidth = Number.isFinite(storedLeft) && storedLeft > 0 ? clamp(storedLeft, 204, 360) : 242;
       const nextRightWidth = Number.isFinite(storedRight) && storedRight > 0 ? clamp(storedRight, 280, 460) : 322;
       let nextLeftCollapsed = storedLeftCollapsed === null ? window.innerWidth <= 1100 : storedLeftCollapsed === "1";
       let nextRightCollapsed = storedRightCollapsed === "1";
@@ -670,7 +670,7 @@ function WorkspaceCanvas() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target?.closest("input, textarea, select, [contenteditable=true]")) return;
-      if (event.key === "Delete" && selectedIds.length) {
+      if ((event.key === "Delete" || event.key === "Backspace") && selectedIds.length) {
         event.preventDefault();
         requestDeleteNodes(selectedIds);
       }
@@ -1155,7 +1155,7 @@ function WorkspaceCanvas() {
 
     const onMove = (moveEvent: PointerEvent) => {
       const delta = moveEvent.clientX - startX;
-      const minimum = side === "left" ? 190 : 280;
+      const minimum = side === "left" ? 204 : 280;
       const hardMaximum = side === "left" ? 360 : 460;
       const otherWidth = side === "left" ? rightRailWidth : leftRailWidth;
       const availableMaximum = Math.max(minimum, window.innerWidth - (side === "left" ? (rightRailCollapsed ? 68 : otherWidth) : (leftRailCollapsed ? 68 : otherWidth)) - 280);

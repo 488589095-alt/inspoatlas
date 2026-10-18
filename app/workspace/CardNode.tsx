@@ -214,18 +214,20 @@ function InlineTitle({ id, value, className = "" }: { id: string; value: string;
 
   if (editing) {
     return (
-      <input
-        className={"inline-title-input nodrag " + className}
-        autoFocus
-        value={draft}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          event.stopPropagation();
-          if (event.key === "Enter") commit();
-          if (event.key === "Escape") { setDraft(value); setEditing(false); }
-        }}
-      />
+      <span className={"inline-title-editor " + className} data-value={draft || " "}>
+        <input
+          className="inline-title-input nodrag"
+          autoFocus
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === "Enter") commit();
+            if (event.key === "Escape") { setDraft(value); setEditing(false); }
+          }}
+        />
+      </span>
     );
   }
 
