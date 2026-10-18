@@ -120,7 +120,8 @@ code, kbd, .board-title small, .quota-card strong, .relation-view, .card-meta, .
 .rail-resizer:hover::after, .workspace-shell.is-resizing .rail-resizer::after { background: var(--desk-accent); box-shadow: 0 0 0 1px var(--desk-accent-wash); }
 .rail-resizer-left { grid-column: 1; justify-self: end; margin-right: -4px; }
 .rail-resizer-right { grid-column: 3; justify-self: start; margin-left: -4px; }
-.rail-collapse-button { position: absolute; z-index: 45; top: 73px; display: grid; place-items: center; width: 28px; height: 30px; padding: 0; border: 1px solid var(--desk-line-strong); border-radius: 10px; color: var(--desk-accent-strong); background: var(--desk-panel-raised); box-shadow: var(--desk-shadow); transition: background .16s ease, transform .16s ease; }
+.rail-collapse-button { position: absolute; z-index: 26; top: 73px; display: grid; place-items: center; width: 28px; height: 30px; padding: 0; border: 1px solid var(--desk-line-strong); border-radius: 10px; color: var(--desk-accent-strong); background: var(--desk-panel-raised); box-shadow: var(--desk-shadow); opacity: 0; transition: opacity .16s ease, background .16s ease, transform .16s ease; }
+.rail-resizer-left:hover + .rail-collapse-left, .rail-resizer-right:hover + .rail-collapse-right, .rail-collapse-button:hover, .rail-collapse-button:focus-visible { opacity: 1; }
 .rail-collapse-button:hover { background: var(--desk-accent-wash); transform: scale(1.06); }
 .rail-collapse-left { left: calc(var(--left-rail-width) - 14px); }
 .rail-collapse-left svg { transform: rotate(180deg); }
@@ -128,6 +129,7 @@ code, kbd, .board-title small, .quota-card strong, .relation-view, .card-meta, .
 .rail-collapse-right { right: calc(var(--right-rail-width) - 14px); }
 .rail-collapse-right.is-collapsed svg { transform: rotate(180deg); }
 .workspace-shell.left-collapsed .rail-resizer-left, .workspace-shell.right-collapsed .rail-resizer-right { pointer-events: none; }
+@media (hover: none) { .rail-collapse-button { opacity: 1; } }
 .board-rename-popover { position: absolute; z-index: 90; left: calc(var(--left-rail-width) + 12px); display: grid; gap: 10px; width: min(278px, calc(100vw - var(--left-rail-width) - 28px)); padding: 14px; border: 1px solid var(--desk-line-strong); border-radius: 14px; color: var(--desk-text); background: var(--desk-panel-raised); box-shadow: var(--desk-shadow-raised); }
 .board-rename-popover strong { font-size: 13px; }
 .board-rename-popover input { min-width: 0; min-height: 38px; padding: 0 10px; border: 1px solid var(--desk-line-strong); border-radius: 9px; outline: 0; color: var(--desk-text); background: var(--desk-field); font-size: 13px; }
