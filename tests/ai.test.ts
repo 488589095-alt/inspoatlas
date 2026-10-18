@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertProviderConfig, decryptApiKey, encryptApiKey, parseModelJson, proposeImageLayers } from "../packages/ai/src/index.ts";
+import { assertProviderConfig, decryptApiKey, encryptApiKey, generateTextWithProvider, parseModelJson, proposeImageLayers } from "../packages/ai/src/index.ts";
 import { providerCatalog, providerIds } from "../packages/domain/src/index.ts";
 
 test("BYOK Key 使用 AES-GCM 加密且可正确解密", async () => {
@@ -51,5 +51,22 @@ test("AI 图层候选只把有效轮廓交给一键蒙版", async () => {
     const result = await proposeImageLayers({ title: "测试图片", imageDataUrl: "data:image/png;base64,AA==" }, { provider: "qwen", apiKey: "test", model: "vision", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", supportsVision: true });
     assert.equal(result[0].contours[0].length, 8);
     assert.deepEqual(result[1].contours, []);
+  } finally { globalThis.fetch = originalFetch; }
+});
+
+test("小in 普通对话关闭百炼深度思考，图片任务沿用默认设置", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests: Array<Record<string, unknown>> = [];
+  globalThis.fetch = async (_input, init) => {
+    requests.push(JSON.parse(String(init?.body)));
+    return Response.json({ choices: [{ message: { content: "你好" } }] });
+  };
+  try {
+    const config = { provider: "qwen" as const, apiKey: "test", model: "qwen3.7-plus", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", supportsVision: true };
+    await generateTextWithProvider([{ role: "user", content: "你好" }], config, { maxTokens: 950, disableThinking: true });
+    await generateTextWithProvider([{ role: "user", content: "分析图片" }], config);
+    assert.equal(requests[0].enable_thinking, false);
+    assert.equal(requests[0].max_tokens, 950);
+    assert.equal("enable_thinking" in requests[1], false);
   } finally { globalThis.fetch = originalFetch; }
 });

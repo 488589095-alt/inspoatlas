@@ -126,7 +126,7 @@ export async function researchWithQwen(input: { brief: string; limit: number }, 
     return [{ title: title.slice(0, 180), domain: asText(item.domain, new URL(url).hostname).slice(0, 180), url, quote: asText(item.quote).slice(0, 300), reason: asText(item.reason).slice(0, 280), searchTerms: asArray(item.searchTerms).map((term) => asText(term)).filter(Boolean).slice(0, 8) }];
   }).slice(0, input.limit);
 }
-export async function generateTextWithProvider(messages: TextMessage[], config: ProviderConfig, options: { maxTokens?: number; timeoutMs?: number } = {}) {
+export async function generateTextWithProvider(messages: TextMessage[], config: ProviderConfig, options: { maxTokens?: number; timeoutMs?: number; disableThinking?: boolean } = {}) {
   assertProviderConfig(config);
   const controller = new AbortController();
   const maxTokens = options.maxTokens ?? 2_200;
@@ -149,7 +149,7 @@ export async function generateTextWithProvider(messages: TextMessage[], config: 
       method: "POST",
       signal: controller.signal,
       headers: { "content-type": "application/json", authorization: "Bearer " + config.apiKey },
-      body: JSON.stringify({ model: config.model, messages, ...(config.provider === "openai" ? { max_completion_tokens: maxTokens, reasoning_effort: "low" } : { max_tokens: maxTokens }) }),
+      body: JSON.stringify({ model: config.model, messages, ...(config.provider === "openai" ? { max_completion_tokens: maxTokens, reasoning_effort: "low" } : { max_tokens: maxTokens }), ...(config.provider === "qwen" && options.disableThinking ? { enable_thinking: false } : {}) }),
     });
     if (!response.ok) throw await providerRequestError(response, config);
     const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };

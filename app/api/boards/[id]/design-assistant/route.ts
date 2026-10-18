@@ -93,7 +93,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
       { role: "user", content: prompt },
     ];
     const startedAt = Date.now();
-    const { answer, followUps, actions: proposedActions } = parseAssistantTurn(await generateTextWithProvider(messages, credential, { maxTokens: 950, timeoutMs: 70_000 }));
+    const { answer, followUps, actions: proposedActions } = parseAssistantTurn(await generateTextWithProvider(messages, credential, { maxTokens: 950, timeoutMs: 70_000, disableThinking: true }));
     const actions = proposedActions.filter((action) => {
       if (action.type === "add_note") return /(?:添加|新增|创建|写|放|记录).{0,8}(?:备注|便签|卡片)|(?:备注|便签).{0,8}(?:添加|新增|创建|写|放|记录)/.test(input.question);
       if (input.selectedNodeIds.length !== 1 || action.nodeId !== input.selectedNodeIds[0] || !scopedNodes.some((node) => String(node.id) === action.nodeId)) return false;
