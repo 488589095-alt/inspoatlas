@@ -1,18 +1,36 @@
 import { env } from "cloudflare:workers";
-import { drizzle } from "drizzle-orm/d1";
+import { createClient, type Client } from "@libsql/client/web";
+import { drizzle as drizzleD1 } from "drizzle-orm/d1";
+import { drizzle as drizzleLibSQL } from "drizzle-orm/libsql/web";
 import * as schema from "./schema";
 
+let vercelClient: Client | undefined;
+
+function getVercelClient(): Client {
+  const url = process.env.TURSO_DATABASE_URL;
+  const authToken = process.env.TURSO_AUTH_TOKEN;
+  if (!url || !authToken) {
+    throw new Error("Turso is not connected to this Vercel project.");
+  }
+  return (vercelClient ??= createClient({ url, authToken }));
+}
+
 export function getDb() {
+  if (process.env.VERCEL) {
+    // Both drivers use the same SQLite schema and query builder. Keep the D1
+    // type at this boundary so route handlers do not need provider branches.
+    return drizzleLibSQL(getVercelClient(), { schema }) as unknown as ReturnType<typeof drizzleD1<typeof schema>>;
+  }
   if (!env.DB) {
     throw new Error(
       "Cloudflare D1 binding `DB` is unavailable. Set the `d1` field in .openai/hosting.json to `DB` or let your control plane inject the real binding values before using the database."
     );
   }
 
-  return drizzle(env.DB, { schema });
+  return drizzleD1(env.DB, { schema });
 }
 
-type RuntimeD1Statement = { run(): Promise<unknown>; all<T = Record<string, unknown>>(): Promise<{ results?: T[] }> };
+type RuntimeD1Statement = { sql?: string; run(): Promise<unknown>; all<T = Record<string, unknown>>(): Promise<{ results?: T[] }> };
 type RuntimeD1Database = {
   prepare(sql: string): RuntimeD1Statement;
   batch(statements: RuntimeD1Statement[]): Promise<unknown>;
@@ -20,20 +38,44 @@ type RuntimeD1Database = {
 
 let coreTablesPromise: Promise<void> | undefined;
 
+function getBootstrapDb(): RuntimeD1Database {
+  if (!process.env.VERCEL) {
+    if (!env.DB) throw new Error("Cloudflare D1 binding `DB` is unavailable.");
+    return env.DB as unknown as RuntimeD1Database;
+  }
+  const client = getVercelClient();
+  return {
+    prepare(sql) {
+      return {
+        sql,
+        async run() { return client.execute(sql); },
+        async all<T>() {
+          const result = await client.execute(sql);
+          return { results: result.rows as unknown as T[] };
+        },
+      };
+    },
+    async batch(statements) {
+      await client.batch(statements.map((statement) => statement.sql ?? ""), "write");
+    },
+  };
+}
+
 /**
  * Sites provisions the D1 binding, but a newly-created site database may not
  * have received the repository migration yet. Keep the small runtime bootstrap
  * idempotent so capture never reports success after a failed insert.
  */
 export function ensureCoreTables(): Promise<void> {
-  if (!env.DB) {
-    return Promise.reject(new Error("Cloudflare D1 binding `DB` is unavailable."));
-  }
-
   if (!coreTablesPromise) {
-    const d1 = env.DB as unknown as RuntimeD1Database;
+    let d1: RuntimeD1Database;
+    try { d1 = getBootstrapDb(); }
+    catch (error) { return Promise.reject(error); }
     coreTablesPromise = d1.batch([
       d1.prepare("CREATE TABLE IF NOT EXISTS profiles (id TEXT PRIMARY KEY NOT NULL, email TEXT NOT NULL UNIQUE, quota_remaining INTEGER DEFAULT 30 NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)"),
+      d1.prepare("CREATE TABLE IF NOT EXISTS email_login_codes (id TEXT PRIMARY KEY NOT NULL, email TEXT NOT NULL, code_hash TEXT NOT NULL, client_hash TEXT NOT NULL, attempts INTEGER DEFAULT 0 NOT NULL, expires_at INTEGER NOT NULL, created_at INTEGER NOT NULL)"),
+      d1.prepare("CREATE INDEX IF NOT EXISTS email_login_codes_email_created_idx ON email_login_codes(email, created_at)"),
+      d1.prepare("CREATE INDEX IF NOT EXISTS email_login_codes_client_created_idx ON email_login_codes(client_hash, created_at)"),
       d1.prepare("CREATE TABLE IF NOT EXISTS boards (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, title TEXT NOT NULL, version INTEGER DEFAULT 1 NOT NULL, scene TEXT DEFAULT '{}' NOT NULL, updated_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)"),
       d1.prepare("CREATE INDEX IF NOT EXISTS boards_owner_updated_idx ON boards(owner_id, updated_at)"),
       d1.prepare("CREATE TABLE IF NOT EXISTS assets (id TEXT PRIMARY KEY NOT NULL, owner_id TEXT NOT NULL, board_id TEXT NOT NULL, kind TEXT NOT NULL, title TEXT NOT NULL, source_url TEXT, object_key TEXT, extracted_text TEXT, metadata TEXT DEFAULT '{}' NOT NULL, status TEXT DEFAULT 'idle' NOT NULL, created_at TEXT DEFAULT CURRENT_TIMESTAMP NOT NULL)"),

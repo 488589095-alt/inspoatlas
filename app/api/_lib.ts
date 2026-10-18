@@ -1,4 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
+import { accountIdForEmail, readEmailSession } from "./_email-auth";
 
 export const GUEST_COOKIE_NAME = "inspo_guest";
 const GUEST_TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
@@ -14,8 +15,13 @@ function guestTokenFromCookie(header: string | null): string | null {
 }
 
 export function currentUser(request: Request) {
+  if (process.env.VERCEL) {
+    const email = readEmailSession(request.headers.get("cookie"));
+    if (email) return { id: accountIdForEmail(email), email, kind: "account" as const };
+  }
+
   const hostedEmail = request.headers.get("oai-authenticated-user-email");
-  if (hostedEmail) return {
+  if (!process.env.VERCEL && hostedEmail) return {
     id: createHash("sha256").update(hostedEmail.toLowerCase()).digest("hex").slice(0, 24),
     email: hostedEmail,
     kind: "account" as const,
@@ -27,7 +33,7 @@ export function currentUser(request: Request) {
     return { id, email: `guest-${id}@inspoatlas.local`, kind: "guest" as const };
   }
 
-  if (process.env.NODE_ENV === "production") throw new HttpError(401, "请先开始创作或登录 InspoAtlas");
+  if (process.env.VERCEL || process.env.NODE_ENV === "production") throw new HttpError(401, "请先开始创作或登录 InspoAtlas");
   const email = request.headers.get("x-demo-user") ?? "demo@inspoatlas.local";
   return { id: createHash("sha256").update(email.toLowerCase()).digest("hex").slice(0, 24), email, kind: "account" as const };
 }

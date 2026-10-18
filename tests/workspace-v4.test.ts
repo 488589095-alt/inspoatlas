@@ -26,7 +26,8 @@ test("多选、自动分组、画布查找、文件夹导入与真实账号入�
   assert.doesNotMatch(workspace, /className="inspector-tabs"/);
   assert.doesNotMatch(workspace, /groups\.map\(\(group\).*移入：/);
   assert.match(userMenu, /\/api\/session/);
-  assert.match(userMenu, /signout-with-chatgpt/);
+  assert.match(userMenu, /\/api\/auth\/logout/);
+  assert.match(userMenu, /href="\/login"/);
   assert.match(userMenu, /最近作品/);
   assert.match(session, /boardCount/);
   assert.match(session, /assetCount/);

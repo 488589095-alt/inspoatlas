@@ -386,6 +386,15 @@ code, kbd, .board-title small, .quota-card strong, .relation-view, .card-meta, .
 .signin-screen .button { cursor: pointer; font: inherit; }
 .signin-secondary { display: inline-block; color: var(--desk-muted); font-size: 13px; text-underline-offset: 4px; }
 .signin-secondary:hover { color: var(--desk-text); }
+.email-login form { display: grid; justify-items: start; gap: 10px; max-width: 390px; margin-top: 24px; }
+.email-login label { color: var(--desk-text); font-size: 13px; font-weight: 700; }
+.email-login input { width: 100%; padding: 14px 16px; border: 1px solid var(--desk-line-strong); border-radius: 10px; color: var(--desk-text); background: var(--desk-panel-raised); font: inherit; }
+.email-login input:focus-visible { outline: 2px solid var(--desk-accent-strong); outline-offset: 2px; }
+.email-login .button { margin: 10px 0 0; }
+.email-login-message { min-height: 1.5em; margin: 12px 0; }
+.email-login-restart { display: block; margin: 0 0 12px; border: 0; padding: 0; color: var(--desk-accent-strong); background: none; font: inherit; font-size: 13px; cursor: pointer; }
+.user-popover > footer form { margin: 0; }
+.user-popover > footer form button { border: 0; padding: 0; color: var(--desk-muted); background: transparent; font-size: 11px; font-weight: 700; cursor: pointer; }
 .signin-screen section > small { display: block; color: var(--desk-faint); }
 .signin-art { position: relative; width: min(38vw,500px); aspect-ratio: 1; border: 1px solid rgba(185,168,247,.25); border-radius: 26%; background: radial-gradient(circle at 50% 50%, rgba(159,141,231,.2), transparent 65%); transform: rotate(-9deg); }
 .signin-art span { position: absolute; width: 31%; height: 31%; border: 1px solid rgba(185,168,247,.55); border-radius: 23%; background: rgba(52,49,79,.75); box-shadow: 0 20px 55px rgba(0,0,0,.2); }

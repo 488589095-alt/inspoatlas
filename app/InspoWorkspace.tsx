@@ -30,6 +30,7 @@ import { UserMenu } from "./workspace/UserMenu";
 import { WorkspaceIcon, type WorkspaceIconName } from "./workspace/WorkspaceIcon";
 import { ImageEditor } from "./workspace/ImageEditor";
 import { ToolbarMoreMenu } from "./workspace/ToolbarMoreMenu";
+import { uploadPrivateFile } from "./workspace/clientUpload";
 import { buildOrganizePreview, type OrganizePreview } from "./workspace/organize";
 import {
   flowToScene,
@@ -1182,17 +1183,28 @@ function WorkspaceCanvas() {
     const uploaded: Array<{ asset: { id: string; title: string; kind: "image" | "video" | "audio"; contentUrl?: string }; size: { width: number; height: number } }> = [];
     let failed = allFiles.length - files.length;
     for (const file of files) {
-      const form = new FormData();
-      form.set("boardId", boardId);
-      form.set("file", file);
-      if (file.webkitRelativePath) form.set("relativePath", file.webkitRelativePath);
-      const response = await fetch("/api/assets", { method: "POST", body: form });
-      if (!response.ok) {
+      try {
+        const staged = await uploadPrivateFile(file, { scope: "asset", boardId, contentType: file.type, size: file.size });
+        let response: Response;
+        if (staged) {
+          response = await fetch("/api/assets", {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ uploadedAsset: true, ...staged, boardId, title: file.name, contentType: file.type, size: file.size }),
+          });
+        } else {
+          const form = new FormData();
+          form.set("boardId", boardId);
+          form.set("file", file);
+          if (file.webkitRelativePath) form.set("relativePath", file.webkitRelativePath);
+          response = await fetch("/api/assets", { method: "POST", body: form });
+        }
+        if (!response.ok) throw new Error("素材登记失败");
+        const result = await response.json() as { asset: { id: string; title: string; kind: "image" | "video" | "audio"; contentUrl?: string } };
+        uploaded.push({ asset: result.asset, size: result.asset.kind === "image" ? await importedImageSize(file) : defaultSize[result.asset.kind] });
+      } catch {
         failed += 1;
-        continue;
       }
-      const result = await response.json() as { asset: { id: string; title: string; kind: "image" | "video" | "audio"; contentUrl?: string } };
-      uploaded.push({ asset: result.asset, size: result.asset.kind === "image" ? await importedImageSize(file) : defaultSize[result.asset.kind] });
     }
     if (!uploaded.length) return notify("素材上传失败，请稍后重试");
 

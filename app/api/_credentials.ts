@@ -18,6 +18,8 @@ export type LoadedCredential = ProviderConfig & { runMode: AiRunMode };
 type ManagedAiEnv = {
   MANAGED_AI_API_KEY?: string;
   MANAGED_AI_BASE_URL?: string;
+  AI_GATEWAY_API_KEY?: string;
+  VERCEL_OIDC_TOKEN?: string;
 };
 
 function managedEnv(): ManagedAiEnv {
@@ -25,16 +27,19 @@ function managedEnv(): ManagedAiEnv {
   return {
     MANAGED_AI_API_KEY: runtime.MANAGED_AI_API_KEY ?? process.env.MANAGED_AI_API_KEY,
     MANAGED_AI_BASE_URL: runtime.MANAGED_AI_BASE_URL ?? process.env.MANAGED_AI_BASE_URL,
+    AI_GATEWAY_API_KEY: runtime.AI_GATEWAY_API_KEY ?? process.env.AI_GATEWAY_API_KEY,
+    VERCEL_OIDC_TOKEN: runtime.VERCEL_OIDC_TOKEN ?? process.env.VERCEL_OIDC_TOKEN,
   };
 }
 
 export function managedAiSummary() {
   const values = managedEnv();
-  const provider = values.MANAGED_AI_API_KEY ? "qwen" as const : null;
+  const provider = values.MANAGED_AI_API_KEY ? "qwen" as const
+    : values.AI_GATEWAY_API_KEY || values.VERCEL_OIDC_TOKEN ? "gateway" as const : null;
   if (!provider) return { available: false as const, provider: null, model: null, supportsVision: false };
   const defaults = providerDefaults[provider];
   return {
-    available: Boolean(values.MANAGED_AI_API_KEY),
+    available: true,
     provider,
     model: defaults.model,
     supportsVision: defaults.supportsVision,
@@ -44,13 +49,13 @@ export function managedAiSummary() {
 function managedCredential(needsVision: boolean): LoadedCredential | null {
   const values = managedEnv();
   const summary = managedAiSummary();
-  if (!summary.available || !summary.provider || (needsVision && !summary.supportsVision) || !values.MANAGED_AI_API_KEY) return null;
+  if (!summary.available || !summary.provider || (needsVision && !summary.supportsVision)) return null;
   const defaults = providerDefaults[summary.provider];
   const config: LoadedCredential = {
     provider: summary.provider,
-    apiKey: values.MANAGED_AI_API_KEY,
+    apiKey: summary.provider === "qwen" ? values.MANAGED_AI_API_KEY! : (values.AI_GATEWAY_API_KEY ?? values.VERCEL_OIDC_TOKEN!),
     model: defaults.model,
-    baseUrl: values.MANAGED_AI_BASE_URL ?? defaults.baseUrl,
+    baseUrl: summary.provider === "qwen" ? (values.MANAGED_AI_BASE_URL ?? defaults.baseUrl) : defaults.baseUrl,
     supportsVision: defaults.supportsVision,
     runMode: "managed",
   };

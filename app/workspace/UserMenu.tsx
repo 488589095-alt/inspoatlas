@@ -65,12 +65,12 @@ export function UserMenu() {
             <dl className="space-metrics"><div><dt>作品</dt><dd>{space?.boardCount ?? 0}</dd></div><div><dt>素材</dt><dd>{space?.assetCount ?? 0}</dd></div></dl>
             <section className="recent-boards"><span>最近作品</span>{space?.recentBoards?.length ? space.recentBoards.map((board) => <Link key={board.id} href={`/?board=${encodeURIComponent(board.id)}`} onClick={() => setOpen(false)}>{board.title}</Link>) : <small>还没有作品</small>}</section>
             {user.kind === "guest"
-              ? <footer><span>请保留浏览器数据；登录后不会自动转移访客作品。</span><a href="/signin-with-chatgpt?return_to=/" target="_top">登录</a></footer>
-              : <footer><span>AI 服务由工作区统一提供</span><a href="/signout-with-chatgpt?return_to=/" target="_top">退出登录</a></footer>}
+              ? <footer><span>请保留浏览器数据；登录后不会自动转移访客作品。</span><a href="/login" target="_top">登录</a></footer>
+              : <footer><span>已登录个人空间</span><form action="/api/auth/logout" method="post"><button type="submit">退出登录</button></form></footer>}
           </> : <>
             <header><span>IA</span><div><strong>登录 InspoAtlas</strong><small>登录后即可创建个人空间</small></div></header>
             <p className="account-empty">你的作品、素材和 AI 使用记录会归入个人空间。</p>
-            <footer><a href="/signin-with-chatgpt?return_to=/" target="_top">登录</a></footer>
+            <footer><a href="/login" target="_top">登录</a></footer>
           </>}
         </section>
       )}

@@ -8,6 +8,7 @@ export const LAYER_PROPOSAL_PROMPT_VERSION = "layers-v1";
 export const RESEARCH_PROMPT_VERSION = "research-v1";
 export interface TextMessage { role: "user" | "assistant"; content: string; }
 export const providerDefaults: Record<ProviderId, { model: string; baseUrl: string; supportsVision: boolean }> = {
+  gateway: { model: "google/gemini-2.5-flash", baseUrl: "https://ai-gateway.vercel.sh/v1", supportsVision: true },
   openai: { model: "gpt-5.6-terra", baseUrl: "https://api.openai.com/v1", supportsVision: true },
   anthropic: { model: "claude-sonnet-4-20250514", baseUrl: "https://api.anthropic.com/v1", supportsVision: true },
   gemini: { model: "gemini-3.6-flash", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", supportsVision: true },
@@ -19,6 +20,7 @@ export const providerDefaults: Record<ProviderId, { model: string; baseUrl: stri
   minimax: { model: "MiniMax-M2.7", baseUrl: "https://api.minimax.io/v1", supportsVision: false },
 };
 const allowedEndpoints: Record<ProviderId, RegExp[]> = {
+  gateway: [/^https:\/\/ai-gateway\.vercel\.sh\/v1\/?$/],
   openai: [/^https:\/\/api\.openai\.com\/v1\/?$/],
   anthropic: [/^https:\/\/api\.anthropic\.com\/v1\/?$/],
   gemini: [/^https:\/\/generativelanguage\.googleapis\.com\/v1beta\/openai\/?$/],
@@ -97,14 +99,17 @@ export type ResearchCandidate = { title: string; domain: string; url: string; qu
 /** Results are intentionally ephemeral; a candidate becomes a source only after the user accepts it. */
 export async function researchWithQwen(input: { brief: string; limit: number }, config: ProviderConfig): Promise<ResearchCandidate[]> {
   assertProviderConfig(config);
-  if (config.provider !== "qwen") throw new Error("灵感搜索固定使用百炼 Qwen");
+  if (config.provider !== "qwen" && config.provider !== "gateway") throw new Error("当前模型不支持灵感联网搜索");
   const prompt = [
     "基于联网搜索，为设计师找公开可访问的视觉参考候选。只返回 JSON，不要解释。",
     `返回 ${input.limit} 条以内。每条必须有来自搜索结果的真实 https URL，不能编造 URL、标题、引文或网页内容。`,
     "严格结构：{\"candidates\":[{\"title\":\"页面标题\",\"domain\":\"example.com\",\"url\":\"https://example.com\",\"quote\":\"不超过80字的页面片段\",\"reason\":\"适配理由\",\"searchTerms\":[\"词\"]}]}",
     "需求：" + input.brief,
   ].join("\n");
-  const raw = await requestJson([{ role: "user", content: prompt }], config, { enable_search: true });
+  const searchOptions = config.provider === "gateway"
+    ? { tools: [{ type: "vercel:perplexity_search", config: { query: input.brief.slice(0, 240), max_results: Math.min(input.limit, 8) } }] }
+    : { enable_search: true };
+  const raw = await requestJson([{ role: "user", content: prompt }], config, searchOptions);
   const seen = new Set<string>();
   return asArray(asRecord(raw).candidates).flatMap((value) => {
     const item = asRecord(value); const url = asText(item.url);

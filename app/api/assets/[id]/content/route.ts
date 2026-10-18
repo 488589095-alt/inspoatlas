@@ -1,4 +1,5 @@
 import { and, eq } from "drizzle-orm";
+import { get as getVercelBlob } from "@vercel/blob";
 import { ensureCoreTables, getDb } from "@/db";
 import { assetDerivatives, assets, confirmedElements } from "@/db/schema";
 import { currentUser, errorResponse, HttpError } from "../../../_lib";
@@ -15,6 +16,17 @@ export async function GET(request: Request, context: { params: Promise<{ id: str
     const part = Number.isInteger(requestedPart) && requestedPart >= 0 ? requestedPart : 0;
     const objectKey = asset?.objectKey ?? screenshotKeys?.[part] ?? element?.objectKey ?? derivative?.objectKey;
     if (!objectKey) throw new HttpError(404, "素材文件不存在");
+    if (process.env.VERCEL) {
+      const range = request.headers.get("range");
+      const result = await getVercelBlob(objectKey, { access: "private", headers: range ? { Range: range } : undefined });
+      if (!result?.stream) throw new HttpError(404, "素材文件不存在");
+      const headers = new Headers({ "cache-control": "private, max-age=3600", "x-content-type-options": "nosniff" });
+      for (const name of ["content-type", "content-length", "content-range", "accept-ranges", "etag"]) {
+        const value = result.headers.get(name);
+        if (value) headers.set(name, value);
+      }
+      return new Response(result.stream, { status: headers.has("content-range") ? 206 : 200, headers });
+    }
     const object = await getAssetBucket().get(objectKey);
     if (!object) throw new HttpError(404, "素材文件不存在");
     const headers = new Headers({ "cache-control": "private, max-age=3600" }); object.writeHttpMetadata(headers);

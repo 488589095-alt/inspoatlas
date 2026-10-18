@@ -19,7 +19,7 @@ test("Provider 端点白名单与视觉能力不可伪造", () => {
 });
 
 test("模型服务目录覆盖常用平台并提供官方入口", () => {
-  assert.deepEqual(providerIds, ["openai", "anthropic", "gemini", "qwen", "deepseek", "moonshot", "zhipu", "doubao", "minimax"]);
+  assert.deepEqual(providerIds, ["openai", "anthropic", "gemini", "qwen", "deepseek", "moonshot", "zhipu", "doubao", "minimax", "gateway"]);
   for (const provider of providerIds) {
     assert.match(providerCatalog[provider].platformUrl, /^https:\/\//);
     assert.ok(providerCatalog[provider].models.length > 0);

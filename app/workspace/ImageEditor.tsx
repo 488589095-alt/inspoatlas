@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { uploadPrivateFile } from "./clientUpload";
 
 type Rect = { x: number; y: number; width: number; height: number };
 type Proposal = { id: string; label: string; category: string; rect: Rect; confidence: number };
@@ -129,9 +130,21 @@ export function ImageEditor({ assetId, sourceUrl, title, onClose, onSaved }: { a
     setSaving(true); setError("");
     try {
       const png = await renderPng();
-      const form = new FormData(); form.set("file", png, "layer.png"); form.set("title", maskEnabled ? `${title} · 图层` : `${title} · 编辑副本`); form.set("operation", maskEnabled ? "mask" : "crop");
-      form.set("metadata", JSON.stringify({ sourceWidth: image?.naturalWidth, sourceHeight: image?.naturalHeight, crop, rotation, flipX, flipY, outputScale, proposal: proposals.find((item) => item.rect === crop) }));
-      const response = await fetch(`/api/assets/${assetId}/derivatives`, { method: "POST", body: form });
+      const nextTitle = maskEnabled ? `${title} · 图层` : `${title} · 编辑副本`;
+      const operation = maskEnabled ? "mask" : "crop";
+      const metadata = { sourceWidth: image?.naturalWidth, sourceHeight: image?.naturalHeight, crop, rotation, flipX, flipY, outputScale, proposal: proposals.find((item) => item.rect === crop) };
+      const staged = await uploadPrivateFile(png, { scope: "derivative", sourceAssetId: assetId, contentType: "image/png", size: png.size });
+      let response: Response;
+      if (staged) {
+        response = await fetch(`/api/assets/${assetId}/derivatives`, {
+          method: "POST", headers: { "content-type": "application/json" },
+          body: JSON.stringify({ uploadedDerivative: true, ...staged, title: nextTitle, operation, metadata, size: png.size }),
+        });
+      } else {
+        const form = new FormData(); form.set("file", png, "layer.png"); form.set("title", nextTitle); form.set("operation", operation);
+        form.set("metadata", JSON.stringify(metadata));
+        response = await fetch(`/api/assets/${assetId}/derivatives`, { method: "POST", body: form });
+      }
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || "保存副本失败");
       onSaved(payload.derivative);

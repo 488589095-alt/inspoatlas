@@ -23,6 +23,8 @@
     "worker:dev": "pnpm --filter @inspoatlas/worker dev"
   },
   "dependencies": {
+    "@libsql/client": "^0.18.0",
+    "@vercel/blob": "^2.8.2",
     "@xyflow/react": "^12.9.2",
     "drizzle-orm": "0.45.2",
     "fflate": "^0.8.2",

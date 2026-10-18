@@ -7,6 +7,16 @@ export const profiles = sqliteTable("profiles", {
   createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const emailLoginCodes = sqliteTable("email_login_codes", {
+  id: text("id").primaryKey(),
+  email: text("email").notNull(),
+  codeHash: text("code_hash").notNull(),
+  clientHash: text("client_hash").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  expiresAt: integer("expires_at").notNull(),
+  createdAt: integer("created_at").notNull(),
+}, (table) => [index("email_login_codes_email_created_idx").on(table.email, table.createdAt), index("email_login_codes_client_created_idx").on(table.clientHash, table.createdAt)]);
+
 export const boards = sqliteTable("boards", {
   id: text("id").primaryKey(), ownerId: text("owner_id").notNull(), title: text("title").notNull(),
   version: integer("version").notNull().default(1), scene: text("scene", { mode: "json" }).$type<Record<string, unknown>>().notNull().default({}),

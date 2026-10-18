@@ -13,7 +13,7 @@ export const exportPurposes = ["web-rebuild", "visual-remix", "campaign-system",
 export const productionGoals = ["recreate", "explore", "scale"] as const;
 export const designPurposes = ["web-ui-recreate", "brand-extension", "campaign-system", "organize"] as const;
 export const exportDestinations = ["figma-design", "coding-ai", "image-ai", "figma-make", "figma-buzz"] as const;
-export const providerIds = ["openai", "anthropic", "gemini", "qwen", "deepseek", "moonshot", "zhipu", "doubao", "minimax"] as const;
+export const providerIds = ["openai", "anthropic", "gemini", "qwen", "deepseek", "moonshot", "zhipu", "doubao", "minimax", "gateway"] as const;
 
 export type AssetKind = (typeof assetKinds)[number];
 export type CanvasItemType = (typeof canvasItemTypes)[number];
@@ -34,6 +34,13 @@ export const providerCatalog: Record<ProviderId, {
   models: readonly string[];
   supportsVision: boolean;
 }> = {
+  gateway: {
+    label: "Vercel AI Gateway",
+    description: "托管视觉分析与文字生成",
+    platformUrl: "https://vercel.com/ai-gateway",
+    models: ["google/gemini-2.5-flash"],
+    supportsVision: true,
+  },
   openai: {
     label: "OpenAI",
     description: "适合网页、图片和文字拆解",
