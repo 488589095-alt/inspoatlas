@@ -187,6 +187,11 @@ code, kbd, .board-title small, .quota-card strong, .relation-view, .card-meta, .
 .react-flow__edge.selected .react-flow__edge-path { stroke: var(--desk-accent); stroke-width: 2.4; }
 .react-flow__edge-text { fill: var(--desk-muted); font-size: 10px; }
 .react-flow__edge-textbg { fill: var(--desk-panel); }
+.relation-edge-label { position: absolute; z-index: 12; pointer-events: all; }
+.relation-edge-label button, .relation-edge-label input { display: block; min-width: 54px; max-width: 180px; min-height: 26px; box-sizing: border-box; padding: 4px 9px; border: 1px solid var(--desk-line-strong); border-radius: 999px; color: var(--desk-text); background: var(--desk-panel-raised); box-shadow: var(--desk-shadow); font-size: 10px; font-weight: 700; line-height: 16px; text-align: center; white-space: nowrap; }
+.relation-edge-label button { cursor: text; }
+.relation-edge-label input { outline: none; }
+.relation-edge-label input:focus { border-color: var(--desk-accent); box-shadow: 0 0 0 3px var(--desk-accent-wash); }
 .react-flow__connection-path { stroke: var(--desk-accent); }
 .react-flow__resize-control.handle { width: 10px; height: 10px; border-radius: 50%; background: var(--desk-accent); }
 

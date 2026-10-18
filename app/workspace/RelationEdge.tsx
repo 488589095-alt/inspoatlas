@@ -19,7 +19,7 @@ export function RelationEdge({ id, sourceX, sourceY, targetX, targetY, sourcePos
     <>
       <BaseEdge id={id} path={path} markerEnd={markerEnd} style={style} />
       <EdgeLabelRenderer>
-        <div className="relation-edge-label nodrag nopan" style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)` }}>
+        <div className="relation-edge-label nodrag nopan" style={{ transform: `translate(-50%, calc(-100% - 8px)) translate(${labelX}px, ${labelY}px)` }}>
           {editing ? (
             <input
               autoFocus
