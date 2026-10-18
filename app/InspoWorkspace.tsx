@@ -1558,6 +1558,7 @@ function WorkspaceCanvas() {
     setAssistantHasInteracted(false);
     setCompletedAnswerId(null);
     setAssistantHistoryOpen(false);
+    setAssistantMemoryOpen(false);
     setAssistantHistoryError("");
     window.localStorage.setItem(`inspoatlas:assistant-conversation:${boardId}`, "");
   }
@@ -2568,7 +2569,7 @@ function WorkspaceCanvas() {
             <header className="agent-header">
               <div className="agent-header-identity"><img src="/inspo-sprite.png" alt="" /><div><h2>小in</h2><span>你的设计小助手</span></div></div>
               <div className="agent-header-actions">
-                <button type="button" className={assistantHistoryOpen ? "is-active" : ""} onClick={() => setAssistantHistoryOpen((open) => !open)} aria-label="历史对话" aria-expanded={assistantHistoryOpen} title="历史对话"><WorkspaceIcon name="history" size={18} /></button>
+                <button type="button" className={assistantHistoryOpen ? "is-active" : ""} onClick={() => { setAssistantHistoryOpen((open) => !open); setAssistantMemoryOpen(false); }} aria-label="历史对话" aria-expanded={assistantHistoryOpen} title="历史对话"><WorkspaceIcon name="history" size={18} /></button>
                 <button type="button" className={assistantMemoryOpen ? "is-active" : ""} onClick={() => { setAssistantMemoryOpen((open) => !open); setAssistantHistoryOpen(false); }} aria-label="小in 的记忆" aria-expanded={assistantMemoryOpen} title="小in 的记忆"><WorkspaceIcon name="ask" size={17} /></button>
                 <button type="button" className="agent-new-chat" onClick={startNewAssistantConversation} disabled={assistantBusy || assistantHistoryLoading} title="开始新对话"><WorkspaceIcon name="add" size={17} /><span>新对话</span></button>
                 <button type="button" onClick={() => { setAssistantOpen(false); setAssistantMemoryOpen(false); setAssistantHistoryOpen(false); }} aria-label="关闭小in" title="关闭小in"><WorkspaceIcon name="close" size={16} /></button>
