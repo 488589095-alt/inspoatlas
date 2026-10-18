@@ -2073,14 +2073,17 @@ function WorkspaceCanvas() {
           accept="image/jpeg,image/png,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/wav,audio/ogg,audio/mp4"
           onChange={(event) => event.target.files?.length && void addMedia(event.target.files, true)}
         />
-        {hasCanvasContent && <label className="relation-view" title="关联线只用于辅助整理，默认仅显示当前卡片相关关系">
-          <span>{connecting ? "松开完成" : "连线显示"}</span>
-          <select aria-label="连线显示范围" value={relationView} onChange={(event) => setRelationView(event.target.value as RelationView)}>
-            <option value="selection">所选卡片</option>
-            <option value="hidden">隐藏</option>
-            <option value="all">全部</option>
-          </select>
-        </label>}
+        {(hasCanvasContent || focusMode) && <div className="canvas-view-controls">
+          {hasCanvasContent && <label className="relation-view" title="关联线只用于辅助整理，默认仅显示当前卡片相关关系">
+            <span>{connecting ? "松开完成" : "连线显示"}</span>
+            <select aria-label="连线显示范围" value={relationView} onChange={(event) => setRelationView(event.target.value as RelationView)}>
+              <option value="selection">所选卡片</option>
+              <option value="hidden">隐藏</option>
+              <option value="all">全部</option>
+            </select>
+          </label>}
+          {focusMode && <button className="focus-exit-button" onClick={() => setFocusMode(false)}>退出专注 <kbd>Esc</kbd></button>}
+        </div>}
         <ReactFlow
           nodes={visibleNodes}
           edges={visibleEdges}
@@ -2118,7 +2121,6 @@ function WorkspaceCanvas() {
           {showMiniMap && nodes.length > 0 && <MiniMap pannable zoomable nodeColor={miniMapNodeColor} maskColor="rgba(8,12,11,.76)" ariaLabel="画布缩略图" />}
         </ReactFlow>
         <button className={"inspector-toggle" + (inspectorOpen ? " is-open" : "")} onClick={() => setInspectorOpen((value) => !value)} title={inspectorOpen ? "收起阶段面板" : "打开阶段面板"} aria-label={inspectorOpen ? "收起阶段面板" : "打开阶段面板"}><WorkspaceIcon name="archive" /></button>
-        {focusMode && <button className="focus-exit-button" onClick={() => setFocusMode(false)}>退出专注 <kbd>Esc</kbd></button>}
 
         {organizePreview && (
           <aside className="organize-dock">
@@ -2172,7 +2174,7 @@ function WorkspaceCanvas() {
                 <img src="/inspo-sprite.png" alt="" />
                 <p><TypewriterText text={agentWelcome} /></p>
                 {!assistantHasInteracted && <div className="agent-starters" aria-label="试试这样提问">
-                  {agentPromptPresets.map((question) => <button key={question} onClick={() => void askDesignAssistant(question)} disabled={assistantBusy}><span>{question}</span><WorkspaceIcon name="chevron" size={15} /></button>)}
+                  {agentPromptPresets.map((question) => <button key={question} title={question} onClick={() => void askDesignAssistant(question)} disabled={assistantBusy}><span>{question}</span><WorkspaceIcon name="chevron" size={15} /></button>)}
                 </div>}
               </div>}
               {assistantMessages.map((message, index) => (
@@ -2181,7 +2183,7 @@ function WorkspaceCanvas() {
                   <p>{message.role === "assistant" ? <TypewriterText text={message.content} animate={index === assistantMessages.length - 1 && completedAnswerId !== message.id} speed={Math.max(10, Math.min(40, Math.floor(5_000 / message.content.length)))} onComplete={() => setCompletedAnswerId(message.id ?? null)} /> : message.content}</p>
                   {message.role === "assistant" && (index < assistantMessages.length - 1 || completedAnswerId === message.id) && Boolean(message.sources?.length) && <div className="agent-sources" aria-label="参考网站">{message.sources?.map((source) => <a key={source.url} href={source.url} target="_blank" rel="noopener noreferrer"><strong>{source.title}</strong><span>{new URL(source.url).hostname}</span></a>)}</div>}
                   {message.role === "assistant" && index === assistantMessages.length - 1 && completedAnswerId === message.id && !assistantBusy && Boolean(message.followUps?.length) && <div className="agent-followups" aria-label="继续追问">
-                    {message.followUps?.map((question) => <button key={question} onClick={() => void askDesignAssistant(question)}><span>{question}</span><WorkspaceIcon name="chevron" size={14} /></button>)}
+                    {message.followUps?.map((question) => <button key={question} title={question} onClick={() => void askDesignAssistant(question)}><span>{question}</span><WorkspaceIcon name="chevron" size={14} /></button>)}
                   </div>}
                   {message.role === "assistant" && (index < assistantMessages.length - 1 || completedAnswerId === message.id) && !message.content.startsWith("未能完成：") && <div className="agent-reply-actions"><button onClick={() => placeDirectionOnCanvas(message)}>放到画布</button>{message.id && (message.feedback ? <small>{message.feedback === "helpful" ? "✓ 有帮助" : "✓ 需改进"}</small> : <><button onClick={() => void submitAssistantFeedback(message, "helpful")}>有用</button><button onClick={() => void submitAssistantFeedback(message, "needs-work", "not-actionable")}>不够具体</button></>)}</div>}
                 </article>
