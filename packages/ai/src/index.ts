@@ -4,7 +4,7 @@ import { analysisResultSchema, type AnalysisResult, type ProviderId } from "@ins
 export interface ProviderConfig { provider: ProviderId; apiKey: string; model: string; baseUrl: string; supportsVision: boolean; }
 export interface AnalyzeInput { assetId: string; title: string; text?: string; imageDataUrl?: string; computedStyles?: Record<string, unknown>[]; }
 export const ANALYSIS_PROMPT_VERSION = "analysis-v3";
-export const LAYER_PROPOSAL_PROMPT_VERSION = "layers-v1";
+export const LAYER_PROPOSAL_PROMPT_VERSION = "layers-v2-contours";
 export const RESEARCH_PROMPT_VERSION = "research-v1";
 export interface TextMessage { role: "user" | "assistant"; content: string; }
 export const providerDefaults: Record<ProviderId, { model: string; baseUrl: string; supportsVision: boolean }> = {
@@ -70,27 +70,33 @@ export type ImageLayerProposal = {
   label: string;
   category: string;
   rect: { x: number; y: number; width: number; height: number };
+  contours: Array<Array<{ x: number; y: number }>>;
   confidence: number;
 };
 
-/** Object boxes are suggestions only; a user always confirms or refines the mask before a PNG is saved. */
+/** Vision contours are editable suggestions, not pixel-accurate segmentation. */
 export async function proposeImageLayers(input: { title: string; imageDataUrl: string }, config: ProviderConfig): Promise<ImageLayerProposal[]> {
   assertProviderConfig(config);
   if (!config.supportsVision) throw new Error("当前百炼连接不支持图片定位");
   const prompt = [
-    "你负责为图片中的可复用主体提出图层候选。只返回 JSON。",
-    "只给清晰、可独立使用的实体；不要把背景、光影、纹理、文字或不确定区域当作对象。",
-    "rect 坐标必须按 0-1 归一化，输出最多 12 项。所有候选只是定位建议，不能声称已完成抠图。",
-    "严格结构：{\"layers\":[{\"id\":\"layer-1\",\"label\":\"人物\",\"category\":\"person\",\"rect\":{\"x\":0.1,\"y\":0.1,\"width\":0.3,\"height\":0.6},\"confidence\":0.8}]}",
+    "识别图片里可独立选择的人物、动物及具体物体，给每个主体的可见外轮廓。只返回 JSON。",
+    "不要把背景、光影、纹理或不确定区域列为主体。相互分离的部分用多个 contours。轮廓尽量贴边，不能只输出矩形四角。",
+    "所有坐标按 0-1 归一化；最多 6 个主体，每个主体最多 2 条轮廓，每条轮廓按顺序给 8-24 个点。看不清时返回空 contours，不要编造精确边界。",
+    "严格结构：{\"layers\":[{\"id\":\"layer-1\",\"label\":\"人物\",\"category\":\"person\",\"rect\":{\"x\":0.1,\"y\":0.1,\"width\":0.3,\"height\":0.6},\"contours\":[[{\"x\":0.2,\"y\":0.1},{\"x\":0.3,\"y\":0.11},{\"x\":0.38,\"y\":0.2},{\"x\":0.4,\"y\":0.55},{\"x\":0.32,\"y\":0.7},{\"x\":0.17,\"y\":0.68},{\"x\":0.12,\"y\":0.4},{\"x\":0.15,\"y\":0.2}]],\"confidence\":0.8}]}",
     "图片标题：" + input.title,
   ].join("\n");
   const raw = await requestJson([{ role: "user", content: [{ type: "text", text: prompt }, { type: "image_url", image_url: { url: input.imageDataUrl } }] }], config);
-  return asArray(asRecord(raw).layers).slice(0, 12).flatMap((value, index) => {
+  return asArray(asRecord(raw).layers).slice(0, 6).flatMap((value, index) => {
     const item = asRecord(value); const box = asRecord(item.rect ?? item.bbox);
     const rect = { x: clamp(asNumber(box.x, -1), 0, 1), y: clamp(asNumber(box.y, -1), 0, 1), width: clamp(asNumber(box.width ?? box.w, 0), 0, 1), height: clamp(asNumber(box.height ?? box.h, 0), 0, 1) };
     const label = asText(item.label ?? item.name);
     if (!label || !rect.width || !rect.height || rect.x + rect.width > 1.001 || rect.y + rect.height > 1.001) return [];
-    return [{ id: asText(item.id, `layer-${index + 1}`), label, category: asText(item.category, "object"), rect, confidence: asConfidence(item.confidence) }];
+    const contours = asArray(item.contours).slice(0, 2).map((contour) => asArray(contour).slice(0, 24).flatMap((point) => {
+      const record = asRecord(point);
+      const x = Number(record.x); const y = Number(record.y);
+      return Number.isFinite(x) && Number.isFinite(y) && x >= 0 && x <= 1 && y >= 0 && y <= 1 ? [{ x, y }] : [];
+    })).filter((contour) => contour.length >= 6);
+    return [{ id: asText(item.id, `layer-${index + 1}`), label, category: asText(item.category, "object"), rect, contours, confidence: asConfidence(item.confidence) }];
   });
 }
 

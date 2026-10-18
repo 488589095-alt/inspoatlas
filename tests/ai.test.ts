@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertProviderConfig, decryptApiKey, encryptApiKey, parseModelJson } from "../packages/ai/src/index.ts";
+import { assertProviderConfig, decryptApiKey, encryptApiKey, parseModelJson, proposeImageLayers } from "../packages/ai/src/index.ts";
 import { providerCatalog, providerIds } from "../packages/domain/src/index.ts";
 
 test("BYOK Key 使用 AES-GCM 加密且可正确解密", async () => {
@@ -39,4 +39,17 @@ test("模型 JSON 解析可处理思考标签、代码围栏和前后说明", ()
     nested: { value: "x" },
   });
   assert.throws(() => parseModelJson("不是 JSON"), /JSON 无法解析/);
+});
+
+test("AI 图层候选只把有效轮廓交给一键蒙版", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ choices: [{ message: { content: JSON.stringify({ layers: [
+    { id: "person-1", label: "人物", category: "person", rect: { x: .1, y: .1, width: .6, height: .8 }, contours: [[{ x: .2, y: .2 }, { x: .3, y: .1 }, { x: .4, y: .1 }, { x: .7, y: .3 }, { x: .7, y: .8 }, { x: .4, y: .9 }, { x: .2, y: .8 }, { x: .1, y: .4 }, { x: 2, y: .9 }]], confidence: .9 },
+    { id: "object-1", label: "模糊物体", category: "object", rect: { x: .1, y: .1, width: .2, height: .2 }, contours: [[{ x: .1, y: .1 }, { x: .2, y: .2 }]], confidence: .3 },
+  ] }) } }] });
+  try {
+    const result = await proposeImageLayers({ title: "测试图片", imageDataUrl: "data:image/png;base64,AA==" }, { provider: "qwen", apiKey: "test", model: "vision", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", supportsVision: true });
+    assert.equal(result[0].contours[0].length, 8);
+    assert.deepEqual(result[1].contours, []);
+  } finally { globalThis.fetch = originalFetch; }
 });

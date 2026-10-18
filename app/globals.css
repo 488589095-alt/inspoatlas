@@ -718,10 +718,23 @@ button, button :is(span, small, strong, b, em, p, div) { white-space: nowrap !im
 .image-editor-inline .image-editor-preview { min-height: 190px; padding: 14px; }
 .image-editor-inline .image-editor-preview canvas { max-height: 265px; object-fit: contain; border-radius: 7px; box-shadow: 0 8px 20px rgba(24, 18, 45, .18); }
 .image-editor-inline .image-editor-controls { border-left: 0; }
-.image-editor-inline > footer { display: grid; gap: 9px; padding: 14px 16px; }
-.image-editor-inline > footer > div { display: flex; flex-wrap: wrap; }
-.image-editor-inline > footer button { flex: 1 1 auto; min-height: 36px; }
-.image-editor-inline .image-editor-preview { display: grid; gap: 15px; align-items: stretch; padding: 14px; }
+.image-editor-inline > footer { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; width: 100%; padding: 14px 16px; }
+.image-editor-inline > footer > div { display: contents; }
+.image-editor-inline > footer button { width: 100%; min-width: 0; min-height: 38px; padding: 7px 3px; white-space: nowrap; }
+.inspector:has(.image-editor-inline) { padding-bottom: 98px; }
+.editor-history { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; margin-bottom: 16px; }
+.editor-history button, .layer-proposal-item button { min-height: 34px; padding: 6px 8px; border: 1px solid var(--desk-line); border-radius: 8px; color: var(--desk-text); background: var(--desk-field); font-size: 11px; white-space: nowrap; }
+.editor-history button:not(:disabled):hover, .layer-proposal-item button:not(:disabled):hover { border-color: var(--desk-accent); background: var(--desk-accent-wash); }
+.image-editor-inline.is-restoring .image-editor-layout, .image-editor-inline.is-restoring > footer { pointer-events: none; opacity: .7; }
+.layer-proposal-list { max-height: 230px; gap: 0; }
+.layer-proposal-item { display: grid; gap: 7px; padding: 9px 0; border-bottom: 1px solid var(--desk-line); }
+.layer-proposal-item > span { display: grid; gap: 3px; color: var(--desk-text); font-size: 12px; font-weight: 650; }
+.layer-proposal-item small, .editor-ai-note { color: var(--desk-muted); font-size: 10px; font-weight: 400; line-height: 1.5; }
+.layer-proposal-item > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.layer-proposal-item button { width: 100%; }
+.editor-ai-note { display: block; margin-top: 9px; }
+.image-editor-inline .image-editor-preview { display: grid; grid-template-columns: minmax(0, 1fr); justify-items: stretch; gap: 15px; align-items: stretch; padding: 14px; }
+.image-editor-inline .editor-source, .image-editor-inline .editor-result { width: 100%; }
 .editor-source, .editor-result { display: grid; gap: 6px; min-width: 0; }
 .editor-source > span, .editor-result > span { color: var(--desk-muted); font-size: 11px; font-weight: 650; }
 .image-editor-inline .editor-source canvas { width: 100%; max-height: 215px; object-fit: contain; }
