@@ -581,7 +581,7 @@ html.theme-light-root {
 .agent-drawer .agent-conversation { display: flex; flex: 1; flex-direction: column; gap: 19px; min-height: 0; padding: 16px 20px; overflow-y: auto; overscroll-behavior: contain; }
 .agent-chat-empty { display: flex; flex: 1; flex-direction: column; align-items: center; justify-content: center; min-height: 0; padding: 12px 0; text-align: center; }
 .agent-chat-empty > img { width: 68px; height: 68px; object-fit: contain; filter: drop-shadow(0 9px 22px rgba(170, 137, 233, .24)); }
-.agent-chat-empty > p { max-width: 280px; margin: 10px 0 18px; color: var(--desk-text); font-size: 14px; line-height: 1.6; }
+.agent-chat-empty > p { width: 100%; margin: 10px 0 18px; color: var(--desk-text); font-size: 14px; line-height: 1.6; text-wrap: balance; }
 .agent-starters { display: grid; gap: 8px; width: 100%; }
 .agent-starters button, .agent-followups button { display: flex; align-items: center; justify-content: space-between; gap: 13px; min-height: 52px; padding: 10px 12px; border: 1px solid var(--desk-line-strong); border-radius: 13px; color: var(--desk-text); background: var(--desk-panel-raised); font-size: 12px; line-height: 1.5; text-align: left; cursor: pointer; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
 .agent-starters button:hover, .agent-followups button:hover { border-color: var(--desk-accent); background: var(--desk-accent-wash); transform: translateY(-2px); }
