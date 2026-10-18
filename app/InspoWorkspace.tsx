@@ -2169,7 +2169,7 @@ function WorkspaceCanvas() {
 
   return (
     <main
-      className={"workspace-shell" + (focusMode ? " focus-mode" : "") + (resizingRail ? " is-resizing" : "") + (leftRailCollapsed ? " left-collapsed" : "") + (rightRailCollapsed ? " right-collapsed" : "")}
+      className={"workspace-shell" + (focusMode ? " focus-mode" : "") + (resizingRail ? " is-resizing" : "") + ((leftRailCollapsed || (resizingRail === "left" && leftRailWidth < railExpandedMinimum.left)) ? " left-collapsed" : "") + (rightRailCollapsed ? " right-collapsed" : "")}
       style={{ "--left-rail-width": `${leftRailCollapsed ? 68 : leftRailWidth}px`, "--right-rail-width": `${rightRailCollapsed ? 68 : rightRailWidth}px` } as CSSProperties}
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
@@ -2517,7 +2517,7 @@ function WorkspaceCanvas() {
       <div className="rail-resizer rail-resizer-right" role="separator" aria-label="调整右侧栏宽度" aria-orientation="vertical" title="拖动调整右栏宽度，拖到尽头可收起" onDoubleClick={() => resetRailWidth("right")} onPointerDown={(event) => startRailResize("right", event)} />
       {!focusMode && <button type="button" className={"rail-collapse-button rail-collapse-right" + (rightRailCollapsed ? " is-collapsed" : "")} onClick={() => toggleRailCollapsed("right")} aria-label={rightRailCollapsed ? "展开右侧栏" : "收起右侧栏"} title={rightRailCollapsed ? "展开详情栏" : "收起详情栏"}><WorkspaceIcon name="chevron" size={14} /></button>}
 
-      <aside className={"inspector" + (inspectorOpen ? " is-open" : "") + (rightRailCollapsed ? " is-collapsed" : "")}>
+      <aside className={"inspector" + (inspectorOpen ? " is-open" : "") + ((rightRailCollapsed || (resizingRail === "right" && rightRailWidth < railExpandedMinimum.right)) ? " is-collapsed" : "")}>
         <div className="inspector-compact" aria-label="右侧栏快捷入口">
           <button type="button" onClick={() => { setRightTab("asset"); toggleRailCollapsed("right"); }} aria-label="展开素材详情" title="展开素材详情"><WorkspaceIcon name="archive" size={18} /></button>
           <button type="button" onClick={() => { if (selectedIds.length > 1) { setRightTab("baseline"); toggleRailCollapsed("right"); } }} disabled={selectedIds.length < 2} aria-label="展开整理方案" title="选择多张卡片后整理方案"><WorkspaceIcon name="arrange" size={18} /></button>
